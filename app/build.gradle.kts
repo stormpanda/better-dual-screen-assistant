@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.maikthomalla.betterdualscreenassistant"
+    namespace = "com.stormpanda.betterdualscreenassistant"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.maikthomalla.betterdualscreenassistant"
+        applicationId = "com.stormpanda.betterdualscreenassistant"
         minSdk = 33
         targetSdk = 35
         versionCode = 1

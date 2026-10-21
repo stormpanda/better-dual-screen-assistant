@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.privileged
+package com.stormpanda.betterdualscreenassistant.privileged
 
 import android.annotation.SuppressLint
 import android.content.Context

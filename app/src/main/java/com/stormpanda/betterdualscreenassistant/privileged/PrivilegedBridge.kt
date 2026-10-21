@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.privileged
+package com.stormpanda.betterdualscreenassistant.privileged
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -60,7 +60,7 @@ object PrivilegedBridge {
                 PServerClient.ensurePermissionsGranted(appContext)
                 val apkPath = appContext.applicationInfo.sourceDir
                 val cmd = "CLASSPATH=$apkPath /system/bin/app_process /system/bin " +
-                    "com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedHelperMain >/dev/null 2>&1 &"
+                    "com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain >/dev/null 2>&1 &"
                 PServerClient.exec(cmd, wait = false)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to spawn PrivilegedHelperMain", t)

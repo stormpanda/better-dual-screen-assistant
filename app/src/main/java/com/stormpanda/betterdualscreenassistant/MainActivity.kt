@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant
+package com.stormpanda.betterdualscreenassistant
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -38,11 +38,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.maikthomalla.betterdualscreenassistant.privileged.PServerClient
-import com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedBridge
-import com.maikthomalla.betterdualscreenassistant.service.AssistantForegroundService
-import com.maikthomalla.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.maikthomalla.betterdualscreenassistant.ui.theme.TccTheme
+import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive

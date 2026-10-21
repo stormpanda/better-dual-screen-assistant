@@ -1,8 +1,8 @@
-package com.maikthomalla.betterdualscreenassistant
+package com.stormpanda.betterdualscreenassistant
 
 import android.app.Application
-import com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedBridge
-import com.maikthomalla.betterdualscreenassistant.service.AssistantForegroundService
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
 
 class BetterDualScreenApp : Application() {
     override fun onCreate() {

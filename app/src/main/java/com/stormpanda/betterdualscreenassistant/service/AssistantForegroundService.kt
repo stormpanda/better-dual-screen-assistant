@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.service
+package com.stormpanda.betterdualscreenassistant.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -12,15 +12,15 @@ import android.content.IntentFilter
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
-import com.maikthomalla.betterdualscreenassistant.MainActivity
-import com.maikthomalla.betterdualscreenassistant.R
-import com.maikthomalla.betterdualscreenassistant.overlay.ScreenOverlayManager
-import com.maikthomalla.betterdualscreenassistant.privileged.PServerClient
-import com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedBridge
-import com.maikthomalla.betterdualscreenassistant.system.MappingServiceClient
-import com.maikthomalla.betterdualscreenassistant.system.OverviewProxyClient
-import com.maikthomalla.betterdualscreenassistant.system.SystemSettingsRepository
-import com.maikthomalla.betterdualscreenassistant.system.TelemetryMonitor
+import com.stormpanda.betterdualscreenassistant.MainActivity
+import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
+import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
+import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
+import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,13 +35,13 @@ class AssistantForegroundService : Service() {
         private const val CHANNEL_ID = "better_dsa_service_channel"
         private const val NOTIFICATION_ID = 1001
 
-        const val ACTION_START = "com.maikthomalla.betterdualscreenassistant.action.START"
-        const val ACTION_TOGGLE_OVERLAY = "com.maikthomalla.betterdualscreenassistant.action.TOGGLE_OVERLAY"
-        const val ACTION_SHOW_OVERLAY = "com.maikthomalla.betterdualscreenassistant.action.SHOW_OVERLAY"
-        const val ACTION_SHOW_MODE = "com.maikthomalla.betterdualscreenassistant.action.SHOW_MODE"
-        const val ACTION_SHOW_SETTINGS = "com.maikthomalla.betterdualscreenassistant.action.SHOW_SETTINGS"
-        const val ACTION_HIDE_OVERLAY = "com.maikthomalla.betterdualscreenassistant.action.HIDE_OVERLAY"
-        const val ACTION_TCC_KEY = "com.maikthomalla.betterdualscreenassistant.action.TCC_KEY"
+        const val ACTION_START = "com.stormpanda.betterdualscreenassistant.action.START"
+        const val ACTION_TOGGLE_OVERLAY = "com.stormpanda.betterdualscreenassistant.action.TOGGLE_OVERLAY"
+        const val ACTION_SHOW_OVERLAY = "com.stormpanda.betterdualscreenassistant.action.SHOW_OVERLAY"
+        const val ACTION_SHOW_MODE = "com.stormpanda.betterdualscreenassistant.action.SHOW_MODE"
+        const val ACTION_SHOW_SETTINGS = "com.stormpanda.betterdualscreenassistant.action.SHOW_SETTINGS"
+        const val ACTION_HIDE_OVERLAY = "com.stormpanda.betterdualscreenassistant.action.HIDE_OVERLAY"
+        const val ACTION_TCC_KEY = "com.stormpanda.betterdualscreenassistant.action.TCC_KEY"
         const val EXTRA_KEY_ACTION_DOWN = "key_action_down"
         const val EXTRA_IS_LONG_PRESS = "isLongPress"
         private const val TCC_TOGGLE_DEBOUNCE_MS = 200L

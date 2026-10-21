@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.overlay
+package com.stormpanda.betterdualscreenassistant.overlay
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -35,14 +35,14 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.maikthomalla.betterdualscreenassistant.R
-import com.maikthomalla.betterdualscreenassistant.privileged.PServerClient
-import com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedBridge
-import com.maikthomalla.betterdualscreenassistant.system.OverviewProxyClient
-import com.maikthomalla.betterdualscreenassistant.system.SystemSettingsRepository
-import com.maikthomalla.betterdualscreenassistant.system.TelemetryMonitor
-import com.maikthomalla.betterdualscreenassistant.ui.overlay.AssistantOverlayScreen
-import com.maikthomalla.betterdualscreenassistant.ui.overlay.CloseScreenTipOverlay
+import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
+import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
+import com.stormpanda.betterdualscreenassistant.ui.overlay.AssistantOverlayScreen
+import com.stormpanda.betterdualscreenassistant.ui.overlay.CloseScreenTipOverlay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 

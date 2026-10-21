@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.ui.components
+package com.stormpanda.betterdualscreenassistant.ui.components
 
 import android.view.KeyEvent
 import androidx.annotation.DrawableRes
@@ -60,9 +60,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
-import com.maikthomalla.betterdualscreenassistant.R
-import com.maikthomalla.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.maikthomalla.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import kotlin.math.roundToInt
 
 /**

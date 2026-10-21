@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.ui.theme
+package com.stormpanda.betterdualscreenassistant.ui.theme
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -7,7 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import com.maikthomalla.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.R
 
 @Immutable
 data class TccColorPalette(

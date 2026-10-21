@@ -1,10 +1,10 @@
-package com.maikthomalla.betterdualscreenassistant.system
+package com.stormpanda.betterdualscreenassistant.system
 
 import android.app.ActivityManager
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.provider.Settings
-import com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

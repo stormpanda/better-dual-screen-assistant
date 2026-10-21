@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.system
+package com.stormpanda.betterdualscreenassistant.system
 
 import android.annotation.SuppressLint
 import android.content.ComponentName
@@ -191,7 +191,7 @@ class OverviewProxyClient(private val context: Context) {
             }
         }
         // Fallback via input keyevent APP_SWITCH (187) on target display
-        com.maikthomalla.betterdualscreenassistant.privileged.PServerClient.exec(
+        com.stormpanda.betterdualscreenassistant.privileged.PServerClient.exec(
             "input -d $displayId keyevent 187",
             wait = false
         )

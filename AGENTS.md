@@ -1,6 +1,6 @@
 # AGENTS.md — Better Dual Screen Assistant
 
-This file provides essential context, architectural invariants, hardware quirks, and workflow rules for AI coding agents working on `better-dual-screen-assistant` (`com.maikthomalla.betterdualscreenassistant`).
+This file provides essential context, architectural invariants, hardware quirks, and workflow rules for AI coding agents working on `better-dual-screen-assistant` (`com.stormpanda.betterdualscreenassistant`).
 
 ---
 
@@ -26,7 +26,7 @@ This file provides essential context, architectural invariants, hardware quirks,
 - **Common Commands**:
   - Build debug APK: `./gradlew assembleDebug`
   - Install on device: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk`
-  - Start foreground service: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb shell am start-foreground-service -n com.maikthomalla.betterdualscreenassistant/.service.AssistantForegroundService`
+  - Start foreground service: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb shell am start-foreground-service -n com.stormpanda.betterdualscreenassistant/.service.AssistantForegroundService`
 - **Capturing Display Screenshots via ADB**:
   - **Top Display (`displayId = 0`, 1920×1080)**: Physical ID `4630946446063168643`
     `adb exec-out screencap -p -d 4630946446063168643 > /tmp/top.png`

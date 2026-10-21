@@ -74,7 +74,7 @@
 
         <provider
             android:name=".privileged.PrivilegedBinderProvider"
-            android:authorities="com.maikthomalla.betterdualscreenassistant.privileged"
+            android:authorities="com.stormpanda.betterdualscreenassistant.privileged"
             android:directBootAware="true"
             android:enabled="true"
             android:exported="true" />

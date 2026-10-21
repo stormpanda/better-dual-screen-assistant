@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.ui.statusbar
+package com.stormpanda.betterdualscreenassistant.ui.statusbar
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -50,9 +50,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.maikthomalla.betterdualscreenassistant.R
-import com.maikthomalla.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.maikthomalla.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat

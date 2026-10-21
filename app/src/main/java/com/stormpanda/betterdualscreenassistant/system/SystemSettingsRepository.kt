@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.system
+package com.stormpanda.betterdualscreenassistant.system
 
 import android.app.ActivityManager
 import android.content.BroadcastReceiver
@@ -14,7 +14,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import com.maikthomalla.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

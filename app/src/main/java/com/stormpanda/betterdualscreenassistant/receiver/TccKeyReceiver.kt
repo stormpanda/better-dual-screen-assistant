@@ -1,9 +1,9 @@
-package com.maikthomalla.betterdualscreenassistant.receiver
+package com.stormpanda.betterdualscreenassistant.receiver
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.maikthomalla.betterdualscreenassistant.service.AssistantForegroundService
+import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
 
 /**
  * Manifest receiver for `"action.tcc.button.key.event"` (sent by the AYN Thor framework

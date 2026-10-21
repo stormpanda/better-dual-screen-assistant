@@ -2,7 +2,7 @@
 
 An open-source, user-installable replacement for the built-in `DualScreenAssistant` (`com.odin.dualscreen.assistant`) on the **AYN Thor** dual-screen handheld.
 
-Built with Kotlin and Jetpack Compose, **Better Dual Screen Assistant** (`com.maikthomalla.betterdualscreenassistant`) provides 1:1 visual and functional parity with the stock system overlay on the bottom screen (`displayId = 4`, 1240×1080) while running as a standard user-installable APK.
+Built with Kotlin and Jetpack Compose, **Better Dual Screen Assistant** (`com.stormpanda.betterdualscreenassistant`) provides 1:1 visual and functional parity with the stock system overlay on the bottom screen (`displayId = 4`, 1240×1080) while running as a standard user-installable APK.
 
 ---
 
@@ -53,8 +53,8 @@ Built with Kotlin and Jetpack Compose, **Better Dual Screen Assistant** (`com.ma
 ## Architecture & Privileged Access
 
 Although installed as a regular user APK without shared system UID keys, the app achieves full system-level integration on the AYN Thor by combining:
-1. **`PServerBinder` Root Bridge** ([`PServerClient.kt`](app/src/main/java/com/maikthomalla/betterdualscreenassistant/privileged/PServerClient.kt)): Communicates with AYN's system `PServerBinder` service (`IBinder.transact(1, ...)`) to automatically grant runtime/appops permissions (`SYSTEM_ALERT_WINDOW`, `WRITE_SETTINGS`, `WRITE_SECURE_SETTINGS`, `PACKAGE_USAGE_STATS`), query SurfaceFlinger, adjust sysfs node permissions, and manage the stock assistant lifecycle.
-2. **Hidden API Bypass** ([`PrivilegedBridge.kt`](app/src/main/java/com/maikthomalla/betterdualscreenassistant/privileged/PrivilegedBridge.kt)): Uses `org.lsposed.hiddenapibypass` to invoke hidden `DisplayManager`, `WindowManager`, and `ServiceManager` APIs directly in-process with automatic fallback to `PServerBinder`.
+1. **`PServerBinder` Root Bridge** ([`PServerClient.kt`](app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PServerClient.kt)): Communicates with AYN's system `PServerBinder` service (`IBinder.transact(1, ...)`) to automatically grant runtime/appops permissions (`SYSTEM_ALERT_WINDOW`, `WRITE_SETTINGS`, `WRITE_SECURE_SETTINGS`, `PACKAGE_USAGE_STATS`), query SurfaceFlinger, adjust sysfs node permissions, and manage the stock assistant lifecycle.
+2. **Hidden API Bypass** ([`PrivilegedBridge.kt`](app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedBridge.kt)): Uses `org.lsposed.hiddenapibypass` to invoke hidden `DisplayManager`, `WindowManager`, and `ServiceManager` APIs directly in-process with automatic fallback to `PServerBinder`.
 
 ---
 

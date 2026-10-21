@@ -1,4 +1,4 @@
-package com.maikthomalla.betterdualscreenassistant.privileged
+package com.stormpanda.betterdualscreenassistant.privileged
 
 import android.annotation.SuppressLint
 import android.content.AttributionSource
@@ -21,10 +21,10 @@ import java.io.File
 @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
 object PrivilegedHelperMain {
     private const val TAG = "PrivilegedHelperMain"
-    const val AUTHORITY = "com.maikthomalla.betterdualscreenassistant.privileged"
+    const val AUTHORITY = "com.stormpanda.betterdualscreenassistant.privileged"
     const val METHOD_REGISTER_BINDER = "register_binder"
     const val EXTRA_BINDER = "binder"
-    const val DESCRIPTOR = "com.maikthomalla.betterdualscreenassistant.IPrivilegedHelper"
+    const val DESCRIPTOR = "com.stormpanda.betterdualscreenassistant.IPrivilegedHelper"
 
     const val TRANSACTION_PING = IBinder.FIRST_CALL_TRANSACTION + 0
     const val TRANSACTION_SET_BRIGHTNESS = IBinder.FIRST_CALL_TRANSACTION + 1
