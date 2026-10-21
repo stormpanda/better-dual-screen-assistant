@@ -23,7 +23,14 @@ object FanControlClient {
     private const val EXTERNAL_CONTROL_DESCRIPTOR = "com.ro.settings.IExternalControlManager"
     private const val FAN_PROVIDER_DESCRIPTOR = "com.ro.settings.IFanControlProvider"
 
+    @Volatile
+    private var cachedFanProvider: IBinder? = null
+
     private fun getFanProviderBinder(): IBinder? {
+        val current = cachedFanProvider
+        if (current != null && current.isBinderAlive) {
+            return current
+        }
         return try {
             val sm = Class.forName("android.os.ServiceManager")
             val getService = sm.getMethod("getService", String::class.java)
@@ -31,35 +38,40 @@ object FanControlClient {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             try {
+                // Replicate Y0.a$a$a.m("FanProvider"): transact(1) with String arg "FanProvider"
                 data.writeInterfaceToken(EXTERNAL_CONTROL_DESCRIPTOR)
-                controllerBinder.transact(2, data, reply, 0)
+                data.writeString("FanProvider")
+                controllerBinder.transact(1, data, reply, 0)
                 reply.readException()
-                reply.readStrongBinder()
+                val provider = reply.readStrongBinder()
+                cachedFanProvider = provider
+                provider
             } finally {
                 data.recycle()
                 reply.recycle()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to obtain IFanControlProvider", t)
+            cachedFanProvider = null
             null
         }
     }
 
     /**
-     * Transaction 1 on IFanControlProvider: returns intArrayOf(minSpeed, maxSpeed), default [35, 100].
+     * Transaction 1 (c()) on IFanControlProvider: returns min custom fan speed.
      */
-    fun getSpeedRange(): IntArray {
-        val binder = getFanProviderBinder() ?: return intArrayOf(35, 100)
+    fun getMinSpeed(): Int {
+        val binder = getFanProviderBinder() ?: return 35
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         return try {
             data.writeInterfaceToken(FAN_PROVIDER_DESCRIPTOR)
             binder.transact(1, data, reply, 0)
             reply.readException()
-            val arr = reply.createIntArray()
-            if (arr != null && arr.size >= 2) arr else intArrayOf(35, 100)
-        } catch (_: Throwable) {
-            intArrayOf(35, 100)
+            reply.readInt()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to read min fan speed", t)
+            35
         } finally {
             data.recycle()
             reply.recycle()
@@ -67,7 +79,41 @@ object FanControlClient {
     }
 
     /**
-     * Transaction 2 on IFanControlProvider: returns raw fan speed value.
+     * Transaction 2 (a()) on IFanControlProvider: returns max custom fan speed.
+     */
+    fun getMaxSpeed(): Int {
+        val binder = getFanProviderBinder() ?: return 100
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(FAN_PROVIDER_DESCRIPTOR)
+            binder.transact(2, data, reply, 0)
+            reply.readException()
+            reply.readInt()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to read max fan speed", t)
+            100
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    /**
+     * Returns intArrayOf(minSpeed, maxSpeed) from transactions 1 and 2 on IFanControlProvider.
+     */
+    fun getSpeedRange(): IntArray {
+        val minSpeed = getMinSpeed()
+        val maxSpeed = getMaxSpeed()
+        return if (maxSpeed > minSpeed && maxSpeed > 0) {
+            intArrayOf(minSpeed, maxSpeed)
+        } else {
+            intArrayOf(35, 100)
+        }
+    }
+
+    /**
+     * Transaction 10 (e()) on IFanControlProvider: returns raw fan speed value.
      */
     fun getFanSpeedValue(): Int {
         val binder = getFanProviderBinder() ?: return 0
@@ -75,7 +121,7 @@ object FanControlClient {
         val reply = Parcel.obtain()
         return try {
             data.writeInterfaceToken(FAN_PROVIDER_DESCRIPTOR)
-            binder.transact(2, data, reply, 0)
+            binder.transact(10, data, reply, 0)
             reply.readException()
             reply.readInt()
         } catch (_: Throwable) {
@@ -87,7 +133,7 @@ object FanControlClient {
     }
 
     /**
-     * Transaction 3 on IFanControlProvider: returns fan speed percentage in [0.0f..1.0f].
+     * Transaction 3 (h()) on IFanControlProvider: returns fan speed percentage in [0.0f..1.0f].
      */
     fun getSpeedPercentage(): Float {
         val binder = getFanProviderBinder() ?: return 0f
@@ -98,7 +144,8 @@ object FanControlClient {
             binder.transact(3, data, reply, 0)
             reply.readException()
             reply.readFloat()
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to read fan speed percentage", t)
             0f
         } finally {
             data.recycle()

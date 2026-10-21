@@ -96,7 +96,7 @@ class TelemetryMonitor(private val context: Context) {
                 val tempRaw = PrivilegedBridge.readSysfsLong(THERMAL_CPU_PATH)
                 val cpuTemp = if (tempRaw > 1000L) tempRaw / 1000f else tempRaw.toFloat()
 
-                val fanPercent = (FanControlClient.getSpeedPercentage() * 100f).roundToInt().coerceIn(0, 100)
+                val fanPercent = (FanControlClient.getSpeedPercentage() * 100f).toInt().coerceIn(0, 100)
 
                 val curCpuRaw = PrivilegedBridge.readSysfsLong(CPU_CUR_FREQ_PATH)
                 val cpuCurVal = if (cpuUnitStr == "GHz") {

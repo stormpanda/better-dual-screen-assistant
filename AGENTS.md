@@ -28,10 +28,10 @@ This file provides essential context, architectural invariants, hardware quirks,
   - Install on device: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk`
   - Start foreground service: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb shell am start-foreground-service -n com.stormpanda.betterdualscreenassistant/.service.AssistantForegroundService`
 - **Capturing Display Screenshots via ADB**:
-  - **Top Display (`displayId = 0`, 1920×1080)**: Physical ID `4630946446063168643`
-    `adb exec-out screencap -p -d 4630946446063168643 > /tmp/top.png`
-  - **Bottom Display (`displayId = 4`, 1240×1080)**: Physical ID `4630946446063168644`
-    `adb exec-out screencap -p -d 4630946446063168644 > /tmp/bottom.png`
+  - Physical display IDs (`screencap -d <id>`) are assigned per boot/reconnect by SurfaceFlinger. Query current IDs with:
+    `adb shell dumpsys SurfaceFlinger --display-id` (`port=131` = Top `1920×1080`, `port=132` = Bottom `1240×1080`).
+  - Capture screenshot:
+    `adb exec-out screencap -p -d <physical_display_id> > /tmp/bottom.png`
 
 ---
 
