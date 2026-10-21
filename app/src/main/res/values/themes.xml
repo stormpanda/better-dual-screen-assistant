@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.BetterDualScreenAssistant" parent="android:Theme.Material.NoActionBar" />
+
+    <style name="tcc_anim" parent="@android:style/Animation">
+        <item name="android:windowEnterAnimation">@anim/pop_win_enter_anim</item>
+        <item name="android:windowExitAnimation">@anim/pop_win_exit_anim</item>
+    </style>
 </resources>

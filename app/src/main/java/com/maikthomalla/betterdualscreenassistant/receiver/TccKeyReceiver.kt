@@ -12,16 +12,23 @@ import com.maikthomalla.betterdualscreenassistant.service.AssistantForegroundSer
 class TccKeyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "action.tcc.button.key.event") return
-        val isLongPress = intent.getBooleanExtra("isLongPress", false)
-        val service = AssistantForegroundService.instance
-        if (service != null) {
-            service.handleTccButtonEvent(isLongPress)
+        // When AssistantForegroundService is already running, its dynamically registered
+        // systemEventsReceiver handles "action.tcc.button.key.event" directly.
+        if (AssistantForegroundService.instance != null) return
+
+        val keyActionDown = if (intent.hasExtra("key_action_down")) {
+            intent.getBooleanExtra("key_action_down", true)
         } else {
-            val startIntent = Intent(context, AssistantForegroundService::class.java).apply {
-                action = AssistantForegroundService.ACTION_TCC_KEY
-                putExtra(AssistantForegroundService.EXTRA_IS_LONG_PRESS, isLongPress)
-            }
-            context.startForegroundService(startIntent)
+            false
         }
+        val isLongPress = intent.getBooleanExtra("key_isLongPress", false) ||
+            intent.getBooleanExtra("isLongPress", false)
+
+        val startIntent = Intent(context, AssistantForegroundService::class.java).apply {
+            action = AssistantForegroundService.ACTION_TCC_KEY
+            putExtra(AssistantForegroundService.EXTRA_KEY_ACTION_DOWN, keyActionDown)
+            putExtra(AssistantForegroundService.EXTRA_IS_LONG_PRESS, isLongPress)
+        }
+        context.startForegroundService(startIntent)
     }
 }

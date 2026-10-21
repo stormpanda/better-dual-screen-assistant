@@ -19,6 +19,8 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.compose.ui.platform.ComposeView
@@ -99,6 +101,8 @@ class ScreenOverlayManager(
 
     private var assistantView: ComposeView? = null
     private var assistantLifecycle: OverlayLifecycleOwner? = null
+    private var exitingAssistantView: ComposeView? = null
+    private var exitingAssistantLifecycle: OverlayLifecycleOwner? = null
     var isAssistantShowing: Boolean = false
         private set
 
@@ -130,6 +134,22 @@ class ScreenOverlayManager(
         }
     }
 
+    private fun cleanupExitingAssistant() {
+        val oldView = exitingAssistantView
+        val oldLifecycle = exitingAssistantLifecycle
+        exitingAssistantView = null
+        exitingAssistantLifecycle = null
+        if (oldView != null) {
+            try {
+                oldView.animate().cancel()
+                getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)?.removeViewImmediate(oldView)
+            } catch (_: Throwable) {
+            }
+        }
+        oldLifecycle?.onPause()
+        oldLifecycle?.onDestroy()
+    }
+
     fun showAssistantOverlay(initialTab: Int? = null) {
         mainHandler.post {
             if (initialTab != null) {
@@ -138,6 +158,8 @@ class ScreenOverlayManager(
                 activeTabState.value = 0
             }
             if (isAssistantShowing) return@post
+            cleanupExitingAssistant()
+
             repository.refreshAll()
             val wm = getWindowManagerForDisplay(BOTTOM_DISPLAY_ID) ?: return@post
             val displayContext = getDisplayContext(BOTTOM_DISPLAY_ID)
@@ -151,6 +173,9 @@ class ScreenOverlayManager(
                 setViewTreeLifecycleOwner(lifecycleOwner)
                 setViewTreeViewModelStoreOwner(lifecycleOwner)
                 setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+                // Start at 90%p Y offset & 0 alpha to match pop_win_enter_anim.xml
+                translationY = realSize.y * 0.90f
+                alpha = 0f
                 setContent {
                     AssistantOverlayScreen(
                         repository = repository,
@@ -185,6 +210,7 @@ class ScreenOverlayManager(
             ).apply {
                 gravity = Gravity.CENTER
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+                windowAnimations = R.style.tcc_anim
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
@@ -196,6 +222,12 @@ class ScreenOverlayManager(
                 wm.addView(composeView, lp)
                 applyImmersiveFullscreen(composeView)
                 composeView.requestFocus()
+                composeView.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(FADE_DURATION_MS)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
                 assistantView = composeView
                 assistantLifecycle = lifecycleOwner
                 isAssistantShowing = true
@@ -206,20 +238,49 @@ class ScreenOverlayManager(
         }
     }
 
-    fun hideAssistantOverlay() {
+    fun hideAssistantOverlay(immediate: Boolean = false) {
         mainHandler.post {
             val view = assistantView ?: return@post
-            val wm = getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)
-            try {
-                wm?.removeViewImmediate(view)
-            } catch (_: Throwable) {
-            }
-            assistantLifecycle?.onPause()
-            assistantLifecycle?.onDestroy()
-            assistantLifecycle = null
+            val lifecycle = assistantLifecycle
             assistantView = null
+            assistantLifecycle = null
             isAssistantShowing = false
             telemetryMonitor.stop()
+
+            if (immediate) {
+                try {
+                    view.animate().cancel()
+                    getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)?.removeViewImmediate(view)
+                } catch (_: Throwable) {
+                }
+                lifecycle?.onPause()
+                lifecycle?.onDestroy()
+                return@post
+            }
+
+            cleanupExitingAssistant()
+            exitingAssistantView = view
+            exitingAssistantLifecycle = lifecycle
+
+            val slideOutDistance = (view.height.takeIf { it > 0 } ?: 1080) * 0.90f
+            view.animate()
+                .translationY(slideOutDistance)
+                .alpha(0f)
+                .setDuration(FADE_DURATION_MS)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction {
+                    if (exitingAssistantView === view) {
+                        cleanupExitingAssistant()
+                    } else {
+                        try {
+                            getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)?.removeViewImmediate(view)
+                        } catch (_: Throwable) {
+                        }
+                        lifecycle?.onPause()
+                        lifecycle?.onDestroy()
+                    }
+                }
+                .start()
         }
     }
 
@@ -278,7 +339,7 @@ class ScreenOverlayManager(
     fun onDeviceScreenInteractiveChanged(interactive: Boolean) {
         mainHandler.post {
             if (!interactive) {
-                hideAssistantOverlay()
+                hideAssistantOverlay(immediate = true)
                 dismissCloseScreenTip()
                 savedTopBrightnessLinear?.let {
                     PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, it, false)

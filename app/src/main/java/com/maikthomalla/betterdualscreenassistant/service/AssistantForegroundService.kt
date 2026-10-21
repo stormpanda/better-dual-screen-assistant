@@ -42,7 +42,9 @@ class AssistantForegroundService : Service() {
         const val ACTION_SHOW_SETTINGS = "com.maikthomalla.betterdualscreenassistant.action.SHOW_SETTINGS"
         const val ACTION_HIDE_OVERLAY = "com.maikthomalla.betterdualscreenassistant.action.HIDE_OVERLAY"
         const val ACTION_TCC_KEY = "com.maikthomalla.betterdualscreenassistant.action.TCC_KEY"
+        const val EXTRA_KEY_ACTION_DOWN = "key_action_down"
         const val EXTRA_IS_LONG_PRESS = "isLongPress"
+        private const val TCC_TOGGLE_DEBOUNCE_MS = 200L
 
         @Volatile
         var instance: AssistantForegroundService? = null
@@ -73,14 +75,21 @@ class AssistantForegroundService : Service() {
     lateinit var overlayManager: ScreenOverlayManager
         private set
 
-    private var lastTccEventElapsedMs: Long = 0L
+    private var lastTccToggleElapsedMs: Long = 0L
+    private var longPressConsumed: Boolean = false
 
     private val systemEventsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 "action.tcc.button.key.event" -> {
-                    val isLongPress = intent.getBooleanExtra("isLongPress", false)
-                    handleTccButtonEvent(isLongPress)
+                    val keyActionDown = if (intent.hasExtra("key_action_down")) {
+                        intent.getBooleanExtra("key_action_down", true)
+                    } else {
+                        false
+                    }
+                    val isLongPress = intent.getBooleanExtra("key_isLongPress", false) ||
+                        intent.getBooleanExtra("isLongPress", false)
+                    handleTccButtonEvent(keyActionDown = keyActionDown, isLongPress = isLongPress)
                 }
                 Intent.ACTION_SCREEN_OFF -> {
                     overlayManager.onDeviceScreenInteractiveChanged(false)
@@ -147,8 +156,9 @@ class AssistantForegroundService : Service() {
             ACTION_SHOW_SETTINGS -> overlayManager.showAssistantOverlay(initialTab = 1)
             ACTION_HIDE_OVERLAY -> overlayManager.hideAssistantOverlay()
             ACTION_TCC_KEY -> {
+                val keyActionDown = intent.getBooleanExtra(EXTRA_KEY_ACTION_DOWN, false)
                 val isLongPress = intent.getBooleanExtra(EXTRA_IS_LONG_PRESS, false)
-                handleTccButtonEvent(isLongPress)
+                handleTccButtonEvent(keyActionDown = keyActionDown, isLongPress = isLongPress)
             }
         }
         return START_STICKY
@@ -164,13 +174,18 @@ class AssistantForegroundService : Service() {
         }
     }
 
-    fun handleTccButtonEvent(isLongPress: Boolean) {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastTccEventElapsedMs < 150L) {
-            return
-        }
-        lastTccEventElapsedMs = now
-
+    /**
+     * Replicates `TccKeyReceiver.java` and `TccServices.java` (`a()`, `b()`, `c()`):
+     * - `keyActionDown == true && !isLongPress` (`b()`): Initial button press down -> no-op.
+     * - `keyActionDown == true && isLongPress` (`c()`): Long-press threshold reached while holding ->
+     *   sets `longPressConsumed = true` (`f6460m`), hides overlay if open, and switches to Mode 1
+     *   (blanks/turns off the bottom screen).
+     * - `keyActionDown == false` (`a()`): Button released ->
+     *   - If `longPressConsumed == true`, resets flag and returns without waking or toggling.
+     *   - If bottom screen is blanked (`Mode 1`), wakes it back into Dual-Screen (`Mode 0`).
+     *   - Otherwise toggles the assistant overlay (with 200ms debounce `f6451w`).
+     */
+    fun handleTccButtonEvent(keyActionDown: Boolean, isLongPress: Boolean) {
         if (!PServerClient.isReplaceStockPreferred(applicationContext) &&
             PServerClient.isStockAssistantEnabled(applicationContext)
         ) {
@@ -186,16 +201,35 @@ class AssistantForegroundService : Service() {
         }
 
         val currentMode = repository.dualScreenDisplayMode.value
-        if (isLongPress) {
-            if (currentMode != 1 && !overlayManager.isBottomScreenBlanked) {
-                repository.setDualScreenDisplayMode(1)
+
+        if (keyActionDown) {
+            if (isLongPress) {
+                // Replicates TccServices.c(): Long-press turns off the bottom screen
+                longPressConsumed = true
+                if (!overlayManager.isBottomScreenBlanked && currentMode != 1) {
+                    overlayManager.hideAssistantOverlay(immediate = true)
+                    repository.setDualScreenDisplayMode(1)
+                }
             }
-        } else {
-            if (overlayManager.isBottomScreenBlanked || currentMode == 1) {
-                overlayManager.wakeBottomScreen()
-            } else {
-                overlayManager.toggleAssistantOverlay()
-            }
+            // Initial key down (keyActionDown == true && !isLongPress) is a no-op (TccServices.b())
+            return
+        }
+
+        // Key UP (keyActionDown == false) -> Replicates TccServices.a()
+        if (longPressConsumed) {
+            longPressConsumed = false
+            return
+        }
+
+        if (overlayManager.isBottomScreenBlanked || currentMode == 1) {
+            overlayManager.wakeBottomScreen()
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastTccToggleElapsedMs > TCC_TOGGLE_DEBOUNCE_MS) {
+            lastTccToggleElapsedMs = now
+            overlayManager.toggleAssistantOverlay()
         }
     }
 
