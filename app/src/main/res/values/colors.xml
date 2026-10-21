@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#ff000000</color>
+    <color name="white">#ffffffff</color>
+    <color name="primaryBackgroundColor">#dedbdb</color>
+    <color name="panel_background_color">#e7e5e5</color>
+    <color name="panel_background_select_color">#d5d5d5</color>
+    <color name="primaryIconColor">#434343</color>
+    <color name="primaryTextColor">#434343</color>
+    <color name="secondaryColor">#787777</color>
+    <color name="secondaryIconColor">@color/secondaryColor</color>
+    <color name="secondaryTextColor">@color/secondaryColor</color>
+    <color name="thirdColor">#666666</color>
+    <color name="fourthColor">#b1b0b0</color>
+    <color name="fifth_color">#c5c2c2</color>
+    <color name="hardware_info_ring_bg_color">@color/fourthColor</color>
+    <color name="dialog_bg_color">#e7e7e7</color>
+    <color name="dialog_option_icon_color">@color/primaryIconColor</color>
+    <color name="fan_control_bar_background">#8bdedb</color>
+    <color name="horizontal_sliding_control_view_icon_color">#ebe9e9</color>
+    <color name="lightning_color">#04ad29</color>
+    <color name="select_the_icon_detail_color">#ebebeb</color>
+    <color name="tcc_colorAccent">#8e84ff</color>
+    <color name="temperature_grade_normal">#818184</color>
+    <color name="temperature_grade_relatively_hot">#f6a6a6</color>
+    <color name="temperature_grade_hot">#f67474</color>
+    <color name="temperature_grade_very_hot">#f64646</color>
+    <color name="view_selected_bg_color">#454545</color>
+    <color name="wifi_state_color_off">#00000000</color>
+    <color name="wifi_state_color_on">@color/black</color>
+</resources>

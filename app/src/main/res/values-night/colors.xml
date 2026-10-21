@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dialog_bg_color">#282828</color>
+    <color name="dialog_option_icon_color">@color/secondaryColor</color>
+    <color name="fan_control_bar_background">#4d4d4d</color>
+    <color name="fifth_color">#474747</color>
+    <color name="fourthColor">#5f5f5f</color>
+    <color name="hardware_info_ring_bg_color">#3d3d40</color>
+    <color name="horizontal_sliding_control_view_icon_color">@color/white</color>
+    <color name="lightning_color">#03c82e</color>
+    <color name="panel_background_color">#212223</color>
+    <color name="panel_background_select_color">@color/view_selected_bg_color</color>
+    <color name="primaryBackgroundColor">#2e2e2e</color>
+    <color name="primaryIconColor">#f2f1f1</color>
+    <color name="primaryTextColor">#f2f1f1</color>
+    <color name="secondaryColor">#e6e5e5</color>
+    <color name="select_the_icon_detail_color">#303030</color>
+    <color name="thirdColor">#b6b5b5</color>
+    <color name="wifi_state_color_on">@color/white</color>
+</resources>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:height="50dp"
+    android:width="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <path
+        android:fillColor="@color/dialog_option_icon_color"
+        android:pathData="M24.7,0.973C38.048,0.973 48.861,11.793 48.861,25.134C48.861,38.475 38.041,49.296 24.7,49.296C11.359,49.296 0.539,38.475 0.539,25.134C0.539,11.793 11.359,0.973 24.7,0.973ZM24.7,5.032C13.617,5.032 4.597,14.044 4.597,25.134C4.597,36.225 13.617,45.237 24.7,45.237C35.784,45.237 44.803,36.218 44.803,25.134C44.803,14.051 35.784,5.032 24.7,5.032Z"
+        android:strokeColor="@color/dialog_option_icon_color"
+        android:strokeWidth="0.6764"/>
+    <path
+        android:fillColor="@color/dialog_option_icon_color"
+        android:pathData="M31.95,26.277H31.942H31.95Z"/>
+    <group>
+        <clip-path android:pathData="M31.95,26.277H31.942H31.95Z"/>
+        <path
+            android:fillColor="@color/dialog_option_icon_color"
+            android:pathData="M31.95,26.277V25.601H31.942V26.277V26.954H31.95V26.277ZM31.942,26.277V26.954H31.95V26.277V25.601H31.942V26.277Z"/>
+    </group>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M3.385,35.728L43.806,15.828"
+        android:strokeColor="@color/dialog_option_icon_color"
+        android:strokeWidth="5"/>
+</vector>

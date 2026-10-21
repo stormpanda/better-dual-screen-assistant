@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:height="49dp"
+    android:width="49dp"
+    android:viewportWidth="49"
+    android:viewportHeight="49">
+    <path
+        android:fillColor="#b9b9b9"
+        android:pathData="M24.499,0.338C37.847,0.338 48.66,11.158 48.66,24.499C48.66,37.84 37.84,48.66 24.499,48.66C11.158,48.66 0.338,37.84 0.338,24.499C0.338,11.158 11.158,0.338 24.499,0.338ZM24.499,4.396C13.416,4.396 4.396,13.409 4.396,24.499C4.396,35.589 13.416,44.602 24.499,44.602C35.583,44.602 44.602,35.583 44.602,24.499C44.602,13.415 35.583,4.396 24.499,4.396Z"
+        android:strokeColor="#b9b9b9"
+        android:strokeWidth="0.6764"/>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M24.005,3.05V10.542"
+        android:strokeColor="#b9b9b9"
+        android:strokeWidth="4.7348"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M24.005,37.711V45.203"
+        android:strokeColor="#b9b9b9"
+        android:strokeWidth="4.7348"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M45.495,25.642H37.997"
+        android:strokeColor="#b9b9b9"
+        android:strokeWidth="4.7348"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9.946,25.642H2.448"
+        android:strokeColor="#b9b9b9"
+        android:strokeWidth="4.7348"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:fillColor="#b9b9b9"
+        android:pathData="M31.358,25.642H31.35H31.358Z"/>
+    <group>
+        <clip-path android:pathData="M31.358,25.642H31.35H31.358Z"/>
+        <path
+            android:fillColor="#b9b9b9"
+            android:pathData="M31.358,25.642V24.966H31.35V25.642V26.318H31.358V25.642ZM31.35,25.642V26.318H31.358V25.642V24.966H31.35V25.642Z"/>
+    </group>
+</vector>
