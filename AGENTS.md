@@ -41,6 +41,7 @@ This file provides essential context, architectural invariants, hardware quirks,
   `<type>[optional scope]: <description>`
   - Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
   - Keep the description imperative, concise, and lowercase after the prefix (e.g., `fix: handle AYN button short/long-press state machine and add slide-up overlay animation`).
+- **Always Propose a Commit Message**: Whenever you finish a task that modifies tracked or new project files (and haven't already committed them as part of the request), always end your response with a **Proposed commit message** formatted as a Conventional Commit inside a fenced code block.
 
 ---
 
