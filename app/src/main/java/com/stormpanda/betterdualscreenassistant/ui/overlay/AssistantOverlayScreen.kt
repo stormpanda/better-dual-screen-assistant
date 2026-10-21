@@ -64,7 +64,9 @@ import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogOption
 import com.stormpanda.betterdualscreenassistant.ui.components.TccOptionDialog
 import com.stormpanda.betterdualscreenassistant.ui.components.TccRadioCheckIndicator
 import com.stormpanda.betterdualscreenassistant.ui.statusbar.StatusBarRow
+import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import kotlinx.coroutines.delay
@@ -95,6 +97,9 @@ fun AssistantOverlayScreen(
     onDismissOverlayRequest: () -> Unit
 ) {
     val themeMode by repository.themeMode.collectAsState()
+    val customAccentArgb by repository.customAccentArgb.collectAsState()
+    val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
+    val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
     val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
     val focusLock by repository.screenFocusLock.collectAsState()
     val performanceMode by repository.performanceMode.collectAsState()
@@ -130,7 +135,12 @@ fun AssistantOverlayScreen(
         }
     }
 
-    TccTheme(themeMode = themeMode) {
+    TccTheme(
+        themeMode = themeMode,
+        customAccentArgb = customAccentArgb,
+        syncedMegingiardOption = syncedMegingiardOption,
+        syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
+    ) {
         val colors = LocalTccColors.current
 
         Box(
@@ -238,7 +248,7 @@ fun AssistantOverlayScreen(
                     onOpenRecents = onOpenRecentsRequest,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 15.dp, end = 15.dp, bottom = 15.dp)
+                        .padding(top = 5.dp, start = 15.dp, end = 15.dp, bottom = 15.dp)
                 )
             }
 
@@ -428,35 +438,71 @@ fun AssistantOverlayScreen(
                 }
 
                 ActiveDialog.THEME_MODE -> {
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 1,
-                            label = stringResource(R.string.text_system_theme),
-                            iconRes = R.drawable.ic_qs_system_theme,
-                            preserveIconColors = true
-                        ),
-                        TccDialogOption(
-                            id = 3,
-                            label = stringResource(R.string.text_light_theme),
-                            iconRes = R.drawable.ic_qs_light_theme,
-                            preserveIconColors = true
-                        ),
-                        TccDialogOption(
-                            id = 4,
-                            label = stringResource(R.string.text_dark_theme),
-                            iconRes = R.drawable.ic_qs_dark_theme,
-                            preserveIconColors = true
-                        )
-                    )
+                    val selectedThemeOption = AppThemeOption.fromId(themeMode)
+                    val customAccentColor = Color(customAccentArgb)
+                    val syncedAccentColor = syncedMegingiardAccentArgb?.let { Color(it) }
+                        ?: syncedMegingiardOption.previewAccent
+                    val options = AppThemeOption.entries.map { opt ->
+                        when (opt) {
+                            AppThemeOption.STOCK_SYSTEM -> TccDialogOption(
+                                id = opt.id,
+                                label = "${stringResource(R.string.text_system_theme)} (Stock)",
+                                iconRes = R.drawable.ic_qs_system_theme,
+                                preserveIconColors = true
+                            )
+                            AppThemeOption.STOCK_LIGHT -> TccDialogOption(
+                                id = opt.id,
+                                label = "${stringResource(R.string.text_light_theme)} (Stock)",
+                                iconRes = R.drawable.ic_qs_light_theme,
+                                preserveIconColors = true
+                            )
+                            AppThemeOption.STOCK_DARK -> TccDialogOption(
+                                id = opt.id,
+                                label = "${stringResource(R.string.text_dark_theme)} (Stock)",
+                                iconRes = R.drawable.ic_qs_dark_theme,
+                                preserveIconColors = true
+                            )
+                            AppThemeOption.SYNC_MEGINGIARD -> TccDialogOption(
+                                id = opt.id,
+                                label = "${opt.displayName} (${syncedMegingiardOption.shortTileLabel})",
+                                iconRes = R.drawable.ic_qs_theme_mode,
+                                swatchColors = syncedMegingiardOption.previewSurface to syncedAccentColor
+                            )
+                            AppThemeOption.MEGINGIARD_DARK, AppThemeOption.MEGINGIARD_DARK_OLED -> TccDialogOption(
+                                id = opt.id,
+                                label = opt.displayName,
+                                iconRes = R.drawable.ic_qs_theme_mode,
+                                swatchColors = opt.previewSurface to customAccentColor
+                            )
+                            else -> TccDialogOption(
+                                id = opt.id,
+                                label = opt.displayName,
+                                iconRes = R.drawable.ic_qs_theme_mode,
+                                swatchColors = opt.previewSurface to opt.previewAccent
+                            )
+                        }
+                    }
                     TccOptionDialog(
                         title = stringResource(R.string.text_theme_mode_title),
                         options = options,
-                        selectedId = if (themeMode == 2) 4 else themeMode,
+                        selectedId = selectedThemeOption.id,
+                        accentPresets = if (selectedThemeOption.supportsCustomAccent) {
+                            MegingiardAccentPresets
+                        } else {
+                            emptyList()
+                        },
+                        selectedAccentArgb = customAccentArgb,
+                        onSelectAccentColor = { color ->
+                            repository.setCustomAccentArgb(color.toArgb())
+                        },
                         onSelectOption = { selected ->
                             repository.setThemeMode(selected)
-                            coroutineScope.launch {
-                                delay(300L)
-                                activeDialog = ActiveDialog.NONE
+                            val newlySelected = AppThemeOption.fromId(selected)
+                            if (!newlySelected.supportsCustomAccent) {
+                                coroutineScope.launch {
+                                    delay(300L)
+                                    activeDialog = ActiveDialog.NONE
+                                }
                             }
                         },
                         onDismiss = { activeDialog = ActiveDialog.NONE }
@@ -764,11 +810,12 @@ private fun SystemSettingsTab(
             )
         )
 
-        val (themeLabel, themeSelected) = when (themeMode) {
-            2 -> stringResource(R.string.text_pure_black_theme) to true
-            3 -> stringResource(R.string.text_light_theme) to false
-            4 -> stringResource(R.string.text_dark_theme) to true
-            else -> stringResource(R.string.text_system_theme) to false
+        val currentThemeOpt = AppThemeOption.fromId(themeMode)
+        val (themeLabel, themeSelected) = when (currentThemeOpt) {
+            AppThemeOption.STOCK_SYSTEM -> stringResource(R.string.text_system_theme) to false
+            AppThemeOption.STOCK_LIGHT -> stringResource(R.string.text_light_theme) to false
+            AppThemeOption.STOCK_DARK -> stringResource(R.string.text_dark_theme) to true
+            else -> currentThemeOpt.shortTileLabel to true
         }
         add(
             QuickSettingTileModel(
@@ -883,12 +930,22 @@ private fun SystemSettingsTab(
                 .padding(top = 5.dp)
         ) {
             val tempInt = telemetry.cpuTempCelsius.roundToInt()
-            val tempTint = when {
-                tempInt >= 86 -> Color(0xFFF64646)
-                tempInt >= 71 -> Color(0xFFF67474)
-                tempInt >= 51 -> Color(0xFFF6A6A6)
-                else -> Color(0xFF818184)
+            val tempTint = if (colors.isMegingiardStyle) {
+                when {
+                    tempInt >= 86 -> colors.error
+                    tempInt >= 71 -> colors.error.copy(alpha = 0.85f)
+                    tempInt >= 51 -> colors.accent
+                    else -> colors.secondary
+                }
+            } else {
+                when {
+                    tempInt >= 86 -> Color(0xFFF64646)
+                    tempInt >= 71 -> Color(0xFFF67474)
+                    tempInt >= 51 -> Color(0xFFF6A6A6)
+                    else -> Color(0xFF818184)
+                }
             }
+            val fanTint = if (colors.isMegingiardStyle) colors.secondary else Color(0xFF818184)
 
             HardwareInfoComponentCard(
                 title = "TEMP",
@@ -906,7 +963,7 @@ private fun SystemSettingsTab(
                 title = "FAN",
                 valueWithUnit = "${telemetry.fanSpeedPercent}%",
                 iconRes = R.drawable.ic_fan_normal,
-                iconTint = Color(0xFF818184),
+                iconTint = fanTint,
                 iconSizeRate = 0.17f,
                 modifier = Modifier
                     .weight(0.2f)
@@ -932,7 +989,7 @@ private fun SystemSettingsTab(
                     value = telemetry.cpuCurFreqGhz,
                     minValue = 0f,
                     maxValue = telemetry.cpuMaxFreqGhz,
-                    ringColor = Color(0xFFEE188C),
+                    ringColor = if (colors.isMegingiardStyle) colors.accent else Color(0xFFEE188C),
                     modifier = Modifier.fillMaxHeight()
                 )
 
@@ -943,7 +1000,7 @@ private fun SystemSettingsTab(
                     value = telemetry.gpuCurFreqMhz,
                     minValue = 0f,
                     maxValue = telemetry.gpuMaxFreqMhz,
-                    ringColor = Color(0xFF70E7FF),
+                    ringColor = if (colors.isMegingiardStyle) colors.accent else Color(0xFF70E7FF),
                     modifier = Modifier.fillMaxHeight()
                 )
 
@@ -954,7 +1011,7 @@ private fun SystemSettingsTab(
                     value = telemetry.powerWatts,
                     minValue = -20f,
                     maxValue = 25f,
-                    ringColor = Color(0xFFE26E01),
+                    ringColor = if (colors.isMegingiardStyle) colors.accent else Color(0xFFE26E01),
                     bidirectional = true,
                     modifier = Modifier.fillMaxHeight()
                 )
@@ -966,7 +1023,7 @@ private fun SystemSettingsTab(
                     value = telemetry.ramUsedGb,
                     minValue = 0f,
                     maxValue = telemetry.ramTotalGb,
-                    ringColor = Color(0xFF76CA40),
+                    ringColor = if (colors.isMegingiardStyle) colors.accent else Color(0xFF76CA40),
                     modifier = Modifier.fillMaxHeight()
                 )
             }
@@ -1050,11 +1107,19 @@ private fun FrameRatePanelCard(
                 .weight(0.3f),
             contentAlignment = Alignment.Center
         ) {
+            val pillTextColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(25.dp))
-                    .background(if (colors.isDark) Color(0xFF272727) else Color(0xFFD5D5D5))
-                    .background(pillGradient)
+                    .then(
+                        if (colors.isMegingiardStyle) {
+                            Modifier.background(colors.accent)
+                        } else {
+                            Modifier
+                                .background(if (colors.isDark) Color(0xFF272727) else Color(0xFFD5D5D5))
+                                .background(pillGradient)
+                        }
+                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -1065,9 +1130,9 @@ private fun FrameRatePanelCard(
             ) {
                 Text(
                     text = stringResource(R.string.frame_rate_mode_text, refreshRate),
-                    color = Color.White,
+                    color = pillTextColor,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Normal
+                    fontWeight = if (colors.isMegingiardStyle) FontWeight.SemiBold else FontWeight.Normal
                 )
             }
         }
@@ -1184,7 +1249,7 @@ private fun NavigationBarSection(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(colors.panelBackground)
-            .padding(vertical = 10.dp),
+            .padding(vertical = 5.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -1230,91 +1295,125 @@ fun CloseScreenTipOverlay(
     onConfirm: (noMoreTip: Boolean) -> Unit
 ) {
     var noMoreTip by remember { mutableStateOf(false) }
+    val colors = LocalTccColors.current
 
-    TccTheme(themeMode = themeMode) {
-        val colors = LocalTccColors.current
-
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onCancel
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
+                .width(420.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(colors.dialogBackground)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onCancel
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(420.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(colors.dialogBackground)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    )
-                    .padding(top = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Image(
-                        painter = painterResource(id = tccDrawable(R.drawable.ic_tip)),
-                        contentDescription = null,
-                        colorFilter = ColorFilter.tint(colors.secondary),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.tip_title_text),
-                        color = colors.primary,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = stringResource(R.string.tip_content_text),
-                    color = colors.primary,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp)
+                    onClick = {}
                 )
+                .padding(top = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Image(
+                    painter = painterResource(id = tccDrawable(R.drawable.ic_tip)),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(colors.secondary),
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.tip_title_text),
+                    color = colors.primary,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
-                Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-                Row(
-                    modifier = Modifier
-                        .clickable { noMoreTip = !noMoreTip }
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TccRadioCheckIndicator(
-                        selected = noMoreTip,
-                        modifier = Modifier.size(18.dp)
+            Text(
+                text = stringResource(R.string.tip_content_text),
+                color = colors.primary,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier
+                    .clickable { noMoreTip = !noMoreTip }
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TccRadioCheckIndicator(
+                    selected = noMoreTip,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.tip_dialog_cb_text_no_more_tip),
+                    color = colors.secondary,
+                    fontSize = 13.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color(0x88E4E4ED),
+                                Color.Transparent
+                            )
+                        )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(onClick = onCancel),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = stringResource(R.string.tip_dialog_cb_text_no_more_tip),
-                        color = colors.secondary,
-                        fontSize = 13.sp
+                        text = stringResource(R.string.cancel),
+                        color = colors.primary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
 
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
+                        .width(1.dp)
+                        .fillMaxHeight()
                         .background(
-                            Brush.horizontalGradient(
+                            Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
                                     Color(0x88E4E4ED),
@@ -1324,56 +1423,19 @@ fun CloseScreenTipOverlay(
                         )
                 )
 
-                Row(
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable { onConfirm(noMoreTip) },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable(onClick = onCancel),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.cancel),
-                            color = colors.primary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.Transparent,
-                                        Color(0x88E4E4ED),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
+                    Text(
+                        text = stringResource(R.string.confirm),
+                        color = colors.accent,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
                     )
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable { onConfirm(noMoreTip) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.confirm),
-                            color = colors.accent,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
             }
         }

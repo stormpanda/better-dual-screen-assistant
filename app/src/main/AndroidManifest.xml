@@ -19,6 +19,12 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <queries>
+        <package android:name="com.stormpanda.megingiard" />
+        <package android:name="com.stormpanda.megingiard.debug" />
+        <provider android:authorities="com.stormpanda.megingiard.provider;com.stormpanda.megingiard.debug.provider" />
+    </queries>
+
     <application
         android:name=".BetterDualScreenApp"
         android:allowBackup="true"

@@ -41,10 +41,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -255,6 +257,10 @@ fun StatusBarRow(
                 Image(
                     painter = painterResource(id = tccDrawable(wifiRes)),
                     contentDescription = "Wi-Fi",
+                    colorFilter = ColorFilter.tint(
+                        color = colors.primary,
+                        blendMode = if (colors.isDark) BlendMode.Modulate else BlendMode.SrcIn
+                    ),
                     modifier = Modifier.size(17.dp)
                 )
             }
@@ -321,7 +327,7 @@ private fun BatteryIconCanvas(
         val fillColor = if (level > 50) {
             colors.secondary
         } else {
-            Color(0xFFE34646)
+            lerp(colors.secondary, colors.error, ((50 - level) / 50f).coerceIn(0f, 1f))
         }
         if (fillW > 0f) {
             drawRect(
@@ -331,7 +337,7 @@ private fun BatteryIconCanvas(
             )
         }
 
-        // Lightning bolt in colors.lightning (#00FF00)
+        // Lightning bolt in colors.lightning (accent in Megingiard themes, green in Stock)
         if (isCharging) {
             val cx = bodyLeft + bodyWidth / 2f
             val cy = size.height / 2f

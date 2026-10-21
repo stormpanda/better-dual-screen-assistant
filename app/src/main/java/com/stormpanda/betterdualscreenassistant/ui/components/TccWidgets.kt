@@ -5,10 +5,12 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,12 +23,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -88,7 +93,13 @@ fun TccButton(
     val interactionSource = remember { MutableInteractionSource() }
 
     val iconTint = if (selected) {
-        if (colors.isDark) Color.White else colors.primary
+        if (colors.isMegingiardStyle) {
+            colors.onAccent
+        } else if (colors.isDark) {
+            Color.White
+        } else {
+            colors.primary
+        }
     } else {
         colors.secondary
     }
@@ -130,7 +141,9 @@ fun TccButton(
                     .clip(CircleShape)
                     .then(
                         if (selected) {
-                            if (colors.isDark) {
+                            if (colors.isMegingiardStyle) {
+                                Modifier.background(colors.accent)
+                            } else if (colors.isDark) {
                                 Modifier
                                     .background(Color(0xFF272727))
                                     .background(
@@ -317,10 +330,15 @@ fun HorizontalSlidingBar(
                 modifier = Modifier
                     .width(trackWidth * fraction)
                     .fillMaxHeight()
-                    .background(colors.tertiary)
+                    .background(colors.sliderFill)
             )
 
             val iconSize = trackHeight * 0.55f
+            val sliderIconTint = if (colors.isMegingiardStyle && displayProgress >= 12) {
+                colors.onAccent
+            } else {
+                colors.primary
+            }
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
@@ -330,7 +348,7 @@ fun HorizontalSlidingBar(
                 Image(
                     painter = painterResource(id = tccDrawable(rawIconRes)),
                     contentDescription = label,
-                    colorFilter = ColorFilter.tint(colors.primary),
+                    colorFilter = ColorFilter.tint(sliderIconTint),
                     modifier = Modifier.size(iconSize),
                     contentScale = ContentScale.Fit
                 )
@@ -499,9 +517,9 @@ fun HardwareRingGauge(
                 )
             }
 
-            // White dot at top center (-90 deg), strokeWidth * 0.85f
+            // Indicator dot at top center (-90 deg), strokeWidth * 0.85f
             drawCircle(
-                color = Color.White,
+                color = if (colors.isMegingiardStyle) colors.primary else Color.White,
                 radius = (strokeWidth * 0.85f) * 0.5f,
                 center = Offset(size.width * 0.5f, halfStroke)
             )
@@ -561,11 +579,12 @@ data class TccDialogOption(
     val id: Int,
     val label: String,
     @DrawableRes val iconRes: Int,
-    val preserveIconColors: Boolean = false
+    val preserveIconColors: Boolean = false,
+    val swatchColors: Pair<Color, Color>? = null
 )
 
 /**
- * Replicates `DialogOptionView` radio checkmark indicator (`#8E84FF` filled circle + white check when selected,
+ * Replicates `DialogOptionView` radio checkmark indicator (`accent` filled circle + contrasting check when selected,
  * or hollow ring in `primaryColor` when unselected).
  */
 @Composable
@@ -588,7 +607,7 @@ fun TccRadioCheckIndicator(
             }
             drawPath(
                 path = path,
-                color = Color.White,
+                color = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
                 style = Stroke(width = size.minDimension * 0.11f, cap = StrokeCap.Round)
             )
         } else {
@@ -607,7 +626,7 @@ fun TccRadioCheckIndicator(
  * - Performance Mode
  * - Fan Control (including Custom fan speed slider when `selectedId == 6`)
  * - Controller Style
- * - Theme Mode
+ * - Theme Mode (including scrollable options, dual-tone theme swatches, and accent color presets)
  */
 @Composable
 fun TccOptionDialog(
@@ -618,7 +637,10 @@ fun TccOptionDialog(
     onDismiss: () -> Unit,
     showCustomFanSlider: Boolean = false,
     customFanSpeed: Int = 50,
-    onCustomFanSpeedChange: ((Int) -> Unit)? = null
+    onCustomFanSpeedChange: ((Int) -> Unit)? = null,
+    accentPresets: List<Color> = emptyList(),
+    selectedAccentArgb: Int? = null,
+    onSelectAccentColor: ((Color) -> Unit)? = null
 ) {
     val colors = LocalTccColors.current
 
@@ -635,7 +657,7 @@ fun TccOptionDialog(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.52f)
+                .fillMaxWidth(0.56f)
                 .clip(RoundedCornerShape(18.dp))
                 .background(colors.dialogBackground)
                 .clickable(
@@ -654,57 +676,113 @@ fun TccOptionDialog(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            options.forEachIndexed { index, option ->
-                val isSelected = option.id == selectedId
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .clickable { onSelectOption(option.id) }
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                options.forEachIndexed { index, option ->
+                    val isSelected = option.id == selectedId
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .clickable { onSelectOption(option.id) }
+                            .padding(horizontal = 20.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val resolvedIcon = if (option.preserveIconColors) {
-                            option.iconRes
-                        } else {
-                            tccDrawable(option.iconRes)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (option.swatchColors != null) {
+                                val (surfaceSwatch, accentSwatch) = option.swatchColors
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(surfaceSwatch)
+                                        .border(1.5.dp, accentSwatch, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(9.dp)
+                                            .clip(CircleShape)
+                                            .background(accentSwatch)
+                                    )
+                                }
+                            } else {
+                                val resolvedIcon = if (option.preserveIconColors) {
+                                    option.iconRes
+                                } else {
+                                    tccDrawable(option.iconRes)
+                                }
+                                Image(
+                                    painter = painterResource(id = resolvedIcon),
+                                    contentDescription = option.label,
+                                    colorFilter = if (option.preserveIconColors) null else ColorFilter.tint(colors.primary),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = option.label,
+                                color = colors.primary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Image(
-                            painter = painterResource(id = resolvedIcon),
-                            contentDescription = option.label,
-                            colorFilter = if (option.preserveIconColors) null else ColorFilter.tint(colors.primary),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = option.label,
-                            color = colors.primary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+
+                        TccRadioCheckIndicator(
+                            selected = isSelected,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
-                    TccRadioCheckIndicator(
-                        selected = isSelected,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    if (index < options.lastIndex || (showCustomFanSlider && selectedId == 6) || accentPresets.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(1.dp)
+                                .background(colors.fourth)
+                        )
+                    }
                 }
+            }
 
-                if (index < options.lastIndex || (showCustomFanSlider && selectedId == 6)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .height(1.dp)
-                            .background(colors.fourth)
-                    )
+            if (accentPresets.isNotEmpty() && onSelectAccentColor != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    accentPresets.forEach { preset ->
+                        val isSelectedSwatch = selectedAccentArgb != null &&
+                            Color(selectedAccentArgb) == preset
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .background(preset)
+                                .then(
+                                    if (isSelectedSwatch) {
+                                        Modifier.border(2.dp, colors.primary, CircleShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable { onSelectAccentColor(preset) }
+                        )
+                    }
                 }
             }
 

@@ -13,8 +13,11 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.content.SharedPreferences
 import android.provider.Settings
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
+import com.stormpanda.betterdualscreenassistant.ui.theme.DEFAULT_MEGINGIARD_ACCENT_ARGB
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +52,13 @@ class SystemSettingsRepository(private val context: Context) {
 
         const val PREFS_NAME = "better_dsa_prefs"
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
+        const val PREF_APP_THEME_MODE = "app_theme_mode"
+        const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
+
+        private val MEGINGIARD_RELEASE_THEME_URI: Uri =
+            Uri.parse("content://com.stormpanda.megingiard.provider/theme")
+        private val MEGINGIARD_DEBUG_THEME_URI: Uri =
+            Uri.parse("content://com.stormpanda.megingiard.debug.provider/theme")
     }
 
     private val contentResolver = context.contentResolver
@@ -97,9 +107,20 @@ class SystemSettingsRepository(private val context: Context) {
     private val _forceLandscape = MutableStateFlow(getInt(KEY_FORCE_LANDSCAPE, 1) == 1)
     val forceLandscape: StateFlow<Boolean> = _forceLandscape.asStateFlow()
 
-    // Theme Mode: 1 = System, 2 = Pure Black, 3 = Light, 4 = Dark
-    private val _themeMode = MutableStateFlow(getInt(KEY_TCC_THEME_MODE, 4))
+    // Theme Mode: Stock (1, 3, 4), Sync with Megingiard (100), or Megingiard Theme (101..108)
+    private val _themeMode = MutableStateFlow(readSavedThemeMode())
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
+
+    private val _customAccentArgb = MutableStateFlow(
+        prefs.getInt(PREF_CUSTOM_ACCENT_ARGB, DEFAULT_MEGINGIARD_ACCENT_ARGB)
+    )
+    val customAccentArgb: StateFlow<Int> = _customAccentArgb.asStateFlow()
+
+    private val _syncedMegingiardOption = MutableStateFlow(AppThemeOption.MEGINGIARD)
+    val syncedMegingiardOption: StateFlow<AppThemeOption> = _syncedMegingiardOption.asStateFlow()
+
+    private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(null)
+    val syncedMegingiardAccentArgb: StateFlow<Int?> = _syncedMegingiardAccentArgb.asStateFlow()
 
     // Refresh Rate: 60 or 120
     private val _refreshRate = MutableStateFlow(readRefreshRate())
@@ -125,6 +146,26 @@ class SystemSettingsRepository(private val context: Context) {
     private val settingsObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             refreshAll()
+        }
+    }
+
+    private val megingiardThemeObserver = object : ContentObserver(mainHandler) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            refreshMegingiardSyncedTheme()
+        }
+    }
+
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            PREF_APP_THEME_MODE -> {
+                _themeMode.value = readSavedThemeMode()
+            }
+            PREF_CUSTOM_ACCENT_ARGB -> {
+                _customAccentArgb.value = prefs.getInt(
+                    PREF_CUSTOM_ACCENT_ARGB,
+                    DEFAULT_MEGINGIARD_ACCENT_ARGB
+                )
+            }
         }
     }
 
@@ -164,6 +205,23 @@ class SystemSettingsRepository(private val context: Context) {
                 settingsObserver
             )
         }
+        try {
+            contentResolver.registerContentObserver(
+                MEGINGIARD_RELEASE_THEME_URI,
+                true,
+                megingiardThemeObserver
+            )
+        } catch (_: Throwable) {
+        }
+        try {
+            contentResolver.registerContentObserver(
+                MEGINGIARD_DEBUG_THEME_URI,
+                true,
+                megingiardThemeObserver
+            )
+        } catch (_: Throwable) {
+        }
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
         context.registerReceiver(volumeReceiver, filter)
         refreshAll()
@@ -174,6 +232,14 @@ class SystemSettingsRepository(private val context: Context) {
         isRegistered = false
         try {
             contentResolver.unregisterContentObserver(settingsObserver)
+        } catch (_: Throwable) {
+        }
+        try {
+            contentResolver.unregisterContentObserver(megingiardThemeObserver)
+        } catch (_: Throwable) {
+        }
+        try {
+            prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         } catch (_: Throwable) {
         }
         try {
@@ -193,7 +259,12 @@ class SystemSettingsRepository(private val context: Context) {
         _vibrateOn.value = getInt(KEY_VIBRATE_ON, 1) == 1
         _ambientLightEnabled.value = readAmbientLightState()
         _forceLandscape.value = getInt(KEY_FORCE_LANDSCAPE, 1) == 1
-        _themeMode.value = getInt(KEY_TCC_THEME_MODE, 4)
+        _themeMode.value = readSavedThemeMode()
+        _customAccentArgb.value = prefs.getInt(
+            PREF_CUSTOM_ACCENT_ARGB,
+            DEFAULT_MEGINGIARD_ACCENT_ARGB
+        )
+        refreshMegingiardSyncedTheme()
         _refreshRate.value = readRefreshRate()
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
         _topBrightness.value = readDisplayBrightnessPercent(0)
@@ -325,8 +396,54 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setThemeMode(mode: Int) {
-        PrivilegedBridge.putSystemSettingInt(context, KEY_TCC_THEME_MODE, mode)
+        prefs.edit().putInt(PREF_APP_THEME_MODE, mode).apply()
         _themeMode.value = mode
+        val stockEquivalent = when (mode) {
+            1 -> 1
+            3 -> 3
+            else -> 4
+        }
+        PrivilegedBridge.putSystemSettingInt(context, KEY_TCC_THEME_MODE, stockEquivalent)
+        if (mode == AppThemeOption.SYNC_MEGINGIARD.id) {
+            refreshMegingiardSyncedTheme()
+        }
+    }
+
+    fun setCustomAccentArgb(argb: Int) {
+        prefs.edit().putInt(PREF_CUSTOM_ACCENT_ARGB, argb).apply()
+        _customAccentArgb.value = argb
+    }
+
+    fun refreshMegingiardSyncedTheme() {
+        val uris = listOf(MEGINGIARD_RELEASE_THEME_URI, MEGINGIARD_DEBUG_THEME_URI)
+        for (uri in uris) {
+            try {
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val modeIdx = cursor.getColumnIndex("theme_mode")
+                        val accentIdx = cursor.getColumnIndex("accent_color")
+                        val modeStr = if (modeIdx >= 0) cursor.getString(modeIdx) else null
+                        val accentInt = if (accentIdx >= 0 && !cursor.isNull(accentIdx)) {
+                            cursor.getInt(accentIdx)
+                        } else {
+                            null
+                        }
+                        _syncedMegingiardOption.value = AppThemeOption.fromMegingiardIpcName(modeStr)
+                        _syncedMegingiardAccentArgb.value = accentInt
+                        return
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun readSavedThemeMode(): Int {
+        if (prefs.contains(PREF_APP_THEME_MODE)) {
+            return prefs.getInt(PREF_APP_THEME_MODE, AppThemeOption.STOCK_DARK.id)
+        }
+        val sysMode = getInt(KEY_TCC_THEME_MODE, AppThemeOption.STOCK_DARK.id)
+        return if (sysMode == 2) AppThemeOption.STOCK_DARK.id else sysMode
     }
 
     fun toggleRefreshRate() {
