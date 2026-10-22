@@ -63,6 +63,8 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
         const val PREF_SAVED_OS_THEME_JSON = "saved_os_theme_json"
         const val PREF_DUAL_VOLUME_PERCENT = "dual_volume_percent"
+        const val PREF_DUAL_BRIGHTNESS_ACTIVE = "dual_brightness_active"
+        const val PREF_DUAL_VOLUME_ACTIVE = "dual_volume_active"
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -153,6 +155,14 @@ class SystemSettingsRepository(private val context: Context) {
     private val _bottomBrightness = MutableStateFlow(readDisplayBrightnessPercent(4))
     val bottomBrightness: StateFlow<Int> = _bottomBrightness.asStateFlow()
 
+    private val _isDualBrightnessActive = MutableStateFlow(
+        prefs.getBoolean(
+            PREF_DUAL_BRIGHTNESS_ACTIVE,
+            _dualBrightness.value == _topBrightness.value && _dualBrightness.value == _bottomBrightness.value
+        )
+    )
+    val isDualBrightnessActive: StateFlow<Boolean> = _isDualBrightnessActive.asStateFlow()
+
     // Volume (0..100% for slider UI)
     private val _dualVolumePercent = MutableStateFlow(readDualVolumePercent())
     val dualVolumePercent: StateFlow<Int> = _dualVolumePercent.asStateFlow()
@@ -163,9 +173,18 @@ class SystemSettingsRepository(private val context: Context) {
     private val _secondaryVolumePercent = MutableStateFlow(readSecondaryVolumePercent())
     val secondaryVolumePercent: StateFlow<Int> = _secondaryVolumePercent.asStateFlow()
 
+    private val _isDualVolumeActive = MutableStateFlow(
+        prefs.getBoolean(
+            PREF_DUAL_VOLUME_ACTIVE,
+            _dualVolumePercent.value == _primaryVolumePercent.value && _dualVolumePercent.value == _secondaryVolumePercent.value
+        )
+    )
+    val isDualVolumeActive: StateFlow<Boolean> = _isDualVolumeActive.asStateFlow()
+
     private val settingsObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            refreshAll()
+            val refreshBrightness = uri == null || uri.lastPathSegment == "screen_brightness"
+            refreshAll(refreshDisplayBrightness = refreshBrightness)
         }
     }
 
@@ -195,12 +214,23 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_DUAL_VOLUME_PERCENT -> {
                 _dualVolumePercent.value = readDualVolumePercent()
             }
+            PREF_DUAL_BRIGHTNESS_ACTIVE -> {
+                _isDualBrightnessActive.value = prefs.getBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, false)
+            }
+            PREF_DUAL_VOLUME_ACTIVE -> {
+                _isDualVolumeActive.value = prefs.getBoolean(PREF_DUAL_VOLUME_ACTIVE, false)
+            }
         }
     }
 
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            _primaryVolumePercent.value = readPrimaryVolumePercent(_primaryVolumePercent.value)
+            val updated = readPrimaryVolumePercent(_primaryVolumePercent.value)
+            if (updated != _primaryVolumePercent.value) {
+                _primaryVolumePercent.value = updated
+                _isDualVolumeActive.value = false
+                prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+            }
         }
     }
 
@@ -225,7 +255,8 @@ class SystemSettingsRepository(private val context: Context) {
             KEY_JOYSTICK_LIGHT_ENABLED,
             KEY_FORCE_LANDSCAPE,
             KEY_TCC_THEME_MODE,
-            KEY_PEAK_REFRESH_RATE
+            KEY_PEAK_REFRESH_RATE,
+            "screen_brightness"
         )
         for (key in keys) {
             contentResolver.registerContentObserver(
@@ -277,7 +308,7 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
-    fun refreshAll() {
+    fun refreshAll(refreshDisplayBrightness: Boolean = true) {
         _dualScreenDisplayMode.value = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
         _screenFocusLock.value = getInt(KEY_SCREEN_FOCUS_LOCK, 0)
         _performanceMode.value = getInt(KEY_PERFORMANCE_MODE, 0)
@@ -298,8 +329,10 @@ class SystemSettingsRepository(private val context: Context) {
         syncOsThemeIfNeeded()
         _refreshRate.value = readRefreshRate()
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
-        _topBrightness.value = readDisplayBrightnessPercent(0)
-        _bottomBrightness.value = readDisplayBrightnessPercent(4)
+        if (refreshDisplayBrightness) {
+            _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
+            _bottomBrightness.value = readDisplayBrightnessPercent(4, _bottomBrightness.value)
+        }
         _dualVolumePercent.value = readDualVolumePercent()
         _primaryVolumePercent.value = readPrimaryVolumePercent(_primaryVolumePercent.value)
         _secondaryVolumePercent.value = readSecondaryVolumePercent(_secondaryVolumePercent.value)
@@ -307,8 +340,8 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun refreshDisplayBrightness() {
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, _dualBrightness.value)
-        _topBrightness.value = readDisplayBrightnessPercent(0)
-        _bottomBrightness.value = readDisplayBrightnessPercent(4)
+        _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
+        _bottomBrightness.value = readDisplayBrightnessPercent(4, _bottomBrightness.value)
     }
 
     fun setDualScreenDisplayMode(mode: Int) {
@@ -650,6 +683,14 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setDisplayBrightnessPercent(displayId: Int, percent: Int, temporary: Boolean) {
+        _isDualBrightnessActive.value = false
+        if (!temporary) {
+            prefs.edit().putBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, false).apply()
+        }
+        applyDisplayBrightnessPercent(displayId, percent, temporary)
+    }
+
+    private fun applyDisplayBrightnessPercent(displayId: Int, percent: Int, temporary: Boolean) {
         val p = percent.coerceIn(0, 100)
         if (displayId == 0) {
             _topBrightness.value = p
@@ -665,25 +706,37 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun setDualScreenBrightnessPercent(percent: Int, temporary: Boolean) {
         val p = percent.coerceIn(0, 100)
+        _isDualBrightnessActive.value = true
         _dualBrightness.value = p
         _topBrightness.value = p
         _bottomBrightness.value = p
-        setDisplayBrightnessPercent(0, p, temporary)
-        setDisplayBrightnessPercent(4, p, temporary)
+        applyDisplayBrightnessPercent(0, p, temporary)
+        applyDisplayBrightnessPercent(4, p, temporary)
         if (!temporary) {
+            prefs.edit().putBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, true).apply()
             PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, p)
         }
     }
 
     fun setDualVolumePercent(percent: Int) {
         val p = percent.coerceIn(0, 100)
+        _isDualVolumeActive.value = true
         _dualVolumePercent.value = p
-        prefs.edit().putInt(PREF_DUAL_VOLUME_PERCENT, p).apply()
-        setPrimaryVolumePercent(p)
-        setSecondaryVolumePercent(p)
+        prefs.edit()
+            .putInt(PREF_DUAL_VOLUME_PERCENT, p)
+            .putBoolean(PREF_DUAL_VOLUME_ACTIVE, true)
+            .apply()
+        applyPrimaryVolumePercent(p)
+        applySecondaryVolumePercent(p)
     }
 
     fun setPrimaryVolumePercent(percent: Int) {
+        _isDualVolumeActive.value = false
+        prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+        applyPrimaryVolumePercent(percent)
+    }
+
+    private fun applyPrimaryVolumePercent(percent: Int) {
         val p = percent.coerceIn(0, 100)
         _primaryVolumePercent.value = p
         val maxVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
@@ -693,6 +746,12 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setSecondaryVolumePercent(percent: Int) {
+        _isDualVolumeActive.value = false
+        prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+        applySecondaryVolumePercent(percent)
+    }
+
+    private fun applySecondaryVolumePercent(percent: Int) {
         val p = percent.coerceIn(0, 100)
         _secondaryVolumePercent.value = p
         val target = ((p / 100f) * 15f).roundToInt().coerceIn(0, 15)
@@ -791,13 +850,17 @@ class SystemSettingsRepository(private val context: Context) {
         return raw.split(",").any { it.trim() == "1" }
     }
 
-    private fun readDisplayBrightnessPercent(displayId: Int): Int {
+    private fun readDisplayBrightnessPercent(displayId: Int, currentPercent: Int = -1): Int {
         val info = PrivilegedBridge.getDisplayBrightnessInfo(context, displayId)
         val b = info.getOrElse(0) { 0.5f }
         val min = info.getOrElse(1) { 0f }
         val max = info.getOrElse(2) { 1f }
         if (max <= min) return 50
-        return (((b - min) / (max - min)) * 100f).roundToInt().coerceIn(0, 100)
+        val computed = (((b - min) / (max - min)) * 100f).roundToInt().coerceIn(0, 100)
+        if (currentPercent in 0..100 && kotlin.math.abs(computed - currentPercent) <= 1) {
+            return currentPercent
+        }
+        return computed
     }
 
     private fun readDualVolumePercent(): Int {

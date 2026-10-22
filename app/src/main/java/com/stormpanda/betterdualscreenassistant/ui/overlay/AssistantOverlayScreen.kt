@@ -116,9 +116,11 @@ fun AssistantOverlayScreen(
     val dualBrightness by repository.dualBrightness.collectAsState()
     val topBrightness by repository.topBrightness.collectAsState()
     val bottomBrightness by repository.bottomBrightness.collectAsState()
+    val isDualBrightnessActive by repository.isDualBrightnessActive.collectAsState()
     val dualVolume by repository.dualVolumePercent.collectAsState()
     val primaryVolume by repository.primaryVolumePercent.collectAsState()
     val secondaryVolume by repository.secondaryVolumePercent.collectAsState()
+    val isDualVolumeActive by repository.isDualVolumeActive.collectAsState()
 
     val telemetry by telemetryMonitor.state.collectAsState()
 
@@ -188,9 +190,11 @@ fun AssistantOverlayScreen(
                             dualBrightness = dualBrightness,
                             topBrightness = topBrightness,
                             bottomBrightness = bottomBrightness,
+                            isDualBrightnessActive = isDualBrightnessActive,
                             dualVolume = dualVolume,
                             primaryVolume = primaryVolume,
                             secondaryVolume = secondaryVolume,
+                            isDualVolumeActive = isDualVolumeActive,
                             onSelectDisplayMode = { mode ->
                                 if (mode == 1 && dualScreenMode != 1) {
                                     // Replicate ScreenModeControlPanel.java line 286:
@@ -540,9 +544,11 @@ private fun ScreenControlTab(
     dualBrightness: Int,
     topBrightness: Int,
     bottomBrightness: Int,
+    isDualBrightnessActive: Boolean,
     dualVolume: Int,
     primaryVolume: Int,
     secondaryVolume: Int,
+    isDualVolumeActive: Boolean,
     onSelectDisplayMode: (Int) -> Unit,
     onDualBrightnessChange: (Int, Boolean) -> Unit,
     onTopBrightnessChange: (Int, Boolean) -> Unit,
@@ -612,6 +618,7 @@ private fun ScreenControlTab(
                     progress = dualBrightness,
                     kind = SliderKind.BRIGHTNESS,
                     onProgressChange = onDualBrightnessChange,
+                    isFillDimmed = !isDualBrightnessActive,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(0.293f)
@@ -653,6 +660,7 @@ private fun ScreenControlTab(
                     progress = dualVolume,
                     kind = SliderKind.VOLUME,
                     onProgressChange = { pct, _ -> onDualVolumeChange(pct) },
+                    isFillDimmed = !isDualVolumeActive,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(0.293f)

@@ -216,6 +216,7 @@ fun HorizontalSlidingBar(
     progress: Int,
     kind: SliderKind,
     onProgressChange: (newProgress: Int, temporary: Boolean) -> Unit,
+    isFillDimmed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
@@ -224,6 +225,7 @@ fun HorizontalSlidingBar(
     var isDragging by remember { mutableStateOf(false) }
 
     val displayProgress = if (isDragging) dragProgress.roundToInt() else progress
+    val effectiveFillDimmed = isFillDimmed && !isDragging
 
     @DrawableRes
     val rawIconRes = when (kind) {
@@ -330,15 +332,24 @@ fun HorizontalSlidingBar(
             val fraction = (displayProgress / 100f).coerceIn(0f, 1f)
 
             // Straight vertical right edge clipped by outer 15.dp rounded rect, matching x0.C0501a.b
+            val fillColor = if (effectiveFillDimmed) {
+                if (colors.isDark) {
+                    Color.White.copy(alpha = 0.18f)
+                } else {
+                    Color.Black.copy(alpha = 0.10f)
+                }
+            } else {
+                colors.sliderFill
+            }
             Box(
                 modifier = Modifier
                     .width(trackWidth * fraction)
                     .fillMaxHeight()
-                    .background(colors.sliderFill)
+                    .background(fillColor)
             )
 
             val iconSize = trackHeight * 0.55f
-            val sliderIconTint = if (colors.isMegingiardStyle && displayProgress >= 12) {
+            val sliderIconTint = if (!effectiveFillDimmed && colors.isMegingiardStyle && displayProgress >= 12) {
                 colors.onAccent
             } else {
                 colors.primary
