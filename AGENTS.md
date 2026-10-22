@@ -23,11 +23,14 @@ This file provides essential context, architectural invariants, hardware quirks,
   - `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb` lives outside the workspace and communicates with the ADB server over localhost sockets. Running it in the standard sandbox fails with `zsh: operation not permitted`.
   - `./gradlew` requires localhost TCP sockets to communicate with the Gradle daemon and access to `~/.gradle`.
   - Do **not** attempt `BypassSandbox: false` first for `adb` or `./gradlew` commands; execute them directly with `BypassSandbox: true`.
+- **Device Testing Rule (Do Not Simulate App Usage)**:
+  - Do **not** attempt to simulate usage of the app on the device (e.g., waking the screen, injecting input events, starting overlay intents to inspect UI, or taking screenshots) to test your implementation.
+  - Instead, after building (and optionally installing) your changes, **ask the user to perform the testing** on the device if verification is needed.
 - **Common Commands**:
   - Build debug APK: `./gradlew assembleDebug`
   - Install on device: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk`
   - Start foreground service: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb shell am start-foreground-service -n com.stormpanda.betterdualscreenassistant/.service.AssistantForegroundService`
-- **Capturing Display Screenshots via ADB**:
+- **Capturing Display Screenshots via ADB (Only When Explicitly Requested)**:
   - Physical display IDs (`screencap -d <id>`) are assigned per boot/reconnect by SurfaceFlinger. Query current IDs with:
     `adb shell dumpsys SurfaceFlinger --display-id` (`port=131` = Top `1920×1080`, `port=132` = Bottom `1240×1080`).
   - Capture screenshot:
