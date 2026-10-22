@@ -3,6 +3,7 @@ package com.stormpanda.betterdualscreenassistant.privileged
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
@@ -25,32 +26,115 @@ object PrivilegedBridge {
     private const val TAG = "PrivilegedBridge"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val isSpawning = AtomicBoolean(false)
+    private val clientToken = Binder()
 
     @Volatile
     private var helperBinder: IBinder? = null
+
+    @Volatile
+    private var replaceStockPreferred: Boolean = true
+
+    @Volatile
+    private var savedTopBrightness: Float = 0.4f
+
+    @Volatile
+    private var savedBottomBrightness: Float = 0.4f
 
     private val _isHelperConnected = MutableStateFlow(false)
     val isHelperConnected: StateFlow<Boolean> = _isHelperConnected.asStateFlow()
 
     fun onHelperBinderReceived(binder: IBinder) {
+        val oldBinder = helperBinder
+        if (oldBinder != null && oldBinder !== binder && oldBinder.isBinderAlive) {
+            shutdownHelperBinder(oldBinder)
+        }
         try {
             binder.linkToDeath({
                 Log.w(TAG, "PrivilegedHelperMain binder died")
-                helperBinder = null
-                _isHelperConnected.value = false
+                if (helperBinder === binder) {
+                    helperBinder = null
+                    _isHelperConnected.value = false
+                }
             }, 0)
         } catch (_: Throwable) {
         }
         helperBinder = binder
         _isHelperConnected.value = true
+        registerClientWithHelper(binder)
+    }
+
+    private fun registerClientWithHelper(binder: IBinder) {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            data.writeStrongBinder(clientToken)
+            data.writeString(PrivilegedHelperMain.APP_PACKAGE_NAME)
+            data.writeInt(if (replaceStockPreferred) 1 else 0)
+            data.writeFloat(savedTopBrightness)
+            data.writeFloat(savedBottomBrightness)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_REGISTER_CLIENT, data, reply, 0)
+            reply.readException()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to register client token with PrivilegedHelperMain", t)
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    private fun shutdownHelperBinder(binder: IBinder) {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_SHUTDOWN, data, reply, 0)
+            reply.readException()
+        } catch (_: Throwable) {
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    fun setReplaceStockPreferred(replace: Boolean) {
+        replaceStockPreferred = replace
+        syncWatchdogStateToHelper()
+    }
+
+    fun updateSavedBrightness(top: Float? = null, bottom: Float? = null) {
+        if (top != null && top > 0f) savedTopBrightness = top
+        if (bottom != null && bottom > 0f) savedBottomBrightness = bottom
+        syncWatchdogStateToHelper()
+    }
+
+    private fun syncWatchdogStateToHelper() {
+        val binder = helperBinder ?: return
+        if (!binder.isBinderAlive) return
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            data.writeInt(if (replaceStockPreferred) 1 else 0)
+            data.writeFloat(savedTopBrightness)
+            data.writeFloat(savedBottomBrightness)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_UPDATE_WATCHDOG_STATE, data, reply, 0)
+            reply.readException()
+        } catch (_: Throwable) {
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
     }
 
     fun ensureInitialized(context: Context) = ensureStarted(context)
 
     fun ensureStarted(context: Context) {
+        replaceStockPreferred = PServerClient.isReplaceStockPreferred(context)
         val current = helperBinder
         if (current != null && current.isBinderAlive && ping()) {
             _isHelperConnected.value = true
+            syncWatchdogStateToHelper()
             return
         }
         if (!isSpawning.compareAndSet(false, true)) return

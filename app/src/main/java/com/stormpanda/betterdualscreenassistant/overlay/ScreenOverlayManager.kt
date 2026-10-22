@@ -435,6 +435,7 @@ class ScreenOverlayManager(
             val cur = info.getOrElse(0) { 0.4f }
             if (cur >= 0f) {
                 savedTopBrightnessLinear = cur
+                PrivilegedBridge.updateSavedBrightness(top = cur)
             }
             val view = View(getDisplayContext(TOP_DISPLAY_ID)).apply {
                 setBackgroundColor(Color.BLACK)
@@ -490,6 +491,7 @@ class ScreenOverlayManager(
             val cur = info.getOrElse(0) { 0.4f }
             if (cur >= 0f) {
                 savedBottomBrightnessLinear = cur
+                PrivilegedBridge.updateSavedBrightness(bottom = cur)
             }
             val view = View(getDisplayContext(BOTTOM_DISPLAY_ID)).apply {
                 setBackgroundColor(Color.BLACK)

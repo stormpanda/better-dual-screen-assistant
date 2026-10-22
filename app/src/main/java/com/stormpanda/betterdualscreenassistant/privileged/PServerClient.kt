@@ -128,20 +128,29 @@ object PServerClient {
     }
 
     /**
-     * Enables or disables the stock `com.odin.dualscreen.assistant`.
+     * Enables or disables the stock `com.odin.dualscreen.assistant` ephemerally.
      *
      * Note: Because `com.odin.dualscreen.assistant` has `android:persistent="true"`,
      * `am force-stop` is ignored by ActivityManagerService, and `ThisApplication.onCreate()`
-     * binds `TccServices` with `BIND_AUTO_CREATE`. To reliably suppress its dynamically
-     * registered `TccKeyReceiver` and remove any existing overlay window:
-     * 1. Disable `TccServices`, `BootBroadcastReceiver`, and the package.
-     * 2. Kill (`SIGKILL`) the existing process so `WindowManagerService` immediately destroys
+     * only attempts `bindService(TccServices, BIND_AUTO_CREATE)` once at process startup.
+     *
+     * To suppress the stock app **ephemerally** (without leaving it disabled on disk in
+     * `PackageManager` across uninstalls or reboots):
+     * 1. Transiently disable `TccServices` in `PackageManager` and ensure the package itself
+     *    is enabled (recovering from any legacy `pm disable-user` state).
+     * 2. Kill (`SIGKILL`) the existing stock PID so `WindowManagerService` immediately destroys
      *    any attached `com.odin.dualscreen.assistant` windows and unbinds `TccServices`.
-     * 3. If `ActivityManagerService` respawns the persistent process (now unable to bind the
-     *    disabled `TccServices`), suspend the fresh windowless PID with `SIGSTOP` (`kill -STOP`).
+     * 3. Wait ~350ms for `ActivityManagerService` to respawn the persistent process (whose
+     *    `ThisApplication.onCreate()` fails to bind the transiently disabled `TccServices`).
+     * 4. Suspend the fresh windowless PID in memory with `SIGSTOP` (`kill -STOP`).
+     * 5. Immediately re-enable `TccServices` (and the package) in `PackageManager` so the
+     *    stock app is never left disabled on disk.
      */
     fun setStockAssistantEnabled(enabled: Boolean, context: Context? = null): Boolean {
-        context?.let { setReplaceStockPreferred(it, !enabled) }
+        context?.let {
+            setReplaceStockPreferred(it, !enabled)
+            PrivilegedBridge.setReplaceStockPreferred(!enabled)
+        }
         return if (enabled) {
             exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
@@ -155,8 +164,7 @@ object PServerClient {
         } else {
             exec("am stopservice -n $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm disable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
-            exec("pm disable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
-            val r1 = exec("pm disable-user --user 0 $STOCK_PACKAGE_NAME", wait = true)
+            exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
             val oldPid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
             if (oldPid.isNotEmpty()) {
                 exec("kill -9 $oldPid", wait = true)
@@ -169,7 +177,38 @@ object PServerClient {
             if (newPid.isNotEmpty()) {
                 exec("kill -STOP $newPid", wait = true)
             }
-            r1.isSuccess
+            // Immediately re-enable in PackageManager so the stock app is never left disabled on disk
+            exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
+            val rEnable = exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
+            exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
+            val verifyPid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
+            if (verifyPid.isNotEmpty()) {
+                exec("kill -STOP $verifyPid", wait = true)
+            }
+            rEnable.isSuccess
+        }
+    }
+
+    /**
+     * Ensures that if a previous version left the stock package or service disabled in
+     * `PackageManager` on disk while the process is already frozen, it is re-enabled on disk.
+     */
+    fun ensureStockPackageEnabledOnDisk(context: Context) {
+        try {
+            val appState = context.packageManager.getApplicationEnabledSetting(STOCK_PACKAGE_NAME)
+            if (appState == PackageManager.COMPONENT_ENABLED_STATE_DISABLED ||
+                appState == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER ||
+                appState == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED
+            ) {
+                exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
+                exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
+                exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
+                val pid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
+                if (pid.isNotEmpty()) {
+                    exec("kill -STOP $pid", wait = true)
+                }
+            }
+        } catch (_: Throwable) {
         }
     }
 }

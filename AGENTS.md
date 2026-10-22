@@ -65,16 +65,22 @@ Because the app is installed as a regular user app without `android:sharedUserId
 
 ---
 
-## 5. Stock `DualScreenAssistant` Suppression Quirk
+## 5. Stock `DualScreenAssistant` Ephemeral Suppression & Uninstall Recovery
 
 The built-in `com.odin.dualscreen.assistant` (`/system/app/DualScreenAssistant/DualScreenAssistant.apk`) is declared with `android:persistent="true"` and `android:sharedUserId="android.uid.system"`.
 
 - **Pitfall 1**: `am force-stop com.odin.dualscreen.assistant` is **ignored** by `ActivityManagerService` for persistent system apps.
 - **Pitfall 2**: Sending `kill -STOP` (`SIGSTOP`) while its `TccServices` overlay window is attached freezes the stock overlay window on the screen permanently because `WindowManagerService` does not remove windows belonging to stopped processes.
-- **Required Suppression Sequence (`PServerClient.setStockAssistantEnabled(false)`)**:
-  1. Stop and disable components (`pm disable com.odin.dualscreen.assistant/.services.TccServices`, `pm disable .../.receivers.BootBroadcastReceiver`, `pm disable-user --user 0 com.odin.dualscreen.assistant`).
+- **Pitfall 3**: Leaving `com.odin.dualscreen.assistant` or `.services.TccServices` permanently `pm disable`d on disk leaves the stock assistant broken if `BetterDualScreenAssistant` is uninstalled.
+- **Required Ephemeral Suppression Sequence (`PServerClient.setStockAssistantEnabled(false)`)**:
+  1. Stop and **transiently** disable `TccServices` (`am stopservice -n com.odin.dualscreen.assistant/.services.TccServices`, `pm disable com.odin.dualscreen.assistant/.services.TccServices`) while ensuring the package itself is enabled (`pm enable com.odin.dualscreen.assistant`).
   2. Kill (`kill -9`) the running PID so `WindowManagerService` immediately destroys any open stock overlay window and unbinds `TccServices`.
-  3. Sleep ~350ms for `ActivityManagerService` to respawn the persistent process (which can no longer bind the disabled `TccServices`), then send `kill -STOP` to the new windowless PID so its `Application` receivers remain frozen.
+  3. Sleep ~350ms for `ActivityManagerService` to respawn the persistent process (whose `ThisApplication.onCreate()` only attempts `bindService(TccServices)` once at startup and fails while `TccServices` is transiently disabled), then send `kill -STOP` to the new windowless PID so its `Application` receivers remain frozen in RAM.
+  4. **Immediately re-enable `TccServices` (`pm enable com.odin.dualscreen.assistant/.services.TccServices`)** while the process is frozen so the stock package and service are **never left disabled on disk** in `PackageManager`.
+- **Automatic Uninstall / Force-Stop Recovery (`PrivilegedHelperMain.kt`)**:
+  - `PrivilegedBridge` registers a client `IBinder` token with `PrivilegedHelperMain` (`UID 0`).
+  - When our app process dies (`IBinder.DeathRecipient.binderDied()`), `PrivilegedHelperMain` checks whether our package was uninstalled (`!isPackageInstalled`) or force-stopped (`ApplicationInfo.FLAG_STOPPED` after a 1.5s grace window that ignores in-place app updates).
+  - On uninstall or force-stop, `PrivilegedHelperMain` automatically resets `dual_screen_display_mode = 0`, restores any blanked screen's brightness and touch (`sys.temp.disabled.touch = "0,0"`), kills the frozen stock PID (`kill -9`), starts `com.odin.dualscreen.assistant/.services.TccServices`, and exits.
 - **Health Check (`PServerClient.isStockAssistantEnabled`)**: Checks `/proc/<pid>/stat` for state `) T ` (stopped) in addition to `PackageManager` enabled state.
 
 ---

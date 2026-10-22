@@ -165,10 +165,14 @@ class AssistantForegroundService : Service() {
     }
 
     private fun enforceStockTakeoverIfPreferred() {
-        if (PServerClient.isReplaceStockPreferred(applicationContext)) {
+        val replacePreferred = PServerClient.isReplaceStockPreferred(applicationContext)
+        PrivilegedBridge.setReplaceStockPreferred(replacePreferred)
+        if (replacePreferred) {
             serviceScope.launch(Dispatchers.IO) {
                 if (PServerClient.isStockAssistantEnabled(applicationContext)) {
                     PServerClient.setStockAssistantEnabled(false, applicationContext)
+                } else {
+                    PServerClient.ensureStockPackageEnabledOnDisk(applicationContext)
                 }
             }
         }
