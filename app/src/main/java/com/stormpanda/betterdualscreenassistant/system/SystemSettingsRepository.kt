@@ -136,10 +136,18 @@ class SystemSettingsRepository(private val context: Context) {
     private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(null)
     val syncedMegingiardAccentArgb: StateFlow<Int?> = _syncedMegingiardAccentArgb.asStateFlow()
 
+    private val _isMegingiardProviderAvailable = MutableStateFlow(false)
+    val isMegingiardProviderAvailable: StateFlow<Boolean> = _isMegingiardProviderAvailable.asStateFlow()
+
     private val _injectOsTheme = MutableStateFlow(
         prefs.getBoolean(PREF_INJECT_OS_THEME, false)
     )
     val injectOsTheme: StateFlow<Boolean> = _injectOsTheme.asStateFlow()
+
+    private val _showCloseBottomScreenTip = MutableStateFlow(
+        !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
+    )
+    val showCloseBottomScreenTip: StateFlow<Boolean> = _showCloseBottomScreenTip.asStateFlow()
 
     // Refresh Rate: 60 or 120
     private val _refreshRate = MutableStateFlow(readRefreshRate())
@@ -219,6 +227,9 @@ class SystemSettingsRepository(private val context: Context) {
             }
             PREF_DUAL_VOLUME_ACTIVE -> {
                 _isDualVolumeActive.value = prefs.getBoolean(PREF_DUAL_VOLUME_ACTIVE, false)
+            }
+            PREF_NO_MORE_CLOSE_TIP -> {
+                _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
             }
         }
     }
@@ -325,6 +336,7 @@ class SystemSettingsRepository(private val context: Context) {
             DEFAULT_MEGINGIARD_ACCENT_ARGB
         )
         _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
+        _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
         refreshMegingiardSyncedTheme()
         syncOsThemeIfNeeded()
         _refreshRate.value = readRefreshRate()
@@ -517,6 +529,7 @@ class SystemSettingsRepository(private val context: Context) {
                         }
                         _syncedMegingiardOption.value = AppThemeOption.fromMegingiardIpcName(modeStr)
                         _syncedMegingiardAccentArgb.value = accentInt
+                        _isMegingiardProviderAvailable.value = true
                         if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id) {
                             syncOsThemeIfNeeded()
                         }
@@ -526,6 +539,7 @@ class SystemSettingsRepository(private val context: Context) {
             } catch (_: Throwable) {
             }
         }
+        _isMegingiardProviderAvailable.value = false
     }
 
     private fun syncOsThemeIfNeeded(force: Boolean = false) {
@@ -764,6 +778,7 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun setNoMoreCloseBottomScreenTip(noMore: Boolean) {
         prefs.edit().putBoolean(PREF_NO_MORE_CLOSE_TIP, noMore).apply()
+        _showCloseBottomScreenTip.value = !noMore
     }
 
     /**
