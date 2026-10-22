@@ -40,10 +40,28 @@ object PrivilegedBridge {
     @Volatile
     private var savedBottomBrightness: Float = 0.4f
 
+    private class PendingOsThemeRequest(
+        val apply: Boolean,
+        val resourceNames: Array<String>,
+        val colorValues: IntArray,
+        val targetNightMode: Int,
+        val savedNightMode: Int,
+        val injectedThemeJson: String,
+        val savedThemeJson: String
+    )
+
+    @Volatile
+    private var pendingOsThemeRequest: PendingOsThemeRequest? = null
+
     private val _isHelperConnected = MutableStateFlow(false)
     val isHelperConnected: StateFlow<Boolean> = _isHelperConnected.asStateFlow()
 
     fun onHelperBinderReceived(binder: IBinder) {
+        if (!pingBinder(binder)) {
+            Log.w(TAG, "Received outdated PrivilegedHelperMain binder; shutting it down")
+            shutdownHelperBinder(binder)
+            return
+        }
         val oldBinder = helperBinder
         if (oldBinder != null && oldBinder !== binder && oldBinder.isBinderAlive) {
             shutdownHelperBinder(oldBinder)
@@ -61,6 +79,9 @@ object PrivilegedBridge {
         helperBinder = binder
         _isHelperConnected.value = true
         registerClientWithHelper(binder)
+        pendingOsThemeRequest?.let { req ->
+            dispatchOsThemeRequestToBinder(binder, req)
+        }
     }
 
     private fun registerClientWithHelper(binder: IBinder) {
@@ -156,13 +177,17 @@ object PrivilegedBridge {
 
     fun ping(): Boolean {
         val binder = helperBinder ?: return false
+        return pingBinder(binder)
+    }
+
+    private fun pingBinder(binder: IBinder): Boolean {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         return try {
             data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
             binder.transact(PrivilegedHelperMain.TRANSACTION_PING, data, reply, 0)
             reply.readException()
-            reply.readInt() == 1
+            reply.readInt() == PrivilegedHelperMain.HELPER_PROTOCOL_VERSION
         } catch (_: Throwable) {
             false
         } finally {
@@ -505,5 +530,86 @@ object PrivilegedBridge {
             }
         }
         PServerClient.exec("settings put system $key \"$value\"", wait = true)
+    }
+
+    fun applyOsThemeOverlay(
+        context: Context,
+        resourceNames: Array<String>,
+        colorValues: IntArray,
+        targetNightMode: Int,
+        savedNightMode: Int,
+        injectedThemeJson: String,
+        savedThemeJson: String
+    ) {
+        val req = PendingOsThemeRequest(
+            apply = true,
+            resourceNames = resourceNames,
+            colorValues = colorValues,
+            targetNightMode = targetNightMode,
+            savedNightMode = savedNightMode,
+            injectedThemeJson = injectedThemeJson,
+            savedThemeJson = savedThemeJson
+        )
+        pendingOsThemeRequest = req
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            if (dispatchOsThemeRequestToBinder(binder, req)) {
+                return
+            }
+        }
+        ensureStarted(context)
+    }
+
+    fun clearOsThemeOverlay(context: Context?, restoreNightMode: Int, restoreThemeJson: String = "") {
+        val req = PendingOsThemeRequest(
+            apply = false,
+            resourceNames = emptyArray(),
+            colorValues = IntArray(0),
+            targetNightMode = restoreNightMode,
+            savedNightMode = restoreNightMode,
+            injectedThemeJson = "",
+            savedThemeJson = restoreThemeJson
+        )
+        pendingOsThemeRequest = req
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            if (dispatchOsThemeRequestToBinder(binder, req)) {
+                pendingOsThemeRequest = null
+                return
+            }
+        }
+        context?.let { ensureStarted(it) }
+    }
+
+    private fun dispatchOsThemeRequestToBinder(
+        binder: IBinder,
+        req: PendingOsThemeRequest
+    ): Boolean {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            if (req.apply) {
+                data.writeStringArray(req.resourceNames)
+                data.writeIntArray(req.colorValues)
+                data.writeInt(req.targetNightMode)
+                data.writeInt(req.savedNightMode)
+                data.writeString(req.injectedThemeJson)
+                data.writeString(req.savedThemeJson)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0)
+            } else {
+                data.writeInt(req.targetNightMode)
+                data.writeString(req.savedThemeJson)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_CLEAR_OS_THEME, data, reply, 0)
+            }
+            reply.readException()
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to dispatch OS theme request to PrivilegedHelperMain", t)
+            false
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
     }
 }

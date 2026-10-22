@@ -640,7 +640,10 @@ fun TccOptionDialog(
     onCustomFanSpeedChange: ((Int) -> Unit)? = null,
     accentPresets: List<Color> = emptyList(),
     selectedAccentArgb: Int? = null,
-    onSelectAccentColor: ((Color) -> Unit)? = null
+    onSelectAccentColor: ((Color) -> Unit)? = null,
+    showOsThemeToggle: Boolean = false,
+    injectOsThemeEnabled: Boolean = false,
+    onToggleInjectOsTheme: ((Boolean) -> Unit)? = null
 ) {
     val colors = LocalTccColors.current
 
@@ -744,7 +747,7 @@ fun TccOptionDialog(
                         )
                     }
 
-                    if (index < options.lastIndex || (showCustomFanSlider && selectedId == 6) || accentPresets.isNotEmpty()) {
+                    if (index < options.lastIndex || (showCustomFanSlider && selectedId == 6) || accentPresets.isNotEmpty() || showOsThemeToggle) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -781,6 +784,68 @@ fun TccOptionDialog(
                                     }
                                 )
                                 .clickable { onSelectAccentColor(preset) }
+                        )
+                    }
+                }
+                if (showOsThemeToggle) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .height(1.dp)
+                            .background(colors.fourth)
+                    )
+                }
+            }
+
+            if (showOsThemeToggle && onToggleInjectOsTheme != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clickable { onToggleInjectOsTheme(!injectOsThemeEnabled) }
+                        .padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Inject Theme Colors into OS",
+                        color = colors.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    val trackColor = if (injectOsThemeEnabled) colors.accent else colors.fourth
+                    val thumbColor = if (injectOsThemeEnabled) {
+                        if (colors.isMegingiardStyle) colors.onAccent else Color.White
+                    } else {
+                        colors.secondary
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(38.dp)
+                            .height(20.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(trackColor)
+                            .then(
+                                if (!injectOsThemeEnabled) {
+                                    Modifier.border(1.dp, colors.tertiary, RoundedCornerShape(10.dp))
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .padding(horizontal = 2.dp),
+                        contentAlignment = if (injectOsThemeEnabled) {
+                            Alignment.CenterEnd
+                        } else {
+                            Alignment.CenterStart
+                        }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(thumbColor)
                         )
                     }
                 }

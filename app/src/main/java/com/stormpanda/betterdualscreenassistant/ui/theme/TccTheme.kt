@@ -7,7 +7,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import com.stormpanda.betterdualscreenassistant.R
 
 private const val LUMINANCE_CONTRAST_THRESHOLD = 0.45f
@@ -394,6 +397,119 @@ fun resolveTccPalette(
         AppThemeOption.RETRO_PHOSPHOR -> RetroPhosphorPalette
         AppThemeOption.ROYAL_ASGARD -> RoyalAsgardPalette
     }
+}
+
+private fun Color.toOpaqueColor(backdrop: Color): Color {
+    val opaqueBackdrop = backdrop.copy(alpha = 1f)
+    return if (alpha >= 0.999f) copy(alpha = 1f) else compositeOver(opaqueBackdrop).copy(alpha = 1f)
+}
+
+private fun Color.toOpaqueArgb(backdrop: Color): Int {
+    return toOpaqueColor(backdrop).toArgb() or (0xFF shl 24)
+}
+
+/**
+ * Builds the 65 Android 13 dynamic color resource entries (`android:color/system_neutral1_*`,
+ * `system_neutral2_*`, `system_accent1_*`, `system_accent2_*`, `system_accent3_*`) for a
+ * `FabricatedOverlay` targeting `"android"` so SystemUI, Settings, and Material You apps
+ * adopt the exact [palette] surfaces, text, and accent colors.
+ */
+fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<String>, IntArray> {
+    val bg = palette.primaryBackground.copy(alpha = 1f)
+    val panel = palette.panelBackground.toOpaqueColor(bg)
+    val elevated = palette.fourth.toOpaqueColor(bg)
+    val pressed = palette.panelBackgroundSelected.toOpaqueColor(bg)
+    val textPrimary = palette.primary.toOpaqueColor(bg)
+    val textSecondary = palette.secondary.toOpaqueColor(bg)
+    val accent = palette.accent.toOpaqueColor(bg)
+
+    val cardSurface = lerp(panel, elevated, 0.5f)
+    val activeAccentTile = if (accent.luminance() < 0.22f) {
+        lerp(accent, Color.White, 0.22f)
+    } else {
+        accent
+    }
+    val secBase = lerp(textSecondary, accent, 0.45f)
+    val tertBase = lerp(textPrimary, accent, 0.65f)
+
+    val entries = LinkedHashMap<String, Int>(68)
+    fun putColor(name: String, color: Color) {
+        entries["android:color/$name"] = color.toOpaqueArgb(bg)
+    }
+
+    // system_neutral1: Main backgrounds (900), cards/inactive QS tiles (800), elevated (700), text (100/50)
+    putColor("system_neutral1_10", lerp(textPrimary, Color.White, 0.85f))
+    putColor("system_neutral1_50", lerp(textPrimary, Color.White, 0.45f))
+    putColor("system_neutral1_100", textPrimary)
+    putColor("system_neutral1_200", lerp(textSecondary, textPrimary, 0.55f))
+    putColor("system_neutral1_300", textSecondary)
+    putColor("system_neutral1_400", lerp(pressed, textSecondary, 0.60f))
+    putColor("system_neutral1_500", lerp(pressed, textSecondary, 0.30f))
+    putColor("system_neutral1_600", pressed)
+    putColor("system_neutral1_700", elevated)
+    putColor("system_neutral1_800", cardSurface)
+    putColor("system_neutral1_900", bg)
+    putColor("system_neutral1_1000", Color.Black)
+
+    // system_neutral2: Surface variants (700), outlines (400), secondary text/icons (200)
+    putColor("system_neutral2_10", lerp(textPrimary, Color.White, 0.85f))
+    putColor("system_neutral2_50", lerp(textPrimary, Color.White, 0.45f))
+    putColor("system_neutral2_100", textPrimary)
+    putColor("system_neutral2_200", textSecondary)
+    putColor("system_neutral2_300", lerp(pressed, textSecondary, 0.82f))
+    putColor("system_neutral2_400", lerp(pressed, textSecondary, 0.60f))
+    putColor("system_neutral2_500", lerp(pressed, textSecondary, 0.32f))
+    putColor("system_neutral2_600", pressed)
+    putColor("system_neutral2_700", elevated)
+    putColor("system_neutral2_800", panel)
+    putColor("system_neutral2_900", bg)
+    putColor("system_neutral2_1000", Color.Black)
+
+    // system_accent1: Primary accent (100 = active QS tiles/sliders, 200 = M3 primary, 700 = primaryContainer)
+    putColor("system_accent1_10", lerp(accent, Color.White, 0.85f))
+    putColor("system_accent1_50", lerp(accent, Color.White, 0.55f))
+    putColor("system_accent1_100", activeAccentTile)
+    putColor("system_accent1_200", accent)
+    putColor("system_accent1_300", lerp(accent, bg, 0.14f))
+    putColor("system_accent1_400", lerp(accent, bg, 0.28f))
+    putColor("system_accent1_500", lerp(accent, bg, 0.42f))
+    putColor("system_accent1_600", lerp(accent, bg, 0.56f))
+    putColor("system_accent1_700", lerp(accent, bg, 0.68f))
+    putColor("system_accent1_800", lerp(accent, bg, 0.80f))
+    putColor("system_accent1_900", lerp(accent, bg, 0.88f))
+    putColor("system_accent1_1000", Color.Black)
+
+    // system_accent2: Secondary accent & containers (700 = M3 secondaryContainer & QS active subtitle)
+    putColor("system_accent2_10", lerp(secBase, Color.White, 0.85f))
+    putColor("system_accent2_50", lerp(secBase, Color.White, 0.55f))
+    putColor("system_accent2_100", lerp(secBase, Color.White, 0.25f))
+    putColor("system_accent2_200", secBase)
+    putColor("system_accent2_300", lerp(secBase, bg, 0.18f))
+    putColor("system_accent2_400", lerp(secBase, bg, 0.35f))
+    putColor("system_accent2_500", lerp(secBase, bg, 0.50f))
+    putColor("system_accent2_600", lerp(secBase, bg, 0.62f))
+    putColor("system_accent2_700", lerp(pressed, accent, 0.25f))
+    putColor("system_accent2_800", lerp(bg, accent, 0.18f))
+    putColor("system_accent2_900", lerp(bg, accent, 0.10f))
+    putColor("system_accent2_1000", Color.Black)
+
+    // system_accent3: Tertiary accent
+    putColor("system_accent3_10", lerp(tertBase, Color.White, 0.85f))
+    putColor("system_accent3_50", lerp(tertBase, Color.White, 0.55f))
+    putColor("system_accent3_100", lerp(tertBase, Color.White, 0.25f))
+    putColor("system_accent3_200", tertBase)
+    putColor("system_accent3_300", lerp(tertBase, bg, 0.18f))
+    putColor("system_accent3_400", lerp(tertBase, bg, 0.35f))
+    putColor("system_accent3_500", lerp(tertBase, bg, 0.50f))
+    putColor("system_accent3_600", lerp(tertBase, bg, 0.62f))
+    putColor("system_accent3_700", lerp(pressed, tertBase, 0.25f))
+    putColor("system_accent3_800", lerp(bg, tertBase, 0.18f))
+    putColor("system_accent3_900", lerp(bg, tertBase, 0.10f))
+    putColor("system_accent3_1000", Color.Black)
+
+    val keys = entries.keys.toTypedArray()
+    val values = IntArray(keys.size) { idx -> entries[keys[idx]] ?: 0xFF000000.toInt() }
+    return keys to values
 }
 
 /**

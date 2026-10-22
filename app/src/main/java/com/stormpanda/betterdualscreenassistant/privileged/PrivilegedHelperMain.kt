@@ -50,6 +50,15 @@ object PrivilegedHelperMain {
     const val TRANSACTION_REGISTER_CLIENT = IBinder.FIRST_CALL_TRANSACTION + 11
     const val TRANSACTION_UPDATE_WATCHDOG_STATE = IBinder.FIRST_CALL_TRANSACTION + 12
     const val TRANSACTION_SHUTDOWN = IBinder.FIRST_CALL_TRANSACTION + 13
+    const val TRANSACTION_APPLY_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 14
+    const val TRANSACTION_CLEAR_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 15
+
+    const val HELPER_PROTOCOL_VERSION = 5
+    const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
+    const val OS_THEME_OVERLAY_NAME = "os_theme"
+    const val SYSUI_PACKAGE = "com.android.systemui"
+    private const val TYPED_VALUE_INT_COLOR_ARGB8 = 0x1c
+    private const val KEY_THEME_CUSTOMIZATION_PACKAGES = "theme_customization_overlay_packages"
 
     private const val WATCHDOG_POLL_INTERVAL_MS = 250L
     private const val FORCE_STOP_GRACE_MS = 1500L
@@ -196,6 +205,32 @@ object PrivilegedHelperMain {
             null
         }
 
+        private val overlayManagerProxy: Any? = try {
+            val binder = getServiceMethod.invoke(null, "overlay") as? IBinder
+            if (binder != null) {
+                val stubClass = Class.forName("android.content.om.IOverlayManager\$Stub")
+                stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+            } else {
+                null
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to get IOverlayManager", t)
+            null
+        }
+
+        private val uiModeManagerProxy: Any? = try {
+            val binder = getServiceMethod.invoke(null, "uimode") as? IBinder
+            if (binder != null) {
+                val stubClass = Class.forName("android.app.IUiModeManager\$Stub")
+                stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+            } else {
+                null
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to get IUiModeManager", t)
+            null
+        }
+
         private val pServerBinder: IBinder? = try {
             getServiceMethod.invoke(null, "PServerBinder") as? IBinder
         } catch (_: Throwable) {
@@ -222,6 +257,30 @@ object PrivilegedHelperMain {
 
         @Volatile
         private var savedBottomBrightness: Float = 0.4f
+
+        @Volatile
+        private var savedStockNightMode: Int = -1
+
+        @Volatile
+        private var savedStockThemeJson: String = ""
+
+        @Volatile
+        private var osThemeOverlayActive: Boolean = false
+
+        @Volatile
+        private var lastOverlayResourceNames: Array<String> = emptyArray()
+
+        @Volatile
+        private var lastOverlayColorValues: IntArray = IntArray(0)
+
+        private val reassertOverlayPriorityRunnable = Runnable {
+            if (!osThemeOverlayActive || isShuttingDown) return@Runnable
+            val names = lastOverlayResourceNames
+            val values = lastOverlayColorValues
+            if (names.isNotEmpty() && names.size == values.size) {
+                commitOsThemeFabricatedOverlays(names, values)
+            }
+        }
 
         @Volatile
         private var deathElapsedRealtime: Long = 0L
@@ -312,7 +371,7 @@ object PrivilegedHelperMain {
                 when (code) {
                     TRANSACTION_PING -> {
                         reply?.writeNoException()
-                        reply?.writeInt(1)
+                        reply?.writeInt(HELPER_PROTOCOL_VERSION)
                         true
                     }
                     TRANSACTION_SET_BRIGHTNESS -> {
@@ -417,6 +476,31 @@ object PrivilegedHelperMain {
                         mainHandler.postDelayed(shutdownRunnable, 50L)
                         true
                     }
+                    TRANSACTION_APPLY_OS_THEME -> {
+                        val resourceNames = data.createStringArray() ?: emptyArray()
+                        val colorValues = data.createIntArray() ?: IntArray(0)
+                        val targetNightMode = data.readInt()
+                        val savedNightMode = data.readInt()
+                        val injectedThemeJson = data.readString() ?: ""
+                        val savedThemeJson = data.readString() ?: ""
+                        applyOsThemeOverlayInternal(
+                            resourceNames = resourceNames,
+                            colorValues = colorValues,
+                            targetNightMode = targetNightMode,
+                            savedNightMode = savedNightMode,
+                            injectedThemeJson = injectedThemeJson,
+                            savedThemeJson = savedThemeJson
+                        )
+                        reply?.writeNoException()
+                        true
+                    }
+                    TRANSACTION_CLEAR_OS_THEME -> {
+                        val restoreNightMode = data.readInt()
+                        val restoreThemeJson = data.readString() ?: ""
+                        clearOsThemeOverlayInternal(restoreNightMode, restoreThemeJson)
+                        reply?.writeNoException()
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -468,6 +552,17 @@ object PrivilegedHelperMain {
                     putInt("_user", 0)
                 }
                 callProviderExternal("settings", "PUT_system", key, extras)
+            } catch (_: Throwable) {
+            }
+        }
+
+        private fun putSecureSettingInternal(key: String, value: String) {
+            try {
+                val extras = Bundle().apply {
+                    putString("value", value)
+                    putInt("_user", 0)
+                }
+                callProviderExternal("settings", "PUT_secure", key, extras)
             } catch (_: Throwable) {
             }
         }
@@ -575,6 +670,9 @@ object PrivilegedHelperMain {
                 }
                 setPinScreenModeInternal(0)
 
+                // 2.5. Restore stock OS theme overlay and night mode if injected
+                clearOsThemeOverlayInternal(savedStockNightMode, savedStockThemeJson)
+
                 // 3. Re-enable and start stock DualScreenAssistant
                 execRootCommand("pm enable $STOCK_PACKAGE_NAME")
                 execRootCommand("pm enable $STOCK_PACKAGE_NAME/.services.TccServices")
@@ -595,6 +693,252 @@ object PrivilegedHelperMain {
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed during restoreDisplayAndStockAssistant", t)
             }
+        }
+
+        private fun applyOsThemeOverlayInternal(
+            resourceNames: Array<String>,
+            colorValues: IntArray,
+            targetNightMode: Int,
+            savedNightMode: Int,
+            injectedThemeJson: String,
+            savedThemeJson: String
+        ) {
+            mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            if (savedNightMode == 1 || savedNightMode == 2) {
+                savedStockNightMode = savedNightMode
+            }
+            if (savedThemeJson.isNotBlank() && !savedThemeJson.contains("\"999\"")) {
+                savedStockThemeJson = savedThemeJson
+            }
+            if (resourceNames.isNotEmpty() && resourceNames.size == colorValues.size) {
+                lastOverlayResourceNames = resourceNames
+                lastOverlayColorValues = colorValues
+                osThemeOverlayActive = true
+                if (injectedThemeJson.isNotBlank()) {
+                    putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, injectedThemeJson)
+                }
+                commitOsThemeFabricatedOverlays(resourceNames, colorValues)
+                mainHandler.postDelayed(reassertOverlayPriorityRunnable, 180L)
+                mainHandler.postDelayed(reassertOverlayPriorityRunnable, 450L)
+            } else {
+                lastOverlayResourceNames = emptyArray()
+                lastOverlayColorValues = IntArray(0)
+                unregisterOsThemeOverlayOnly()
+                restoreStockThemeJsonInternal(savedThemeJson)
+            }
+
+            if (targetNightMode == 1 || targetNightMode == 2) {
+                setNightModeInternal(targetNightMode)
+            }
+        }
+
+        private fun commitOsThemeFabricatedOverlays(
+            resourceNames: Array<String>,
+            colorValues: IntArray
+        ) {
+            val om = overlayManagerProxy ?: return
+            try {
+                val builderClass = Class.forName("android.content.om.FabricatedOverlay\$Builder")
+                val builderCtor = builderClass.getConstructor(
+                    String::class.java,
+                    String::class.java,
+                    String::class.java
+                )
+                val setTargetOverlayable = builderClass.getMethod(
+                    "setTargetOverlayable",
+                    String::class.java
+                )
+                val setResourceValue = builderClass.getMethod(
+                    "setResourceValue",
+                    String::class.java,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
+                val buildOverlay = builderClass.getMethod("build")
+
+                val shellBuilder = builderCtor.newInstance(
+                    OS_THEME_OWNING_PACKAGE,
+                    OS_THEME_OVERLAY_NAME,
+                    "android"
+                )
+                val neutralBuilder = builderCtor.newInstance(
+                    SYSUI_PACKAGE,
+                    "neutral",
+                    "android"
+                )
+                val accentBuilder = builderCtor.newInstance(
+                    SYSUI_PACKAGE,
+                    "accent",
+                    "android"
+                )
+                setTargetOverlayable.invoke(shellBuilder, "")
+                setTargetOverlayable.invoke(neutralBuilder, "")
+                setTargetOverlayable.invoke(accentBuilder, "")
+
+                for (i in resourceNames.indices) {
+                    val resName = resourceNames[i]
+                    val colorVal = colorValues[i]
+                    setResourceValue.invoke(
+                        shellBuilder,
+                        resName,
+                        TYPED_VALUE_INT_COLOR_ARGB8,
+                        colorVal
+                    )
+                    if (resName.contains("system_neutral")) {
+                        setResourceValue.invoke(
+                            neutralBuilder,
+                            resName,
+                            TYPED_VALUE_INT_COLOR_ARGB8,
+                            colorVal
+                        )
+                    } else if (resName.contains("system_accent")) {
+                        setResourceValue.invoke(
+                            accentBuilder,
+                            resName,
+                            TYPED_VALUE_INT_COLOR_ARGB8,
+                            colorVal
+                        )
+                    }
+                }
+                val shellOverlay = buildOverlay.invoke(shellBuilder)
+                val neutralOverlay = buildOverlay.invoke(neutralBuilder)
+                val accentOverlay = buildOverlay.invoke(accentBuilder)
+
+                val getIdentifier = shellOverlay.javaClass.getMethod("getIdentifier")
+                val shellId = getIdentifier.invoke(shellOverlay)
+                val neutralId = getIdentifier.invoke(neutralOverlay)
+                val accentId = getIdentifier.invoke(accentOverlay)
+
+                val idClass = Class.forName("android.content.om.OverlayIdentifier")
+                val idCtor = idClass.getConstructor(String::class.java, String::class.java)
+                val legacyOverlayId = idCtor.newInstance(APP_PACKAGE_NAME, OS_THEME_OVERLAY_NAME)
+
+                val txBuilderClass = Class.forName(
+                    "android.content.om.OverlayManagerTransaction\$Builder"
+                )
+                val txBuilder = txBuilderClass.getConstructor().newInstance()
+                val unregMethod = txBuilderClass.getMethod(
+                    "unregisterFabricatedOverlay",
+                    idClass
+                )
+                val regMethod = txBuilderClass.getMethod(
+                    "registerFabricatedOverlay",
+                    shellOverlay.javaClass
+                )
+                val setEnabledMethod = txBuilderClass.getMethod(
+                    "setEnabled",
+                    idClass,
+                    Boolean::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
+                val buildTx = txBuilderClass.getMethod("build")
+
+                unregMethod.invoke(txBuilder, legacyOverlayId)
+                regMethod.invoke(txBuilder, shellOverlay)
+                regMethod.invoke(txBuilder, neutralOverlay)
+                regMethod.invoke(txBuilder, accentOverlay)
+                setEnabledMethod.invoke(txBuilder, shellId, true, 0)
+                setEnabledMethod.invoke(txBuilder, neutralId, true, 0)
+                setEnabledMethod.invoke(txBuilder, accentId, true, 0)
+                val tx = buildTx.invoke(txBuilder)
+
+                val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
+                commitMethod.invoke(om, tx)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to commit FabricatedOverlay for OS theme", t)
+            }
+        }
+
+        private fun clearOsThemeOverlayInternal(restoreNightMode: Int, restoreThemeJson: String) {
+            mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            lastOverlayResourceNames = emptyArray()
+            lastOverlayColorValues = IntArray(0)
+            unregisterOsThemeOverlayOnly()
+            restoreStockThemeJsonInternal(restoreThemeJson)
+            savedStockThemeJson = ""
+            val nightToRestore = if (restoreNightMode == 1 || restoreNightMode == 2) {
+                restoreNightMode
+            } else {
+                savedStockNightMode
+            }
+            if (nightToRestore == 1 || nightToRestore == 2) {
+                setNightModeInternal(nightToRestore)
+            }
+            savedStockNightMode = -1
+        }
+
+        private fun restoreStockThemeJsonInternal(candidateJson: String) {
+            val raw = if (candidateJson.isNotBlank() && !candidateJson.contains("\"999\"")) {
+                candidateJson
+            } else {
+                savedStockThemeJson
+            }
+            val now = System.currentTimeMillis()
+            val fallback = """{"_applied_timestamp":$now,"android.theme.customization.color_index":"5","android.theme.customization.system_palette":"96CBFF","android.theme.customization.accent_color":"96CBFF","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"RAINBOW"}"""
+            val jsonToApply = if (raw.isNotBlank() && !raw.contains("\"999\"")) {
+                try {
+                    val obj = org.json.JSONObject(raw)
+                    obj.put("_applied_timestamp", now)
+                    obj.toString()
+                } catch (_: Throwable) {
+                    fallback
+                }
+            } else {
+                fallback
+            }
+            putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, jsonToApply)
+        }
+
+        private fun unregisterOsThemeOverlayOnly() {
+            mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            val om = overlayManagerProxy ?: return
+            try {
+                val idClass = Class.forName("android.content.om.OverlayIdentifier")
+                val idCtor = idClass.getConstructor(String::class.java, String::class.java)
+                val shellOverlayId = idCtor.newInstance(OS_THEME_OWNING_PACKAGE, OS_THEME_OVERLAY_NAME)
+                val legacyOverlayId = idCtor.newInstance(APP_PACKAGE_NAME, OS_THEME_OVERLAY_NAME)
+
+                val txBuilderClass = Class.forName(
+                    "android.content.om.OverlayManagerTransaction\$Builder"
+                )
+                val txBuilder = txBuilderClass.getConstructor().newInstance()
+                val unregMethod = txBuilderClass.getMethod(
+                    "unregisterFabricatedOverlay",
+                    idClass
+                )
+                val buildTx = txBuilderClass.getMethod("build")
+
+                unregMethod.invoke(txBuilder, shellOverlayId)
+                unregMethod.invoke(txBuilder, legacyOverlayId)
+                val tx = buildTx.invoke(txBuilder)
+
+                val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
+                commitMethod.invoke(om, tx)
+                osThemeOverlayActive = false
+            } catch (t: Throwable) {
+                Log.w(TAG, "unregisterOsThemeOverlayOnly failed", t)
+            }
+        }
+
+        private fun setNightModeInternal(mode: Int) {
+            val uim = uiModeManagerProxy
+            if (uim != null) {
+                try {
+                    val getNightMode = uim.javaClass.getMethod("getNightMode")
+                    val current = getNightMode.invoke(uim) as? Int ?: -1
+                    if (current == mode) return
+                    val setNightMode = uim.javaClass.getMethod(
+                        "setNightMode",
+                        Int::class.javaPrimitiveType
+                    )
+                    setNightMode.invoke(uim, mode)
+                    return
+                } catch (t: Throwable) {
+                    Log.w(TAG, "IUiModeManager.setNightMode($mode) failed, using fallback", t)
+                }
+            }
+            val cmdArg = if (mode == 2) "yes" else "no"
+            execRootCommand("cmd uimode night $cmdArg")
         }
 
         private fun setDisplayBrightnessInternal(displayId: Int, brightness: Float, temporary: Boolean) {

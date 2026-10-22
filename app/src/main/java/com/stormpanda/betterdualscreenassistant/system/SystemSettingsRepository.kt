@@ -13,11 +13,16 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.app.UiModeManager
 import android.content.SharedPreferences
 import android.provider.Settings
+import androidx.compose.ui.graphics.toArgb
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.DEFAULT_MEGINGIARD_ACCENT_ARGB
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
+import com.stormpanda.betterdualscreenassistant.ui.theme.buildOsDynamicColorOverlayEntries
+import com.stormpanda.betterdualscreenassistant.ui.theme.resolveTccPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +59,12 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
+        const val PREF_INJECT_OS_THEME = "inject_os_theme"
+        const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
+        const val PREF_SAVED_OS_THEME_JSON = "saved_os_theme_json"
+
+        @Volatile
+        private var lastAppliedOsThemeSignature: String = ""
 
         private val MEGINGIARD_RELEASE_THEME_URI: Uri =
             Uri.parse("content://com.stormpanda.megingiard.provider/theme")
@@ -122,6 +133,11 @@ class SystemSettingsRepository(private val context: Context) {
     private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(null)
     val syncedMegingiardAccentArgb: StateFlow<Int?> = _syncedMegingiardAccentArgb.asStateFlow()
 
+    private val _injectOsTheme = MutableStateFlow(
+        prefs.getBoolean(PREF_INJECT_OS_THEME, false)
+    )
+    val injectOsTheme: StateFlow<Boolean> = _injectOsTheme.asStateFlow()
+
     // Refresh Rate: 60 or 120
     private val _refreshRate = MutableStateFlow(readRefreshRate())
     val refreshRate: StateFlow<Int> = _refreshRate.asStateFlow()
@@ -159,12 +175,18 @@ class SystemSettingsRepository(private val context: Context) {
         when (key) {
             PREF_APP_THEME_MODE -> {
                 _themeMode.value = readSavedThemeMode()
+                syncOsThemeIfNeeded()
             }
             PREF_CUSTOM_ACCENT_ARGB -> {
                 _customAccentArgb.value = prefs.getInt(
                     PREF_CUSTOM_ACCENT_ARGB,
                     DEFAULT_MEGINGIARD_ACCENT_ARGB
                 )
+                syncOsThemeIfNeeded()
+            }
+            PREF_INJECT_OS_THEME -> {
+                _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
+                syncOsThemeIfNeeded()
             }
         }
     }
@@ -264,7 +286,9 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_CUSTOM_ACCENT_ARGB,
             DEFAULT_MEGINGIARD_ACCENT_ARGB
         )
+        _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
         refreshMegingiardSyncedTheme()
+        syncOsThemeIfNeeded()
         _refreshRate.value = readRefreshRate()
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
         _topBrightness.value = readDisplayBrightnessPercent(0)
@@ -407,11 +431,33 @@ class SystemSettingsRepository(private val context: Context) {
         if (mode == AppThemeOption.SYNC_MEGINGIARD.id) {
             refreshMegingiardSyncedTheme()
         }
+        syncOsThemeIfNeeded()
     }
 
     fun setCustomAccentArgb(argb: Int) {
         prefs.edit().putInt(PREF_CUSTOM_ACCENT_ARGB, argb).apply()
         _customAccentArgb.value = argb
+        syncOsThemeIfNeeded()
+    }
+
+    fun setInjectOsTheme(enabled: Boolean) {
+        if (enabled) {
+            val editor = prefs.edit().putBoolean(PREF_INJECT_OS_THEME, true)
+            if (!prefs.contains(PREF_SAVED_OS_NIGHT_MODE)) {
+                editor.putInt(PREF_SAVED_OS_NIGHT_MODE, readCurrentOsNightMode())
+            }
+            if (!prefs.contains(PREF_SAVED_OS_THEME_JSON)) {
+                val curJson = readCurrentOsThemeJson()
+                if (curJson.isNotBlank() && !curJson.contains("\"999\"")) {
+                    editor.putString(PREF_SAVED_OS_THEME_JSON, curJson)
+                }
+            }
+            editor.apply()
+        } else {
+            prefs.edit().putBoolean(PREF_INJECT_OS_THEME, false).apply()
+        }
+        _injectOsTheme.value = enabled
+        syncOsThemeIfNeeded(force = true)
     }
 
     fun refreshMegingiardSyncedTheme() {
@@ -430,11 +476,151 @@ class SystemSettingsRepository(private val context: Context) {
                         }
                         _syncedMegingiardOption.value = AppThemeOption.fromMegingiardIpcName(modeStr)
                         _syncedMegingiardAccentArgb.value = accentInt
+                        if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id) {
+                            syncOsThemeIfNeeded()
+                        }
                         return
                     }
                 }
             } catch (_: Throwable) {
             }
+        }
+    }
+
+    private fun syncOsThemeIfNeeded(force: Boolean = false) {
+        val inject = _injectOsTheme.value
+        if (!inject) {
+            val hadSavedSnapshot =
+                prefs.contains(PREF_SAVED_OS_NIGHT_MODE) || prefs.contains(PREF_SAVED_OS_THEME_JSON)
+            if (!force && lastAppliedOsThemeSignature == "OFF" && !hadSavedSnapshot) {
+                return
+            }
+            val savedNight = prefs.getInt(PREF_SAVED_OS_NIGHT_MODE, -1)
+            val savedJson = prefs.getString(PREF_SAVED_OS_THEME_JSON, "") ?: ""
+            lastAppliedOsThemeSignature = "OFF"
+            if (hadSavedSnapshot) {
+                prefs.edit()
+                    .remove(PREF_SAVED_OS_NIGHT_MODE)
+                    .remove(PREF_SAVED_OS_THEME_JSON)
+                    .apply()
+            }
+            if (force || hadSavedSnapshot) {
+                PrivilegedBridge.clearOsThemeOverlay(context, savedNight, savedJson)
+            }
+            return
+        }
+
+        if (!prefs.contains(PREF_SAVED_OS_NIGHT_MODE)) {
+            prefs.edit().putInt(PREF_SAVED_OS_NIGHT_MODE, readCurrentOsNightMode()).apply()
+        }
+        if (!prefs.contains(PREF_SAVED_OS_THEME_JSON)) {
+            val curJson = readCurrentOsThemeJson()
+            if (curJson.isNotBlank() && !curJson.contains("\"999\"")) {
+                prefs.edit().putString(PREF_SAVED_OS_THEME_JSON, curJson).apply()
+            }
+        }
+        val savedNight = prefs.getInt(PREF_SAVED_OS_NIGHT_MODE, 2)
+        val savedJson = prefs.getString(PREF_SAVED_OS_THEME_JSON, "") ?: ""
+        val option = AppThemeOption.fromId(_themeMode.value)
+
+        when (option) {
+            AppThemeOption.STOCK_SYSTEM -> {
+                val sig = "ON:STOCK_SYSTEM:$savedNight"
+                if (!force && lastAppliedOsThemeSignature == sig) return
+                lastAppliedOsThemeSignature = sig
+                PrivilegedBridge.clearOsThemeOverlay(context, savedNight, savedJson)
+            }
+            AppThemeOption.STOCK_LIGHT -> {
+                val sig = "ON:STOCK_LIGHT:$savedNight"
+                if (!force && lastAppliedOsThemeSignature == sig) return
+                lastAppliedOsThemeSignature = sig
+                PrivilegedBridge.applyOsThemeOverlay(
+                    context = context,
+                    resourceNames = emptyArray(),
+                    colorValues = IntArray(0),
+                    targetNightMode = 1,
+                    savedNightMode = savedNight,
+                    injectedThemeJson = "",
+                    savedThemeJson = savedJson
+                )
+            }
+            AppThemeOption.STOCK_DARK -> {
+                val sig = "ON:STOCK_DARK:$savedNight"
+                if (!force && lastAppliedOsThemeSignature == sig) return
+                lastAppliedOsThemeSignature = sig
+                PrivilegedBridge.applyOsThemeOverlay(
+                    context = context,
+                    resourceNames = emptyArray(),
+                    colorValues = IntArray(0),
+                    targetNightMode = 2,
+                    savedNightMode = savedNight,
+                    injectedThemeJson = "",
+                    savedThemeJson = savedJson
+                )
+            }
+            else -> {
+                val sig = "ON:MG:${option.id}:${_customAccentArgb.value}:" +
+                    "${_syncedMegingiardOption.value.id}:${_syncedMegingiardAccentArgb.value}:$savedNight"
+                if (!force && lastAppliedOsThemeSignature == sig) return
+                lastAppliedOsThemeSignature = sig
+                val palette = resolveTccPalette(
+                    option = option,
+                    systemDark = true,
+                    customAccentArgb = _customAccentArgb.value,
+                    syncedOption = _syncedMegingiardOption.value,
+                    syncedAccentArgb = _syncedMegingiardAccentArgb.value
+                )
+                val (names, values) = buildOsDynamicColorOverlayEntries(palette)
+                val injectedJson = buildInjectedThemeJson(palette)
+                PrivilegedBridge.applyOsThemeOverlay(
+                    context = context,
+                    resourceNames = names,
+                    colorValues = values,
+                    targetNightMode = 2,
+                    savedNightMode = savedNight,
+                    injectedThemeJson = injectedJson,
+                    savedThemeJson = savedJson
+                )
+            }
+        }
+    }
+
+    private fun readCurrentOsThemeJson(): String {
+        return try {
+            Settings.Secure.getString(contentResolver, "theme_customization_overlay_packages") ?: ""
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    private fun buildInjectedThemeJson(palette: TccColorPalette): String {
+        val accentHex = String.format("%06X", 0xFFFFFF and palette.accent.toArgb())
+        return try {
+            val obj = org.json.JSONObject()
+            obj.put("_applied_timestamp", System.currentTimeMillis())
+            obj.put("android.theme.customization.color_index", "999")
+            obj.put("android.theme.customization.system_palette", accentHex)
+            obj.put("android.theme.customization.accent_color", accentHex)
+            obj.put("android.theme.customization.color_source", "preset")
+            obj.put("android.theme.customization.theme_style", "CONTENT")
+            obj.toString()
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    private fun readCurrentOsNightMode(): Int {
+        return try {
+            val mode = Settings.Secure.getInt(contentResolver, "ui_night_mode", -1)
+            if (mode == 1 || mode == 2) {
+                mode
+            } else {
+                val uim = context.getSystemService(UiModeManager::class.java)
+                val nm = uim?.nightMode ?: UiModeManager.MODE_NIGHT_YES
+                if (nm == UiModeManager.MODE_NIGHT_NO) 1 else 2
+            }
+        } catch (_: Throwable) {
+            2
         }
     }
 

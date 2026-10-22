@@ -152,6 +152,7 @@ object PServerClient {
             PrivilegedBridge.setReplaceStockPreferred(!enabled)
         }
         return if (enabled) {
+            PrivilegedBridge.clearOsThemeOverlay(context, -1)
             exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)

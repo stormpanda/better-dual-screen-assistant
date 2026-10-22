@@ -102,6 +102,7 @@ private fun LauncherDashboardScreen(
     val customAccentArgb by repository.customAccentArgb.collectAsState()
     val syncedOption by repository.syncedMegingiardOption.collectAsState()
     val syncedAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
+    val injectOsTheme by repository.injectOsTheme.collectAsState()
     val selectedThemeOption = AppThemeOption.fromId(themeMode)
 
     var pServerAvailable by remember { mutableStateOf(false) }
@@ -251,6 +252,44 @@ private fun LauncherDashboardScreen(
                 color = colors.secondary,
                 fontSize = 13.sp
             )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.fifth)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Inject Theme Colors into OS",
+                        color = colors.primary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Applies the active Megingiard palette to Android 13 SystemUI, Quick Settings, Settings, and Material You apps. Selecting a Stock theme or toggling off reverts to the stock OS theme.",
+                        color = colors.secondary,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Switch(
+                    checked = injectOsTheme,
+                    onCheckedChange = { enabled ->
+                        repository.setInjectOsTheme(enabled)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
+                        checkedTrackColor = colors.accent
+                    )
+                )
+            }
 
             val customAccentColor = Color(customAccentArgb)
             val syncedAccentColor = syncedAccentArgb?.let { Color(it) } ?: syncedOption.previewAccent

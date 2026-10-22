@@ -100,6 +100,7 @@ fun AssistantOverlayScreen(
     val customAccentArgb by repository.customAccentArgb.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
+    val injectOsTheme by repository.injectOsTheme.collectAsState()
     val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
     val focusLock by repository.screenFocusLock.collectAsState()
     val performanceMode by repository.performanceMode.collectAsState()
@@ -495,10 +496,15 @@ fun AssistantOverlayScreen(
                         onSelectAccentColor = { color ->
                             repository.setCustomAccentArgb(color.toArgb())
                         },
+                        showOsThemeToggle = true,
+                        injectOsThemeEnabled = injectOsTheme,
+                        onToggleInjectOsTheme = { enabled ->
+                            repository.setInjectOsTheme(enabled)
+                        },
                         onSelectOption = { selected ->
                             repository.setThemeMode(selected)
                             val newlySelected = AppThemeOption.fromId(selected)
-                            if (!newlySelected.supportsCustomAccent) {
+                            if (!newlySelected.supportsCustomAccent && !injectOsTheme) {
                                 coroutineScope.launch {
                                     delay(300L)
                                     activeDialog = ActiveDialog.NONE
