@@ -1,33 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
-    android:height="108dp"
     android:width="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:height="108dp"
+    android:viewportWidth="1110"
+    android:viewportHeight="1110">
+
+    <!-- Top Screen Base -->
     <path
-        android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
+        android:pathData="M363,338L747,338A34,34 0 0,1 781,372L781,508A34,34 0 0,1 747,542L363,542A34,34 0 0,1 329,508L329,372A34,34 0 0,1 363,338Z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:angle="0"
                 android:type="linear"
-                android:startX="42.9492"
-                android:startY="49.5979"
-                android:endX="85.8476"
-                android:endY="92.4963">
+                android:startX="329"
+                android:startY="338"
+                android:endX="781"
+                android:endY="772">
                 <item
-                    android:color="#44000000"
-                    android:offset="0"/>
+                    android:color="#FF7A8FA6"
+                    android:offset="0.0" />
                 <item
-                    android:color="#00000000"
-                    android:offset="1"/>
+                    android:color="#FF576980"
+                    android:offset="1.0" />
             </gradient>
         </aapt:attr>
     </path>
+
+    <!-- Top Screen Glass Reflection Sheen -->
+    <group>
+        <clip-path
+            android:pathData="M363,338L747,338A34,34 0 0,1 781,372L781,508A34,34 0 0,1 747,542L363,542A34,34 0 0,1 329,508L329,372A34,34 0 0,1 363,338Z" />
+        <path
+            android:pathData="M289,318L627.32,318L464.6,792L289,792Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="329"
+                    android:startY="338"
+                    android:endX="600.2"
+                    android:endY="772">
+                    <item
+                        android:color="#52D1E3F5"
+                        android:offset="0.0" />
+                    <item
+                        android:color="#1FB8D1EB"
+                        android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+
+    <!-- Bottom Screen Base (with Plus-Shaped Cutout & Bottom-Right Corner Wedge) -->
     <path
-        android:fillColor="#ffffff"
-        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
-        android:strokeColor="#00000000"
-        android:strokeWidth="1"
-        android:fillType="nonZero"/>
+        android:pathData="M363,568L747,568A34,34 0 0,1 781,602L781,655L746,655A4,4 0 0,1 742,651L742,605A4,4 0 0,0 738,601L668,601A4,4 0 0,0 664,605L664,651A4,4 0 0,1 660,655L614,655A4,4 0 0,0 610,659L610,729A4,4 0 0,0 614,733L660,733A4,4 0 0,1 664,737L664,772L363,772A34,34 0 0,1 329,738L329,602A34,34 0 0,1 363,568ZM746,733L781,733L781,738A34,34 0 0,1 747,772L742,772L742,737A4,4 0 0,1 746,733Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="329"
+                android:startY="338"
+                android:endX="781"
+                android:endY="772">
+                <item
+                    android:color="#FF596E87"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF3B4D63"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Bottom Screen Glass Reflection Sheen -->
+    <group>
+        <clip-path
+            android:pathData="M363,568L747,568A34,34 0 0,1 781,602L781,655L746,655A4,4 0 0,1 742,651L742,605A4,4 0 0,0 738,601L668,601A4,4 0 0,0 664,605L664,651A4,4 0 0,1 660,655L614,655A4,4 0 0,0 610,659L610,729A4,4 0 0,0 614,733L660,733A4,4 0 0,1 664,737L664,772L363,772A34,34 0 0,1 329,738L329,602A34,34 0 0,1 363,568Z" />
+        <path
+            android:pathData="M289,318L627.32,318L464.6,792L289,792Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="329"
+                    android:startY="338"
+                    android:endX="600.2"
+                    android:endY="772">
+                    <item
+                        android:color="#52D1E3F5"
+                        android:offset="0.0" />
+                    <item
+                        android:color="#1FB8D1EB"
+                        android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+
+    <!-- Plus Badge (Matches Top-Right Color of Upper Screen #FF687B92) -->
+    <path
+        android:fillColor="#FF687B92"
+        android:pathData="M679,624A8,8 0 0,1 687,616L719,616A8,8 0 0,1 727,624L727,668A2,2 0 0,0 729,670L773,670A8,8 0 0,1 781,678L781,710A8,8 0 0,1 773,718L729,718A2,2 0 0,0 727,720L727,764A8,8 0 0,1 719,772L687,772A8,8 0 0,1 679,764L679,720A2,2 0 0,0 677,718L633,718A8,8 0 0,1 625,710L625,678A8,8 0 0,1 633,670L677,670A2,2 0 0,0 679,668Z" />
+
 </vector>
