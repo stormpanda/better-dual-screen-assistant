@@ -1,45 +1,55 @@
 package com.stormpanda.betterdualscreenassistant
 
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.annotation.DrawableRes
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.ColorLens
+import androidx.compose.material.icons.rounded.Colorize
+import androidx.compose.material.icons.rounded.DeveloperBoard
+import androidx.compose.material.icons.rounded.FormatColorFill
+import androidx.compose.material.icons.rounded.HealthAndSafety
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SettingsSuggest
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,61 +57,239 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
-import com.stormpanda.betterdualscreenassistant.ui.components.TccRadioCheckIndicator
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
-import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.megingiard.settings.ThemeMode
+import com.stormpanda.megingiard.ui.AppColors
+import com.stormpanda.megingiard.ui.AppPalettes
+import com.stormpanda.megingiard.ui.BumperDirection
+import com.stormpanda.megingiard.ui.GamepadActionCard
+import com.stormpanda.megingiard.ui.GamepadCategoryTile
+import com.stormpanda.megingiard.ui.GamepadChoiceCard
+import com.stormpanda.megingiard.ui.GamepadColorPaletteCard
+import com.stormpanda.megingiard.ui.GamepadColorSwatch
+import com.stormpanda.megingiard.ui.GamepadDeck
+import com.stormpanda.megingiard.ui.GamepadInfoBox
+import com.stormpanda.megingiard.ui.GamepadPill
+import com.stormpanda.megingiard.ui.GamepadSectionHeader
+import com.stormpanda.megingiard.ui.GamepadSliderCard
+import com.stormpanda.megingiard.ui.GamepadToggleCard
+import com.stormpanda.megingiard.ui.GamepadTwoPaneScaffold
+import com.stormpanda.megingiard.ui.LocalAppColors
+import com.stormpanda.megingiard.ui.PrimaryOverlayInputBridge
+import com.stormpanda.megingiard.ui.colorSchemeFor
+import com.stormpanda.megingiard.ui.cycle
+import com.stormpanda.megingiard.ui.firstDeckItem
+import com.stormpanda.megingiard.ui.megingiardTypography
+import com.stormpanda.megingiard.ui.paletteFor
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
-private enum class DashboardCategory(
-    val title: String,
-    val subtitle: String,
-    @param:DrawableRes val iconRes: Int
-) {
-    GENERAL(
-        title = "General",
-        subtitle = "Takeover & overlay",
-        iconRes = R.drawable.ic_dual_screen_display
-    ),
-    APPEARANCE(
-        title = "Appearance",
-        subtitle = "Themes & OS colors",
-        iconRes = R.drawable.ic_qs_theme_mode
-    ),
-    DIAGNOSTICS(
-        title = "System & Diagnostics",
-        subtitle = "Bridge & device info",
-        iconRes = R.drawable.ic_system_set
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        )
+        super.onCreate(savedInstanceState)
+        AssistantForegroundService.startService(this)
+
+        setContent {
+            val context = LocalContext.current
+            val repo = remember {
+                AssistantForegroundService.instance?.repository
+                    ?: SystemSettingsRepository(context.applicationContext)
+            }
+            val themeModeId by repo.themeMode.collectAsState()
+            val customAccentArgb by repo.customAccentArgb.collectAsState()
+            val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
+            val syncedMegingiardAccentArgb by repo.syncedMegingiardAccentArgb.collectAsState()
+
+            val selectedTheme = AppThemeOption.fromId(themeModeId)
+            val effectiveOption = if (selectedTheme == AppThemeOption.SYNC_MEGINGIARD) {
+                syncedMegingiardOption
+            } else {
+                selectedTheme
+            }
+            val effectiveAccentArgb = if (selectedTheme == AppThemeOption.SYNC_MEGINGIARD) {
+                syncedMegingiardAccentArgb ?: customAccentArgb
+            } else {
+                customAccentArgb
+            }
+
+            TccTheme(
+                themeMode = themeModeId,
+                customAccentArgb = customAccentArgb,
+                syncedMegingiardOption = syncedMegingiardOption,
+                syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
+            ) {
+                val tccColors = LocalTccColors.current
+                val appColors = remember(effectiveOption, effectiveAccentArgb, tccColors) {
+                    resolveMegingiardAppColors(
+                        option = effectiveOption,
+                        accentArgb = effectiveAccentArgb,
+                        tccColors = tccColors
+                    )
+                }
+
+                CompositionLocalProvider(LocalAppColors provides appColors) {
+                    MaterialTheme(
+                        colorScheme = colorSchemeFor(appColors),
+                        typography = megingiardTypography
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(appColors.appBackground)
+                                .systemBarsPadding()
+                        ) {
+                            BetterDualScreenSettingsScreen(repo = repo)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        val handled = PrimaryOverlayInputBridge.processGenericMotionEvent(ev) { action, keyCode ->
+            dispatchKeyEvent(KeyEvent(action, keyCode))
+        }
+        return if (handled) true else super.dispatchGenericMotionEvent(ev)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_BUTTON_L1 -> {
+                    PrimaryOverlayInputBridge.sendBumper(BumperDirection.PREV)
+                    return true
+                }
+                KeyEvent.KEYCODE_BUTTON_R1 -> {
+                    PrimaryOverlayInputBridge.sendBumper(BumperDirection.NEXT)
+                    return true
+                }
+            }
+        }
+
+        val handled = super.dispatchKeyEvent(event)
+        if (!handled) {
+            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                    onBackPressedDispatcher.onBackPressed()
+                }
+                return true
+            }
+            if (event.action == KeyEvent.ACTION_DOWN && isNavigationOrActionKey(event.keyCode)) {
+                PrimaryOverlayInputBridge.sendFocusRecovery(event.keyCode)
+                return true
+            }
+        }
+        return handled
+    }
+
+    override fun onDestroy() {
+        PrimaryOverlayInputBridge.resetJoystickState()
+        super.onDestroy()
+    }
+
+    private fun isNavigationOrActionKey(keyCode: Int): Boolean =
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_BUTTON_A,
+            KeyEvent.KEYCODE_ENTER -> true
+            else -> false
+        }
+}
+
+private fun resolveMegingiardAppColors(
+    option: AppThemeOption,
+    accentArgb: Int,
+    tccColors: TccColorPalette
+): AppColors {
+    val megingiardMode = when (option) {
+        AppThemeOption.MEGINGIARD_DARK -> ThemeMode.DARK
+        AppThemeOption.MEGINGIARD_DARK_OLED -> ThemeMode.DARK_OLED
+        AppThemeOption.MEGINGIARD -> ThemeMode.MEGINGIARD
+        AppThemeOption.MJOLNIR -> ThemeMode.MJOLNIR
+        AppThemeOption.VALHALLA -> ThemeMode.VALHALLA
+        AppThemeOption.AURORA -> ThemeMode.AURORA
+        AppThemeOption.RETRO_PHOSPHOR -> ThemeMode.RETRO_PHOSPHOR
+        AppThemeOption.ROYAL_ASGARD -> ThemeMode.ROYAL_ASGARD
+        else -> null
+    }
+    if (megingiardMode != null) {
+        return paletteFor(
+            mode = megingiardMode,
+            userAccent = if (megingiardMode.supportsCustomAccent) Color(accentArgb) else null
+        )
+    }
+
+    return AppColors(
+        appBackground = tccColors.primaryBackground,
+        surface = tccColors.panelBackground,
+        surfaceVariant = tccColors.panelBackgroundSelected,
+        onSurface = tccColors.primary,
+        onSurfaceSecondary = tccColors.secondary,
+        accent = tccColors.accent,
+        onAccent = tccColors.onAccent,
+        divider = tccColors.primary.copy(alpha = 0.10f),
+        sectionHeaderColor = tccColors.accent,
+        settingsSeparator = tccColors.primary.copy(alpha = 0.12f)
     )
 }
 
-private enum class ThemeSourceMode(val label: String) {
-    SYNC_MEGINGIARD("Sync with Megingiard"),
-    MEGINGIARD("Megingiard Themes"),
-    STOCK("Stock Themes")
+private enum class LauncherCategory(
+    val title: String,
+    val icon: ImageVector
+) {
+    GENERAL("General", Icons.Rounded.Tune),
+    APPEARANCE("Appearance", Icons.Rounded.Palette),
+    DIAGNOSTICS("Diagnostics", Icons.Rounded.HealthAndSafety)
 }
 
-private val StandaloneMegingiardOptions = listOf(
+private enum class LauncherSubPage(
+    val parentCategory: LauncherCategory
+) {
+    CUSTOM_ACCENT(LauncherCategory.APPEARANCE)
+}
+
+private enum class ThemeSourceOption(
+    val displayName: String
+) {
+    STOCK("Stock AYN"),
+    SYNC_MEGINGIARD("Sync with Megingiard"),
+    MEGINGIARD_PALETTE("Megingiard Palette")
+}
+
+private val StockThemeOptions = listOf(
+    AppThemeOption.STOCK_SYSTEM,
+    AppThemeOption.STOCK_LIGHT,
+    AppThemeOption.STOCK_DARK
+)
+
+private val MegingiardThemeOptions = listOf(
     AppThemeOption.MEGINGIARD_DARK,
     AppThemeOption.MEGINGIARD_DARK_OLED,
     AppThemeOption.MEGINGIARD,
@@ -112,1375 +300,613 @@ private val StandaloneMegingiardOptions = listOf(
     AppThemeOption.ROYAL_ASGARD
 )
 
-private val StockThemeOptions = listOf(
-    AppThemeOption.STOCK_SYSTEM,
-    AppThemeOption.STOCK_LIGHT,
-    AppThemeOption.STOCK_DARK
-)
+@Composable
+private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        AssistantForegroundService.startService(this)
-        setContent {
-            val context = LocalContext.current
-            val repository = remember {
-                SystemSettingsRepository(context.applicationContext)
-            }
-            DisposableEffect(repository) {
-                repository.register()
-                onDispose {
-                    repository.unregister()
-                }
-            }
-            val themeMode by repository.themeMode.collectAsState()
-            val customAccentArgb by repository.customAccentArgb.collectAsState()
-            val syncedOption by repository.syncedMegingiardOption.collectAsState()
-            val syncedAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
+    val themeModeId by repo.themeMode.collectAsState()
+    val selectedTheme = AppThemeOption.fromId(themeModeId)
+    val customAccentArgb by repo.customAccentArgb.collectAsState()
+    val injectSystemTheme by repo.injectOsTheme.collectAsState()
+    val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
+    val showCloseBottomScreenTip by repo.showCloseBottomScreenTip.collectAsState()
+    val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
 
-            TccTheme(
-                themeMode = themeMode,
-                customAccentArgb = customAccentArgb,
-                syncedMegingiardOption = syncedOption,
-                syncedMegingiardAccentArgb = syncedAccentArgb
-            ) {
-                LauncherDashboardScreen(repository = repository)
+    var selectedCategory by rememberSaveable { mutableStateOf(LauncherCategory.GENERAL) }
+    var subPageStack by rememberSaveable { mutableStateOf<List<LauncherSubPage>>(emptyList()) }
+    val currentSubPage = subPageStack.lastOrNull()
+
+    val helperConnected by PrivilegedBridge.isHelperConnected.collectAsState()
+    var pServerAvailable by remember { mutableStateOf(false) }
+    var stockDisabled by remember { mutableStateOf(true) }
+    var isRefreshingStatus by remember { mutableStateOf(false) }
+    var customSwatchColorArgb by rememberSaveable { mutableIntStateOf(customAccentArgb) }
+
+    LaunchedEffect(customAccentArgb) {
+        if (Color(customAccentArgb) !in AppPalettes.accentPresets) {
+            customSwatchColorArgb = customAccentArgb
+        }
+    }
+
+    suspend fun refreshStatus() {
+        withContext(Dispatchers.IO) {
+            val pAvail = PServerClient.isAvailable()
+            val sEnabled = PServerClient.isStockAssistantEnabled(context)
+            withContext(Dispatchers.Main) {
+                pServerAvailable = pAvail
+                stockDisabled = !sEnabled
             }
         }
     }
-}
-
-@Composable
-private fun LauncherDashboardScreen(
-    repository: SystemSettingsRepository
-) {
-    val context = LocalContext.current
-    val colors = LocalTccColors.current
-    val scope = rememberCoroutineScope()
-
-    var selectedCategory by rememberSaveable { mutableStateOf(DashboardCategory.GENERAL) }
-
-    var pServerAvailable by remember { mutableStateOf(false) }
-    var helperConnected by remember { mutableStateOf(false) }
-    var serviceRunning by remember { mutableStateOf(false) }
-    var stockReplaced by remember { mutableStateOf(false) }
-    var isTogglingStock by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        while (isActive) {
-            withContext(Dispatchers.IO) {
-                val pAvail = PServerClient.isAvailable()
-                val hConn = PrivilegedBridge.isHelperConnected.value
-                val sRun = AssistantForegroundService.instance != null
-                val stockEnabled = PServerClient.isStockAssistantEnabled(context)
-                pServerAvailable = pAvail
-                helperConnected = hConn
-                serviceRunning = sRun
-                stockReplaced = !stockEnabled
+        refreshStatus()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                repo.refreshAll()
+                scope.launch { refreshStatus() }
             }
-            delay(1000L)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val categoryList = remember { LauncherCategory.entries }
+    LaunchedEffect(Unit) {
+        PrimaryOverlayInputBridge.bumperEvents.collect { direction ->
+            selectedCategory = categoryList.cycle(selectedCategory, direction)
+            subPageStack = emptyList()
         }
     }
 
-    val allBridgesHealthy = pServerAvailable && helperConnected && serviceRunning
-
-    val onToggleStockReplacement: (Boolean) -> Unit = { replace ->
-        if (!isTogglingStock) {
-            isTogglingStock = true
-            scope.launch(Dispatchers.IO) {
-                PServerClient.setStockAssistantEnabled(!replace, context)
-                val nowEnabled = PServerClient.isStockAssistantEnabled(context)
-                withContext(Dispatchers.Main) {
-                    stockReplaced = !nowEnabled
-                    isTogglingStock = false
-                }
-            }
-        }
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.primaryBackground)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Left Column: Category Sidebar
-        CategorySidebar(
-            selectedCategory = selectedCategory,
-            onSelectCategory = { selectedCategory = it },
-            allBridgesHealthy = allBridgesHealthy,
-            stockReplaced = stockReplaced,
-            onOpenOverlay = {
-                AssistantForegroundService.startService(
-                    context,
-                    AssistantForegroundService.ACTION_SHOW_OVERLAY
+    GamepadTwoPaneScaffold(
+        scrollableDeck = false,
+        isCustomBackActive = subPageStack.isNotEmpty(),
+        onCustomBack = {
+            subPageStack = subPageStack.dropLast(1)
+        },
+        navigationKey = subPageStack,
+        sidebarContent = {
+            LauncherCategory.entries.forEach { category ->
+                GamepadCategoryTile(
+                    title = category.title,
+                    icon = category.icon,
+                    selected = (currentSubPage?.parentCategory ?: selectedCategory) == category,
+                    onClick = {
+                        selectedCategory = category
+                        subPageStack = emptyList()
+                    }
                 )
-            },
-            modifier = Modifier
-                .width(244.dp)
-                .fillMaxHeight()
-        )
-
-        // Right Column: Selected Category Settings Content
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-        ) {
+            }
+        },
+        content = {
             AnimatedContent(
-                targetState = selectedCategory,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "CategoryPaneTransition"
-            ) { category ->
-                when (category) {
-                    DashboardCategory.GENERAL -> GeneralSettingsPane(
-                        repository = repository,
-                        pServerAvailable = pServerAvailable,
-                        helperConnected = helperConnected,
-                        serviceRunning = serviceRunning,
-                        stockReplaced = stockReplaced,
-                        isTogglingStock = isTogglingStock,
-                        onToggleStockReplacement = onToggleStockReplacement
+                targetState = subPageStack,
+                transitionSpec = {
+                    val direction = if (targetState.size < initialState.size) -1 else 1
+                    slideInHorizontally { width -> width * direction }.togetherWith(
+                        slideOutHorizontally { width -> -width * direction }
                     )
-                    DashboardCategory.APPEARANCE -> AppearanceSettingsPane(
-                        repository = repository
-                    )
-                    DashboardCategory.DIAGNOSTICS -> DiagnosticsSettingsPane(
-                        repository = repository,
-                        pServerAvailable = pServerAvailable,
-                        helperConnected = helperConnected,
-                        serviceRunning = serviceRunning,
-                        stockReplaced = stockReplaced
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CategorySidebar(
-    selectedCategory: DashboardCategory,
-    onSelectCategory: (DashboardCategory) -> Unit,
-    allBridgesHealthy: Boolean,
-    stockReplaced: Boolean,
-    onOpenOverlay: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalTccColors.current
-    val statusColor = when {
-        !allBridgesHealthy -> Color(0xFFE34646)
-        stockReplaced -> colors.lightning
-        else -> colors.secondary
-    }
-    val statusText = when {
-        !allBridgesHealthy -> "Bridge Initializing"
-        stockReplaced -> "Takeover Active"
-        else -> "Stock Mode"
-    }
-
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.panelBackground)
-            .border(1.dp, colors.fourth, RoundedCornerShape(16.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // App Identity Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(colors.accent.copy(alpha = 0.16f))
-                        .border(1.dp, colors.accent.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(id = tccDrawable(R.drawable.ic_dual_screen_display)),
-                        contentDescription = null,
-                        colorFilter = ColorFilter.tint(colors.accent),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "Better DualScreen",
-                        color = colors.primary,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable {
-                            onSelectCategory(DashboardCategory.DIAGNOSTICS)
-                        }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(statusColor)
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = statusText,
-                            color = colors.secondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            // Divider
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(colors.fourth)
-            )
-
-            // Category Navigation Items
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                DashboardCategory.entries.forEach { category ->
-                    val isSelected = selectedCategory == category
-                    SidebarCategoryItem(
-                        category = category,
-                        selected = isSelected,
-                        onClick = { onSelectCategory(category) }
-                    )
-                }
-            }
-        }
-
-        // Quick Bottom Action
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(colors.fourth)
-            )
-            ActionButton(
-                label = "Open Overlay",
-                backgroundColor = colors.accent,
-                textColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
-                onClick = onOpenOverlay,
-                modifier = Modifier.fillMaxWidth(),
-                height = 40.dp
-            )
-        }
-    }
-}
-
-@Composable
-private fun SidebarCategoryItem(
-    category: DashboardCategory,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val colors = LocalTccColors.current
-    val bgColor = if (selected) colors.fifth else Color.Transparent
-    val borderColor = if (selected) colors.accent.copy(alpha = 0.45f) else Color.Transparent
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(26.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(if (selected) colors.accent else Color.Transparent)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Image(
-            painter = painterResource(id = tccDrawable(category.iconRes)),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(if (selected) colors.accent else colors.secondary),
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = category.title,
-                color = colors.primary,
-                fontSize = 14.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = category.subtitle,
-                color = colors.secondary,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun GeneralSettingsPane(
-    repository: SystemSettingsRepository,
-    pServerAvailable: Boolean,
-    helperConnected: Boolean,
-    serviceRunning: Boolean,
-    stockReplaced: Boolean,
-    isTogglingStock: Boolean,
-    onToggleStockReplacement: (Boolean) -> Unit
-) {
-    val context = LocalContext.current
-    val colors = LocalTccColors.current
-    val showCloseScreenTip by repository.showCloseBottomScreenTip.collectAsState()
-    var bridgeDetailsExpanded by rememberSaveable { mutableStateOf(false) }
-
-    val allHealthy = pServerAvailable && helperConnected && serviceRunning
-    val healthLabel = when {
-        !allHealthy -> "Needs Attention"
-        stockReplaced -> "Ready • UID 0 Active"
-        else -> "Standby • Stock Active"
-    }
-    val healthDotColor = when {
-        !allHealthy -> Color(0xFFE34646)
-        stockReplaced -> colors.lightning
-        else -> colors.secondary
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        PaneSectionHeader(
-            title = "General",
-            subtitle = "Manage hardware button takeover, bottom-screen overlay controls, and confirmation prompts."
-        )
-
-        // Unified Hero Status Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.panelBackground)
-                .border(
-                    width = 1.dp,
-                    color = if (stockReplaced) colors.accent.copy(alpha = 0.35f) else colors.fourth,
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Top Row: Health Pill (expandable)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(colors.fifth)
-                        .clickable { bridgeDetailsExpanded = !bridgeDetailsExpanded }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(healthDotColor)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = healthLabel,
-                        color = colors.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (bridgeDetailsExpanded) "Hide Details" else "Details",
-                        color = colors.accent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                if (isTogglingStock) {
-                    Text(
-                        text = "Applying...",
-                        color = colors.accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            // Takeover Switch Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Replace Stock DualScreenAssistant",
-                        color = colors.primary,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (stockReplaced) {
-                            "Pressing the physical AYN button opens Better DualScreenAssistant on the bottom display. Long-pressing blanks the bottom screen."
-                        } else {
-                            "Stock DualScreenAssistant is currently handling the AYN button. Enable takeover to switch to Better DualScreenAssistant."
-                        },
-                        color = colors.secondary,
-                        fontSize = 13.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Switch(
-                    checked = stockReplaced,
-                    enabled = !isTogglingStock,
-                    onCheckedChange = onToggleStockReplacement,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
-                        checkedTrackColor = colors.accent
-                    )
-                )
-            }
-
-            // Expandable Bridge Details & Reconnect
-            AnimatedVisibility(
-                visible = bridgeDetailsExpanded || !allHealthy,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(colors.fifth)
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    StatusIndicatorRow(
-                        label = "PServerBinder Root Service",
-                        active = pServerAvailable,
-                        statusText = if (pServerAvailable) "Connected" else "Unavailable"
-                    )
-                    StatusIndicatorRow(
-                        label = "Privileged Helper Bridge",
-                        active = helperConnected,
-                        statusText = if (helperConnected) "Active (UID 0)" else "Connecting..."
-                    )
-                    StatusIndicatorRow(
-                        label = "Overlay Foreground Service",
-                        active = serviceRunning,
-                        statusText = if (serviceRunning) "Running" else "Starting..."
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    ActionButton(
-                        label = "Reconnect Root Bridge & Re-Grant Permissions",
-                        backgroundColor = colors.panelBackground,
-                        textColor = colors.primary,
-                        onClick = { PrivilegedBridge.ensureInitialized(context) },
-                        modifier = Modifier.fillMaxWidth(),
-                        height = 38.dp
-                    )
-                }
-            }
-
-            // Action Buttons inside Hero Card
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ActionButton(
-                    label = "Open Overlay on Bottom Screen",
-                    backgroundColor = colors.accent,
-                    textColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
-                    onClick = {
-                        AssistantForegroundService.startService(
-                            context,
-                            AssistantForegroundService.ACTION_SHOW_OVERLAY
-                        )
-                    },
-                    modifier = Modifier.weight(1.3f)
-                )
-                ActionButton(
-                    label = "Quick Settings Tab",
-                    backgroundColor = colors.fifth,
-                    textColor = colors.primary,
-                    onClick = {
-                        AssistantForegroundService.startService(
-                            context,
-                            AssistantForegroundService.ACTION_SHOW_SETTINGS
-                        )
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                ActionButton(
-                    label = "Hide Overlay",
-                    backgroundColor = colors.fifth,
-                    textColor = colors.secondary,
-                    onClick = {
-                        AssistantForegroundService.startService(
-                            context,
-                            AssistantForegroundService.ACTION_HIDE_OVERLAY
-                        )
-                    },
-                    modifier = Modifier.weight(0.8f)
-                )
-            }
-        }
-
-        // Overlay Preferences Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.panelBackground)
-                .border(1.dp, colors.fourth, RoundedCornerShape(16.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "Overlay Behavior",
-                color = colors.primary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(colors.fifth)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Confirm Before Turning Off Bottom Screen",
-                        color = colors.primary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Show a confirmation dialog with instructions on how to wake the display when selecting 'Just Upper Screen' in the overlay.",
-                        color = colors.secondary,
-                        fontSize = 12.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Switch(
-                    checked = showCloseScreenTip,
-                    onCheckedChange = { enabled ->
-                        repository.setNoMoreCloseBottomScreenTip(!enabled)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
-                        checkedTrackColor = colors.accent
-                    )
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppearanceSettingsPane(
-    repository: SystemSettingsRepository
-) {
-    val colors = LocalTccColors.current
-    val themeMode by repository.themeMode.collectAsState()
-    val customAccentArgb by repository.customAccentArgb.collectAsState()
-    val syncedOption by repository.syncedMegingiardOption.collectAsState()
-    val syncedAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
-    val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
-    val injectOsTheme by repository.injectOsTheme.collectAsState()
-
-    val selectedThemeOption = AppThemeOption.fromId(themeMode)
-    val customAccentColor = Color(customAccentArgb)
-    val syncedAccentColor = syncedAccentArgb?.let { Color(it) } ?: syncedOption.previewAccent
-
-    var lastMegingiardOptionId by rememberSaveable {
-        mutableStateOf(
-            if (selectedThemeOption in StandaloneMegingiardOptions) {
-                selectedThemeOption.id
-            } else {
-                AppThemeOption.MEGINGIARD.id
-            }
-        )
-    }
-    var lastStockOptionId by rememberSaveable {
-        mutableStateOf(
-            if (selectedThemeOption in StockThemeOptions) {
-                selectedThemeOption.id
-            } else {
-                AppThemeOption.STOCK_DARK.id
-            }
-        )
-    }
-
-    LaunchedEffect(selectedThemeOption) {
-        if (selectedThemeOption in StandaloneMegingiardOptions) {
-            lastMegingiardOptionId = selectedThemeOption.id
-        } else if (selectedThemeOption in StockThemeOptions) {
-            lastStockOptionId = selectedThemeOption.id
-        }
-    }
-
-    val activeSourceMode = when (selectedThemeOption) {
-        AppThemeOption.SYNC_MEGINGIARD -> ThemeSourceMode.SYNC_MEGINGIARD
-        in StockThemeOptions -> ThemeSourceMode.STOCK
-        else -> ThemeSourceMode.MEGINGIARD
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        PaneSectionHeader(
-            title = "Appearance & Theme",
-            subtitle = "Customize the assistant palette, synchronize live with Megingiard, or inject dynamic colors across Android 13."
-        )
-
-        // Theme Mode & Palettes Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.panelBackground)
-                .border(1.dp, colors.fourth, RoundedCornerShape(16.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // 3-Way Mode Switcher
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(colors.fifth)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                ThemeSourceMode.entries.forEach { mode ->
-                    val isSelected = activeSourceMode == mode
-                    val tabBg = if (isSelected) colors.accent else Color.Transparent
-                    val tabText = if (isSelected) {
-                        if (colors.isMegingiardStyle) colors.onAccent else Color.White
-                    } else {
-                        colors.primary
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(38.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(tabBg)
-                            .clickable {
-                                when (mode) {
-                                    ThemeSourceMode.SYNC_MEGINGIARD -> {
-                                        repository.setThemeMode(AppThemeOption.SYNC_MEGINGIARD.id)
-                                    }
-                                    ThemeSourceMode.MEGINGIARD -> {
-                                        repository.setThemeMode(lastMegingiardOptionId)
-                                    }
-                                    ThemeSourceMode.STOCK -> {
-                                        repository.setThemeMode(lastStockOptionId)
-                                    }
-                                }
-                            }
-                            .padding(horizontal = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = mode.label,
-                            color = tabText,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            // Mode-Specific Content
-            when (activeSourceMode) {
-                ThemeSourceMode.SYNC_MEGINGIARD -> {
-                    MegingiardSyncLiveCard(
-                        syncedOption = syncedOption,
-                        syncedAccentColor = syncedAccentColor,
-                        isProviderAvailable = isMegingiardAvailable,
-                        onRefreshSync = { repository.refreshMegingiardSyncedTheme() }
-                    )
-                }
-
-                ThemeSourceMode.MEGINGIARD -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StandaloneMegingiardOptions.chunked(2).forEach { rowOptions ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                rowOptions.forEach { opt ->
-                                    val isSelected = selectedThemeOption == opt
-                                    val previewAccent = if (opt.supportsCustomAccent) {
-                                        customAccentColor
-                                    } else {
-                                        opt.previewAccent
-                                    }
-                                    ThemePalettePreviewCard(
-                                        title = opt.displayName,
-                                        badgeText = if (opt.supportsCustomAccent) "Custom Accent" else null,
-                                        backgroundColor = opt.previewBackground,
-                                        surfaceColor = opt.previewSurface,
-                                        accentColor = previewAccent,
-                                        selected = isSelected,
-                                        onClick = { repository.setThemeMode(opt.id) },
-                                        modifier = Modifier.weight(1f)
+                },
+                label = "LauncherSubPageAnimation"
+            ) { stack ->
+                val subPage = stack.lastOrNull()
+                when (subPage) {
+                    null -> {
+                        GamepadDeck(title = selectedCategory.title) {
+                            when (selectedCategory) {
+                                LauncherCategory.GENERAL -> {
+                                    GeneralSettingsTabContent(
+                                        stockDisabled = stockDisabled,
+                                        showCloseBottomScreenTip = showCloseBottomScreenTip,
+                                        onToggleReplaceStock = { replaceStock ->
+                                            stockDisabled = replaceStock
+                                            scope.launch(Dispatchers.IO) {
+                                                PServerClient.setStockAssistantEnabled(!replaceStock, context)
+                                                refreshStatus()
+                                            }
+                                        },
+                                        onOpenOverlay = {
+                                            AssistantForegroundService.startService(
+                                                context,
+                                                AssistantForegroundService.ACTION_SHOW_OVERLAY
+                                            )
+                                        },
+                                        onToggleCloseBottomScreenTip = { enabled ->
+                                            repo.setNoMoreCloseBottomScreenTip(!enabled)
+                                        }
                                     )
                                 }
-                                if (rowOptions.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
-                            }
-                        }
 
-                        if (selectedThemeOption.supportsCustomAccent) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(colors.fifth)
-                                    .padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "Custom Accent Color",
-                                    color = colors.primary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    MegingiardAccentPresets.forEach { preset ->
-                                        val isSelectedSwatch = customAccentColor == preset
-                                        Box(
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(CircleShape)
-                                                .background(preset)
-                                                .then(
-                                                    if (isSelectedSwatch) {
-                                                        Modifier.border(2.5.dp, colors.primary, CircleShape)
-                                                    } else {
-                                                        Modifier.border(
-                                                            1.dp,
-                                                            Color.White.copy(alpha = 0.18f),
-                                                            CircleShape
-                                                        )
-                                                    }
-                                                )
-                                                .clickable {
-                                                    repository.setCustomAccentArgb(preset.toArgb())
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isSelectedSwatch) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(
-                                                            if (colors.isMegingiardStyle) colors.onAccent else Color.White
-                                                        )
-                                                )
+                                LauncherCategory.APPEARANCE -> {
+                                    AppearanceSettingsTabContent(
+                                        selectedTheme = selectedTheme,
+                                        customAccentArgb = customAccentArgb,
+                                        customSwatchColorArgb = customSwatchColorArgb,
+                                        injectSystemTheme = injectSystemTheme,
+                                        syncedMegingiardOption = syncedMegingiardOption,
+                                        isMegingiardAvailable = isMegingiardAvailable,
+                                        onSelectTheme = { repo.setThemeMode(it.id) },
+                                        onSelectAccentColor = { repo.setCustomAccentArgb(it) },
+                                        onOpenCustomAccent = {
+                                            subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
+                                        },
+                                        onToggleInjectSystemTheme = { repo.setInjectOsTheme(it) }
+                                    )
+                                }
+
+                                LauncherCategory.DIAGNOSTICS -> {
+                                    DiagnosticsSettingsTabContent(
+                                        helperConnected = helperConnected,
+                                        pServerAvailable = pServerAvailable,
+                                        stockDisabled = stockDisabled,
+                                        isMegingiardAvailable = isMegingiardAvailable,
+                                        syncedMegingiardOption = syncedMegingiardOption,
+                                        isRefreshing = isRefreshingStatus,
+                                        onReconnectAndRefresh = {
+                                            if (isRefreshingStatus) return@DiagnosticsSettingsTabContent
+                                            isRefreshingStatus = true
+                                            scope.launch(Dispatchers.IO) {
+                                                PrivilegedBridge.ensureInitialized(context)
+                                                PServerClient.ensurePermissionsGranted(context)
+                                                repo.refreshAll()
+                                                refreshStatus()
+                                                withContext(Dispatchers.Main) {
+                                                    isRefreshingStatus = false
+                                                }
                                             }
                                         }
-                                    }
+                                    )
                                 }
                             }
                         }
                     }
-                }
 
-                ThemeSourceMode.STOCK -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        StockThemeOptions.forEach { opt ->
-                            val isSelected = selectedThemeOption == opt
-                            ThemePalettePreviewCard(
-                                title = opt.shortTileLabel,
-                                badgeText = "Stock",
-                                backgroundColor = opt.previewBackground,
-                                surfaceColor = opt.previewSurface,
-                                accentColor = opt.previewAccent,
-                                selected = isSelected,
-                                onClick = { repository.setThemeMode(opt.id) },
-                                modifier = Modifier.weight(1f)
+                    LauncherSubPage.CUSTOM_ACCENT -> {
+                        GamepadDeck(
+                            breadcrumbs = listOf(
+                                LauncherCategory.APPEARANCE.title,
+                                "Custom Color"
                             )
-                        }
-                    }
-                }
-            }
-        }
-
-        // OS Theme Injection Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.panelBackground)
-                .border(1.dp, colors.fourth, RoundedCornerShape(16.dp))
-                .padding(18.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Inject Theme Colors into OS",
-                            color = colors.primary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (injectOsTheme) colors.accent.copy(alpha = 0.18f) else colors.fifth
-                                )
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Text(
-                                text = if (injectOsTheme) "Active" else "Off",
-                                color = if (injectOsTheme) colors.accent else colors.secondary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                            CustomAccentSubPageContent(
+                                initialColor = Color(customSwatchColorArgb),
+                                onSaveColor = { newColor ->
+                                    val argb = newColor.toArgb()
+                                    customSwatchColorArgb = argb
+                                    repo.setCustomAccentArgb(argb)
+                                    subPageStack = subPageStack.dropLast(1)
+                                }
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Applies the active Megingiard palette to Android 13 SystemUI, Quick Settings, Settings, and Material You apps. Selecting 'Follow System (Stock)' or turning this off restores your original OS theme.",
-                        color = colors.secondary,
-                        fontSize = 12.sp
-                    )
                 }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Switch(
-                    checked = injectOsTheme,
-                    onCheckedChange = { enabled ->
-                        repository.setInjectOsTheme(enabled)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White,
-                        checkedTrackColor = colors.accent
-                    )
-                )
             }
         }
-    }
+    )
 }
 
 @Composable
-private fun MegingiardSyncLiveCard(
-    syncedOption: AppThemeOption,
-    syncedAccentColor: Color,
-    isProviderAvailable: Boolean,
-    onRefreshSync: () -> Unit
+private fun GeneralSettingsTabContent(
+    stockDisabled: Boolean,
+    showCloseBottomScreenTip: Boolean,
+    onToggleReplaceStock: (Boolean) -> Unit,
+    onOpenOverlay: () -> Unit,
+    onToggleCloseBottomScreenTip: (Boolean) -> Unit
 ) {
-    val colors = LocalTccColors.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.fifth)
-            .border(1.dp, colors.accent.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (isProviderAvailable) colors.lightning else colors.secondary)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isProviderAvailable) {
-                            "Live Sync Connected"
-                        } else {
-                            "Megingiard Provider Not Detected (Using Fallback)"
-                        },
-                        color = colors.secondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = syncedOption.displayName,
-                    color = colors.primary,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
-                )
+    GamepadToggleCard(
+        title = "Replace Stock Assistant",
+        description = if (stockDisabled) {
+            "Stock DualScreenAssistant is suppressed; physical AYN button opens Better Dual Screen Assistant"
+        } else {
+            "Stock DualScreenAssistant is currently active; enable to take over the physical AYN button"
+        },
+        checked = stockDisabled,
+        icon = Icons.Rounded.Layers,
+        onCheckedChange = onToggleReplaceStock,
+        modifier = Modifier.firstDeckItem()
+    )
+
+    GamepadActionCard(
+        title = "Open Assistant Overlay",
+        description = "Launch the Dual Screen Assistant overlay on the bottom screen (displayId = 4)",
+        icon = Icons.AutoMirrored.Rounded.OpenInNew,
+        actionText = "Open",
+        onClick = onOpenOverlay
+    )
+
+    GamepadToggleCard(
+        title = "Confirm Before Turning Off Bottom Screen",
+        description = "Show the wake-up reminder dialog before blanking the bottom screen",
+        checked = showCloseBottomScreenTip,
+        icon = Icons.Rounded.NotificationsActive,
+        onCheckedChange = onToggleCloseBottomScreenTip
+    )
+}
+
+@Composable
+private fun AppearanceSettingsTabContent(
+    selectedTheme: AppThemeOption,
+    customAccentArgb: Int,
+    customSwatchColorArgb: Int,
+    injectSystemTheme: Boolean,
+    syncedMegingiardOption: AppThemeOption,
+    isMegingiardAvailable: Boolean,
+    onSelectTheme: (AppThemeOption) -> Unit,
+    onSelectAccentColor: (Int) -> Unit,
+    onOpenCustomAccent: () -> Unit,
+    onToggleInjectSystemTheme: (Boolean) -> Unit
+) {
+    val activeSource = when {
+        selectedTheme == AppThemeOption.SYNC_MEGINGIARD -> ThemeSourceOption.SYNC_MEGINGIARD
+        selectedTheme.isMegingiardStyle -> ThemeSourceOption.MEGINGIARD_PALETTE
+        else -> ThemeSourceOption.STOCK
+    }
+
+    var lastStockOption by rememberSaveable {
+        mutableStateOf(if (!selectedTheme.isMegingiardStyle) selectedTheme else AppThemeOption.STOCK_DARK)
+    }
+    var lastMegingiardOption by rememberSaveable {
+        mutableStateOf(
+            if (selectedTheme.isMegingiardStyle && selectedTheme != AppThemeOption.SYNC_MEGINGIARD) {
+                selectedTheme
+            } else {
+                AppThemeOption.MEGINGIARD_DARK
             }
+        )
+    }
 
-            ActionButton(
-                label = "Refresh Sync",
-                backgroundColor = colors.panelBackground,
-                textColor = colors.primary,
-                onClick = onRefreshSync,
-                height = 36.dp
+    LaunchedEffect(selectedTheme) {
+        if (!selectedTheme.isMegingiardStyle) {
+            lastStockOption = selectedTheme
+        } else if (selectedTheme != AppThemeOption.SYNC_MEGINGIARD) {
+            lastMegingiardOption = selectedTheme
+        }
+    }
+
+    fun applyThemeSource(source: ThemeSourceOption) {
+        when (source) {
+            ThemeSourceOption.STOCK -> onSelectTheme(lastStockOption)
+            ThemeSourceOption.SYNC_MEGINGIARD -> onSelectTheme(AppThemeOption.SYNC_MEGINGIARD)
+            ThemeSourceOption.MEGINGIARD_PALETTE -> onSelectTheme(lastMegingiardOption)
+        }
+    }
+
+    GamepadChoiceCard(
+        title = "Theme Source",
+        description = "Choose between Stock AYN themes, live Megingiard sync, or standalone Megingiard palettes",
+        selectedText = activeSource.displayName,
+        icon = Icons.Rounded.Palette,
+        onPrevious = {
+            applyThemeSource(ThemeSourceOption.entries.cycle(activeSource, BumperDirection.PREV))
+        },
+        onNext = {
+            applyThemeSource(ThemeSourceOption.entries.cycle(activeSource, BumperDirection.NEXT))
+        },
+        modifier = Modifier.firstDeckItem()
+    )
+
+    when (activeSource) {
+        ThemeSourceOption.STOCK -> {
+            GamepadChoiceCard(
+                title = "Stock Theme Mode",
+                description = "Select the built-in AYN Dual Screen Assistant appearance",
+                selectedText = selectedTheme.displayName,
+                icon = Icons.Rounded.ColorLens,
+                onPrevious = {
+                    onSelectTheme(StockThemeOptions.cycle(selectedTheme, BumperDirection.PREV))
+                },
+                onNext = {
+                    onSelectTheme(StockThemeOptions.cycle(selectedTheme, BumperDirection.NEXT))
+                }
             )
         }
 
-        // Visual 3-Swatch Preview Strip
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ColorSwatchPreviewPill(
-                label = "Background",
-                color = syncedOption.previewBackground,
-                borderColor = colors.primary.copy(alpha = 0.15f),
-                modifier = Modifier.weight(1f)
+        ThemeSourceOption.SYNC_MEGINGIARD -> {
+            GamepadActionCard(
+                title = "Live Megingiard Theme Sync",
+                description = if (isMegingiardAvailable) {
+                    "Synchronized with Megingiard (${syncedMegingiardOption.displayName})"
+                } else {
+                    "Megingiard provider not detected; using ${syncedMegingiardOption.displayName} fallback"
+                },
+                icon = Icons.Rounded.Sync,
+                trailingContent = {
+                    GamepadPill(
+                        text = if (isMegingiardAvailable) "SYNCED" else "FALLBACK",
+                        isAccent = isMegingiardAvailable
+                    )
+                },
+                onClick = {}
             )
-            ColorSwatchPreviewPill(
-                label = "Panel Surface",
-                color = syncedOption.previewSurface,
-                borderColor = colors.primary.copy(alpha = 0.15f),
-                modifier = Modifier.weight(1f)
-            )
-            ColorSwatchPreviewPill(
-                label = "Accent",
-                color = syncedAccentColor,
-                borderColor = syncedAccentColor,
-                modifier = Modifier.weight(1f)
+        }
+
+        ThemeSourceOption.MEGINGIARD_PALETTE -> {
+            GamepadChoiceCard(
+                title = "Megingiard Palette",
+                description = "Color scheme for launcher & assistant overlay surfaces",
+                selectedText = selectedTheme.displayName,
+                icon = Icons.Rounded.ColorLens,
+                onPrevious = {
+                    onSelectTheme(MegingiardThemeOptions.cycle(selectedTheme, BumperDirection.PREV))
+                },
+                onNext = {
+                    onSelectTheme(MegingiardThemeOptions.cycle(selectedTheme, BumperDirection.NEXT))
+                }
             )
         }
     }
-}
 
-@Composable
-private fun ColorSwatchPreviewPill(
-    label: String,
-    color: Color,
-    borderColor: Color,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalTccColors.current
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(colors.panelBackground)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(16.dp)
-                .clip(CircleShape)
-                .background(color)
-                .border(1.dp, borderColor, CircleShape)
+    if (selectedTheme.supportsCustomAccent) {
+        val accentColor = Color(customAccentArgb)
+        val customSwatchColor = Color(customSwatchColorArgb)
+        val isCustomAccent =
+            customAccentArgb == customSwatchColorArgb && accentColor !in AppPalettes.accentPresets
+
+        GamepadColorPaletteCard(
+            title = "Accent Color",
+            description = "Choose a preset highlight color for ${selectedTheme.displayName}",
+            icon = Icons.Rounded.FormatColorFill,
+            paletteColors = AppPalettes.accentPresets,
+            selectedColor = accentColor,
+            onColorSelected = { onSelectAccentColor(it.toArgb()) }
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = label,
-            color = colors.secondary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+
+        GamepadActionCard(
+            title = "Custom Color",
+            description = "Fine-tune Hue, Saturation, and Brightness for a custom accent color",
+            icon = Icons.Rounded.Colorize,
+            actionLeadingContent = {
+                GamepadColorSwatch(
+                    color = customSwatchColor,
+                    isSelected = isCustomAccent
+                )
+            },
+            onClick = onOpenCustomAccent
         )
     }
+
+    GamepadToggleCard(
+        title = "Inject Theme Colors into OS",
+        description = "Push active theme palette to Android SystemUI and Settings app via theme_customization_overlay_packages",
+        checked = injectSystemTheme,
+        icon = Icons.Rounded.SettingsSuggest,
+        onCheckedChange = onToggleInjectSystemTheme
+    )
 }
 
 @Composable
-private fun ThemePalettePreviewCard(
-    title: String,
-    badgeText: String?,
-    backgroundColor: Color,
-    surfaceColor: Color,
-    accentColor: Color,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun CustomAccentSubPageContent(
+    initialColor: Color,
+    onSaveColor: (Color) -> Unit
 ) {
-    val colors = LocalTccColors.current
-    val cardBorder = if (selected) colors.accent else colors.fourth
-    val cardBg = if (selected) colors.fifth else colors.primaryBackground.copy(alpha = 0.45f)
+    val initHsv = remember(initialColor) {
+        FloatArray(3).also { AndroidColor.colorToHSV(initialColor.toArgb(), it) }
+    }
+    var hue by rememberSaveable(initialColor) { mutableFloatStateOf(initHsv[0]) }
+    var sat by rememberSaveable(initialColor) { mutableFloatStateOf(initHsv[1]) }
+    var bri by rememberSaveable(initialColor) { mutableFloatStateOf(initHsv[2]) }
 
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(cardBg)
-            .border(if (selected) 1.5.dp else 1.dp, cardBorder, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
-        ) {
-            // Mini Layered Surface & Accent Swatch
-            Box(
-                modifier = Modifier
-                    .size(width = 42.dp, height = 32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(backgroundColor)
-                    .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-                    .padding(4.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(surfaceColor),
-                    contentAlignment = Alignment.CenterEnd
+    val workingColor by remember {
+        derivedStateOf {
+            Color(AndroidColor.HSVToColor(floatArrayOf(hue, sat, bri)))
+        }
+    }
+
+    val hueGradient = remember {
+        Brush.horizontalGradient(colors = AppPalettes.hueSpectrum)
+    }
+    val saturationGradient = remember(hue, bri) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color(AndroidColor.HSVToColor(floatArrayOf(hue, 0f, bri))),
+                Color(AndroidColor.HSVToColor(floatArrayOf(hue, 1f, bri)))
+            )
+        )
+    }
+    val brightnessGradient = remember(hue, sat) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color.Black,
+                Color(AndroidColor.HSVToColor(floatArrayOf(hue, sat, 1f)))
+            )
+        )
+    }
+
+    val colors = LocalAppColors.current
+    val hasChanges = remember(workingColor, initialColor) {
+        workingColor.toArgb() != initialColor.toArgb()
+    }
+    val workingHex = remember(workingColor) {
+        String.format("#%06X", 0xFFFFFF and workingColor.toArgb())
+    }
+    val initialHex = remember(initialColor) {
+        String.format("#%06X", 0xFFFFFF and initialColor.toArgb())
+    }
+
+    GamepadSliderCard(
+        title = "Hue",
+        description = "Base color angle on the color wheel",
+        value = hue,
+        valueRange = 0f..360f,
+        onValueChange = { hue = it },
+        valueLabel = "${hue.roundToInt()}°",
+        step = 5f,
+        fineStep = 1f,
+        trackBrush = hueGradient,
+        thumbColor = Color(AndroidColor.HSVToColor(floatArrayOf(hue, 1f, 1f))),
+        modifier = Modifier.firstDeckItem()
+    )
+
+    GamepadSliderCard(
+        title = "Saturation",
+        description = "Color intensity from neutral gray to pure vivid color",
+        value = sat,
+        valueRange = 0f..1f,
+        onValueChange = { sat = it },
+        valueLabel = "${(sat * 100).roundToInt()}%",
+        step = 0.02f,
+        fineStep = 0.01f,
+        trackBrush = saturationGradient,
+        thumbColor = workingColor
+    )
+
+    GamepadSliderCard(
+        title = "Brightness",
+        description = "Lightness of the accent color",
+        value = bri,
+        valueRange = 0f..1f,
+        onValueChange = { bri = it },
+        valueLabel = "${(bri * 100).roundToInt()}%",
+        step = 0.02f,
+        fineStep = 0.01f,
+        trackBrush = brightnessGradient,
+        thumbColor = workingColor
+    )
+
+    GamepadActionCard(
+        title = "Undo Color Changes",
+        description = if (hasChanges) {
+            "Revert from $workingHex back to $initialHex"
+        } else {
+            "No unsaved color adjustments ($workingHex)"
+        },
+        icon = Icons.AutoMirrored.Rounded.Undo,
+        actionLeadingContent = {
+            if (hasChanges) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(accentColor)
+                    GamepadColorSwatch(color = workingColor, isSelected = true)
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                        contentDescription = null,
+                        tint = colors.onSurfaceSecondary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
                     )
+                    GamepadColorSwatch(color = initialColor, isSelected = false)
                 }
+            } else {
+                GamepadColorSwatch(color = initialColor, isSelected = true)
             }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = colors.primary,
-                    fontSize = 13.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (badgeText != null) {
-                    Text(
-                        text = badgeText,
-                        color = if (selected) colors.accent else colors.secondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+        },
+        actionText = if (hasChanges) "Undo" else null,
+        enabled = hasChanges,
+        onClick = {
+            hue = initHsv[0]
+            sat = initHsv[1]
+            bri = initHsv[2]
         }
+    )
 
-        Spacer(modifier = Modifier.width(8.dp))
-
-        TccRadioCheckIndicator(
-            selected = selected,
-            modifier = Modifier.size(18.dp)
-        )
-    }
+    GamepadActionCard(
+        title = "Save Color",
+        description = "Apply $workingHex as the custom accent color",
+        icon = Icons.Rounded.Save,
+        actionText = "Save",
+        onClick = { onSaveColor(workingColor) }
+    )
 }
 
 @Composable
-private fun DiagnosticsSettingsPane(
-    repository: SystemSettingsRepository,
-    pServerAvailable: Boolean,
+private fun DiagnosticsSettingsTabContent(
     helperConnected: Boolean,
-    serviceRunning: Boolean,
-    stockReplaced: Boolean
+    pServerAvailable: Boolean,
+    stockDisabled: Boolean,
+    isMegingiardAvailable: Boolean,
+    syncedMegingiardOption: AppThemeOption,
+    isRefreshing: Boolean,
+    onReconnectAndRefresh: () -> Unit
 ) {
-    val context = LocalContext.current
-    val colors = LocalTccColors.current
-    val scope = rememberCoroutineScope()
-    val themeMode by repository.themeMode.collectAsState()
-    val selectedTheme = AppThemeOption.fromId(themeMode)
-    var reconnectFeedback by remember { mutableStateOf(false) }
-
-    val versionInfo = remember(context) {
-        try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            "${pInfo.versionName ?: "1.0"} (${pInfo.longVersionCode})"
-        } catch (_: Throwable) {
-            "1.0"
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        PaneSectionHeader(
-            title = "System & Diagnostics",
-            subtitle = "Inspect privileged root bridge connections, re-grant system permissions, and view hardware topology."
-        )
-
-        // Privileged Services & Health Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.panelBackground)
-                .border(1.dp, colors.fourth, RoundedCornerShape(16.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "Privileged Bridge & Service Health",
-                color = colors.primary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+    GamepadActionCard(
+        title = "Privileged Helper (UID 0)",
+        description = "In-memory root Binder daemon handling display blanking, brightness, and uninstall recovery",
+        icon = Icons.Rounded.Security,
+        trailingContent = {
+            GamepadPill(
+                text = if (helperConnected) "CONNECTED" else "DISCONNECTED",
+                isAccent = helperConnected
             )
+        },
+        onClick = onReconnectAndRefresh,
+        modifier = Modifier.firstDeckItem()
+    )
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(colors.fifth)
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StatusIndicatorRow(
-                    label = "PServerBinder Root Service",
-                    active = pServerAvailable,
-                    statusText = if (pServerAvailable) "Connected" else "Unavailable"
-                )
-                StatusIndicatorRow(
-                    label = "Privileged app_process Bridge",
-                    active = helperConnected,
-                    statusText = if (helperConnected) "Active (UID 0)" else "Connecting..."
-                )
-                StatusIndicatorRow(
-                    label = "Overlay Foreground Service",
-                    active = serviceRunning,
-                    statusText = if (serviceRunning) "Running" else "Starting..."
-                )
-                StatusIndicatorRow(
-                    label = "Stock DualScreenAssistant Process",
-                    active = stockReplaced,
-                    statusText = if (stockReplaced) "Suppressed (Frozen)" else "Running (Stock Active)"
-                )
-            }
-
-            ActionButton(
-                label = if (reconnectFeedback) {
-                    "Permissions Re-Granted & Bridge Refreshed"
-                } else {
-                    "Re-Grant Permissions & Reconnect Root Bridge"
-                },
-                backgroundColor = if (reconnectFeedback) colors.accent else colors.fifth,
-                textColor = if (reconnectFeedback) {
-                    if (colors.isMegingiardStyle) colors.onAccent else Color.White
-                } else {
-                    colors.primary
-                },
-                onClick = {
-                    PrivilegedBridge.ensureInitialized(context)
-                    reconnectFeedback = true
-                    scope.launch {
-                        delay(1800L)
-                        reconnectFeedback = false
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
+    GamepadActionCard(
+        title = "PServerBinder Root Service",
+        description = "AYN Thor firmware root command execution service in ServiceManager",
+        icon = Icons.Rounded.DeveloperBoard,
+        trailingContent = {
+            GamepadPill(
+                text = if (pServerAvailable) "AVAILABLE" else "UNAVAILABLE",
+                isAccent = pServerAvailable
             )
-        }
+        },
+        onClick = onReconnectAndRefresh
+    )
 
-        // Device & Application Info Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.panelBackground)
-                .border(1.dp, colors.fourth, RoundedCornerShape(16.dp))
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = "Application & Display Topology",
-                color = colors.primary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+    GamepadActionCard(
+        title = "Stock DualScreenAssistant Process",
+        description = "Ephemeral SIGSTOP suppression of com.odin.dualscreen.assistant",
+        icon = Icons.Rounded.Layers,
+        trailingContent = {
+            GamepadPill(
+                text = if (stockDisabled) "SUPPRESSED" else "ACTIVE",
+                isAccent = stockDisabled
             )
+        },
+        onClick = onReconnectAndRefresh
+    )
 
-            InfoKeyValueRow(label = "App Version", value = versionInfo)
-            InfoKeyValueRow(label = "Package Name", value = context.packageName)
-            InfoKeyValueRow(label = "Primary Display (Top)", value = "Display 0 • 1920×1080 (369 dpi)")
-            InfoKeyValueRow(label = "Secondary Display (Bottom)", value = "Display 4 • 1240×1080 (369 dpi)")
-            InfoKeyValueRow(label = "Active Theme", value = selectedTheme.displayName)
-        }
-    }
-}
-
-@Composable
-private fun PaneSectionHeader(
-    title: String,
-    subtitle: String
-) {
-    val colors = LocalTccColors.current
-    Column(
-        modifier = Modifier.padding(horizontal = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = title,
-            color = colors.primary,
-            fontSize = 21.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = subtitle,
-            color = colors.secondary,
-            fontSize = 13.sp
-        )
-    }
-}
-
-@Composable
-private fun StatusIndicatorRow(
-    label: String,
-    active: Boolean,
-    statusText: String
-) {
-    val colors = LocalTccColors.current
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            color = colors.secondary,
-            fontSize = 13.sp
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(if (active) colors.lightning else Color(0xFFE34646))
+    GamepadActionCard(
+        title = "Megingiard Theme Provider",
+        description = if (isMegingiardAvailable) {
+            "Connected to Megingiard theme provider (${syncedMegingiardOption.displayName})"
+        } else {
+            "Megingiard ContentProvider not detected on this device"
+        },
+        icon = Icons.Rounded.Hub,
+        trailingContent = {
+            GamepadPill(
+                text = if (isMegingiardAvailable) "DETECTED" else "NOT FOUND",
+                isAccent = isMegingiardAvailable
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = statusText,
-                color = colors.primary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
+        },
+        onClick = onReconnectAndRefresh
+    )
+
+    GamepadActionCard(
+        title = "Reconnect Privileged Bridge",
+        description = "Re-establish UID 0 helper connection, re-grant permissions, and refresh status",
+        icon = Icons.Rounded.Refresh,
+        actionText = if (isRefreshing) "Refreshing..." else "Reconnect",
+        enabled = !isRefreshing,
+        onClick = onReconnectAndRefresh
+    )
+
+    GamepadSectionHeader(text = "DEVICE & BUILD")
+
+    GamepadInfoBox(
+        text = "AYN Thor Display Topology",
+        description = "Top Screen (displayId = 0): 1920×1080 • Bottom Screen (displayId = 4): 1240×1080 (369 dpi)"
+    )
+
+    GamepadActionCard(
+        title = "Application Version",
+        description = BuildConfig.APPLICATION_ID,
+        icon = Icons.Rounded.Info,
+        trailingContent = {
+            GamepadPill(
+                text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                isAccent = false
             )
-        }
-    }
-}
-
-@Composable
-private fun InfoKeyValueRow(
-    label: String,
-    value: String
-) {
-    val colors = LocalTccColors.current
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            color = colors.secondary,
-            fontSize = 13.sp
-        )
-        Text(
-            text = value,
-            color = colors.primary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun ActionButton(
-    label: String,
-    backgroundColor: Color,
-    textColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    height: androidx.compose.ui.unit.Dp = 44.dp
-) {
-    Box(
-        modifier = modifier
-            .height(height)
-            .clip(RoundedCornerShape(10.dp))
-            .background(backgroundColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            color = textColor,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
+        },
+        onClick = {}
+    )
 }

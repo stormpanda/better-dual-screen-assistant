@@ -1,0 +1,304 @@
+package com.stormpanda.megingiard.ui
+
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.stormpanda.megingiard.settings.ThemeMode
+
+// ─── Semantic color tokens ────────────────────────────────────────────────────
+//
+// All UI colors are expressed through these tokens.  Each screen reads colors
+// from LocalAppColors.current or MaterialTheme.colorScheme — never hardcodes
+// Color(0xFF…) inline.  Adding a new theme requires only a new AppColors
+// instance below — no per-screen changes are necessary.
+
+@Immutable
+data class AppColors(
+    /** Full-screen background. */
+    val appBackground: Color,
+    /** Card / panel / row surface. */
+    val surface: Color,
+    /** Elevated surface, e.g. item being dragged. */
+    val surfaceVariant: Color,
+    /** Primary text on the above surfaces. */
+    val onSurface: Color,
+    /** Secondary / hint text (reduced emphasis). */
+    val onSurfaceSecondary: Color,
+    /** Primary interactive / accent colour (user-overridable accent). */
+    val accent: Color,
+    /** Text / icons on accent / highlighted buttons. */
+    val onAccent: Color = surface,
+    /** Subtle divider lines. */
+    val divider: Color = onSurface.copy(alpha = 0.10f),
+    /** Semi-transparent floating control Quick Menu (mirror, quick menu). */
+    val controlOverlay: Color = surface.copy(alpha = 0.95f),
+    /** Text / icons on the control overlay. */
+    val onControlOverlay: Color = onSurface,
+    /** Keyboard key background (normal). */
+    val keyBackground: Color = surface,
+    /** Keyboard key background when pressed. */
+    val keyPressed: Color = surfaceVariant,
+    /** Keyboard container background. */
+    val keyboardBackground: Color = appBackground,
+    /** Always-visible pull-tab quick menu bar colour (already includes the desired alpha). */
+    val quickMenuBarIdleColor: Color = Color.White.copy(alpha = 0.4f),
+    /** Background of the navigation bar (overrides accent for custom-accent themes). */
+    val navQuickMenuBody: Color = surface,
+    /** Border/outline of the quick menu control overlay container. */
+    val controlOverlayBorder: Color = accent.copy(alpha = 0.3f),
+    /** Destructive / error action color (delete buttons, confirm-destructive text). */
+    val error: Color = Color(0xFFCF6679),
+    /** Content (text/icons) on error-colored surfaces. */
+    val onError: Color = Color.White,
+    /** Action-type badge color for gamepad / joystick macro steps. */
+    val actionColorGamepad: Color = Color(0xFFFF9800),
+    /** Action-type badge color for system / d-pad macro steps. */
+    val actionColorSystem: Color = accent,
+    /**
+     * Color used for section-header label text (uppercase strip above setting groups,
+     * editor section dividers, etc.).  Equals [accent] for themes that support a custom
+     * accent; fixed per-palette for themes that use a distinct header tint.
+     */
+    val sectionHeaderColor: Color = accent,
+    /** Thin divider between transparent settings rows drawn on the default screen/dialog background. */
+    val settingsSeparator: Color = onSurface.copy(alpha = 0.12f),
+) {
+    /** Subtle, non-accented border used for unfocused cards, pills, text fields, and chips. */
+    val subduedBorder: Color
+        get() = onSurface.copy(alpha = 0.15f)
+}
+
+// ─── Palettes ─────────────────────────────────────────────────────────────────
+
+// Default accent for Dark/Light — overridden at runtime by SettingsManager.accentColor.
+private val DEFAULT_DARK_LIGHT_ACCENT = Color(0xFFCC0000)
+private const val LUMINANCE_CONTRAST_THRESHOLD = 0.45f
+private val DEFAULT_CONTRAST_DARK_TEXT = Color(0xFF121212)
+
+private val darkPalette =
+    AppColors(
+        appBackground = Color(0xFF121212),
+        surface = Color(0xFF1C1C1E),
+        surfaceVariant = Color(0xFF2C2C2E),
+        onSurface = Color.White,
+        onSurfaceSecondary = Color.White.copy(alpha = 0.6f),
+        divider = Color.White.copy(alpha = 0.08f),
+        controlOverlay = Color.Black.copy(alpha = 0.8f),
+        keyPressed = Color(0xFF48484A),
+        keyboardBackground = Color(0xFF1D1F26),
+        accent = DEFAULT_DARK_LIGHT_ACCENT,
+        onAccent = Color.White,
+        navQuickMenuBody = DEFAULT_DARK_LIGHT_ACCENT,
+        actionColorSystem = Color(0xFF2196F3),
+        settingsSeparator = Color.White.copy(alpha = 0.10f),
+    )
+
+private val DARK_OLED_TEXT = Color(0xFFE3E3E8) // Soft off-white to reduce eye strain on pitch-black OLED displays
+
+private val darkOledPalette =
+    AppColors(
+        appBackground = Color.Black,
+        surface = Color.Black,
+        surfaceVariant = Color(0xFF161618),
+        onSurface = DARK_OLED_TEXT,
+        onSurfaceSecondary = DARK_OLED_TEXT.copy(alpha = 0.6f),
+        keyPressed = Color(0xFF323235),
+        accent = DEFAULT_DARK_LIGHT_ACCENT,
+        onAccent = Color.White,
+        navQuickMenuBody = DEFAULT_DARK_LIGHT_ACCENT,
+        actionColorSystem = Color(0xFF2196F3),
+    )
+
+// ─── Megingiard (Norse Forest) palette ─────────────────────────────────────────
+private val megingiardPalette =
+    AppColors(
+        appBackground = Color(0xFF040C08), // Deepest dark forest background
+        surface = Color(0xFF06140C), // Solid panel/menu surface
+        surfaceVariant = Color(0xFF0B2015), // Elevated card/row surface
+        onSurface = Color(0xFFE2EBE5), // Soft parchment silver text
+        onSurfaceSecondary = Color(0xFF7BA68C), // Muted emerald sage secondary text
+        controlOverlay = Color(0xFF081C12).copy(alpha = 0.95f), // Norse emerald green overlay
+        keyPressed = Color(0xFF102B1D), // Key pressed surface
+        accent = Color(0xFFE5B842), // Runic Gold / Amber
+        error = Color(0xFFD94336),
+    )
+
+// ─── Mjölnir Steel palette ──────────────────────────────────────────────────
+private val mjolnirPalette =
+    AppColors(
+        appBackground = Color(0xFF101418), // Dark metallic slate
+        surface = Color(0xFF161E26), // Brushed titanium surface
+        surfaceVariant = Color(0xFF1F2B36), // Elevated steel surface
+        onSurface = Color(0xFFE2EBF2), // Icy white text
+        onSurfaceSecondary = Color(0xFF8FA3B5), // Cold steel gray secondary text
+        accent = Color(0xFF00E5FF), // Electric Lightning Cyan
+        onAccent = Color(0xFF101418),
+        error = Color(0xFFE53935),
+    )
+
+// ─── Valhalla Sunset palette ─────────────────────────────────────────────────
+private val valhallaPalette =
+    AppColors(
+        appBackground = Color(0xFF140E0A), // Obsidian twilight background
+        surface = Color(0xFF1E1610), // Warm mahogany surface
+        surfaceVariant = Color(0xFF2B2018), // Elevated mahogany surface
+        onSurface = Color(0xFFF4E8D1), // Golden parchment text
+        onSurfaceSecondary = Color(0xFFBCAAA4), // Warm twilight secondary text
+        accent = Color(0xFFFFA726), // Glowing Bronze Amber
+        onAccent = Color(0xFF140E0A),
+        error = Color(0xFFD84315),
+    )
+
+// ─── Aurora Borealis palette ─────────────────────────────────────────────────
+private val auroraPalette =
+    AppColors(
+        appBackground = Color(0xFF0A0A14), // Cosmos midnight indigo background
+        surface = Color(0xFF121222), // Dark violet-indigo surface
+        surfaceVariant = Color(0xFF1B1B32), // Elevated violet surface
+        onSurface = Color(0xFFE6E6FA), // Starry lavender text
+        onSurfaceSecondary = Color(0xFF9FA8DA), // Muted cosmic blue secondary text
+        accent = Color(0xFF00F5D4), // Glowing Aurora Teal
+        onAccent = Color(0xFF0A0A14),
+        error = Color(0xFFFF5252),
+    )
+
+// ─── Retro Phosphor palette ──────────────────────────────────────────────────
+private val retroPhosphorPalette =
+    AppColors(
+        appBackground = Color(0xFF141712), // Dark dot-matrix olive background
+        surface = Color(0xFF1C2219), // Deep dot-matrix green surface
+        surfaceVariant = Color(0xFF263022), // Elevated dot-matrix surface
+        onSurface = Color(0xFFC0D890), // Phosphor mint text
+        onSurfaceSecondary = Color(0xFF708850), // Muted phosphor green secondary text
+        accent = Color(0xFF8BAC0F), // Game Boy Phosphor Mint
+        onAccent = Color(0xFF141712),
+        error = Color(0xFFE57373),
+    )
+
+// ─── Royal Asgard palette ────────────────────────────────────────────────────
+private val royalAsgardPalette =
+    AppColors(
+        appBackground = Color.Black, // Pitch black background
+        surface = Color(0xFF12110E), // Charcoal gold-tinted surface
+        surfaceVariant = Color(0xFF1C1A16), // Elevated charcoal gold surface
+        onSurface = Color(0xFFF7F3E9), // Warm ivory text
+        onSurfaceSecondary = Color(0xFFC5BCA8), // Muted champagne secondary text
+        accent = Color(0xFFFFD700), // Polished Royal Gold
+        onAccent = Color.Black,
+        error = Color(0xFFD32F2F),
+    )
+
+// ─── Palette selector ─────────────────────────────────────────────────────────
+
+/**
+ * Calculates a high-contrast content color (text, icon) for this background color based on its
+ * relative luminance per WCAG standards.
+ *
+ * @param dark The color to return if this background is bright (luminance > [LUMINANCE_CONTRAST_THRESHOLD]).
+ * @param light The color to return if this background is dark (luminance <= [LUMINANCE_CONTRAST_THRESHOLD]).
+ */
+fun Color.contrastingContentColor(
+    dark: Color = DEFAULT_CONTRAST_DARK_TEXT,
+    light: Color = Color.White,
+): Color = if (luminance() > LUMINANCE_CONTRAST_THRESHOLD) dark else light
+
+/**
+ * Returns the [AppColors] palette for [mode], optionally overriding the accent
+ * token with a user-chosen colour. The override is only applied when
+ * [ThemeMode.supportsCustomAccent] is true; fixed themes ignore it.
+ */
+fun paletteFor(
+    mode: ThemeMode,
+    userAccent: Color? = null,
+): AppColors {
+    val base =
+        when (mode) {
+            ThemeMode.DARK -> darkPalette
+            ThemeMode.DARK_OLED -> darkOledPalette
+            ThemeMode.MEGINGIARD -> megingiardPalette
+            ThemeMode.MJOLNIR -> mjolnirPalette
+            ThemeMode.VALHALLA -> valhallaPalette
+            ThemeMode.AURORA -> auroraPalette
+            ThemeMode.RETRO_PHOSPHOR -> retroPhosphorPalette
+            ThemeMode.ROYAL_ASGARD -> royalAsgardPalette
+        }
+    return if (mode.supportsCustomAccent) {
+        val eff = userAccent ?: base.accent
+        val effOnAccent = eff.contrastingContentColor(dark = base.appBackground, light = Color.White)
+        base.copy(
+            accent = eff,
+            onAccent = effOnAccent,
+            navQuickMenuBody = eff,
+            sectionHeaderColor = eff,
+            controlOverlayBorder = eff.copy(alpha = 0.3f),
+        )
+    } else {
+        base
+    }
+}
+
+// ─── Material 3 ColorScheme bridge ────────────────────────────────────────────
+//
+// Maps AppColors tokens to the M3 ColorScheme so that all Material 3
+// components (Switch, Slider, OutlinedTextField, AlertDialog, TextButton, …)
+// automatically use the correct theme colors without per-call overrides.
+
+fun colorSchemeFor(colors: AppColors): ColorScheme =
+    darkColorScheme().copy(
+        primary = colors.accent,
+        onPrimary = colors.onAccent,
+        primaryContainer = colors.accent.copy(alpha = 0.2f),
+        onPrimaryContainer = colors.onAccent,
+        secondary = colors.accent,
+        onSecondary = colors.onAccent,
+        background = colors.appBackground,
+        onBackground = colors.onSurface,
+        surface = colors.surface,
+        onSurface = colors.onSurface,
+        surfaceVariant = colors.surfaceVariant,
+        onSurfaceVariant = colors.onSurfaceSecondary,
+        error = colors.error,
+        onError = colors.onError,
+        outline = colors.divider.copy(alpha = 0.4f),
+        outlineVariant = colors.divider,
+    )
+
+// ─── Typography ───────────────────────────────────────────────────────────────
+//
+// Semantic text styles used throughout the app.  Composables reference
+// MaterialTheme.typography.bodyMedium etc. — never inline fontSize = XX.sp.
+//
+// Mapping:
+//   titleLarge   18sp SemiBold — dialog titles
+//   titleMedium  16sp SemiBold — section titles, ambient overlay titles
+//   titleSmall   14sp Medium   — subsection titles
+//   bodyLarge    15sp Normal   — macro names, list items
+//   bodyMedium   14sp Normal   — standard row labels (most common)
+//   bodySmall    12sp Normal   — secondary descriptions, hints
+//   labelLarge   14sp Medium   — button labels
+//   labelMedium  13sp Medium   — dialog subtitles, key labels
+//   labelSmall   11sp Normal   — category headers (add letterSpacing 1.sp), axis labels
+
+val megingiardTypography =
+    Typography(
+        titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+        titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+        titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+        bodyLarge = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Normal),
+        bodyMedium = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal),
+        bodySmall = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal),
+        labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+        labelMedium = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+        labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Normal),
+    )
+
+// ─── CompositionLocals ────────────────────────────────────────────────────────
+
+val LocalAppColors = compositionLocalOf<AppColors> { darkPalette }
