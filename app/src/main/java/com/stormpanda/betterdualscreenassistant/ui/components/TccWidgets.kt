@@ -35,7 +35,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -438,11 +442,17 @@ fun HardwareInfoComponentCard(
     }
 }
 
+// Matches Android's default DecelerateInterpolator(1.0f) used in B0.d
+private val RingDecelerateEasing = Easing { fraction ->
+    1f - (1f - fraction) * (1f - fraction)
+}
+
 /**
  * Replicates `B0.d` (`HardwareInfoRingView` for `CPU`, `GPU`, `PWR`, `RAM`):
  * - `strokeWidth = minDim * 0.05f`
  * - Track circle: `colors.fourth` (`#3B3B3B`)
- * - Progress arc: `ringColor.copy(alpha = 150f / 255f)` with `StrokeCap.Round`
+ * - Progress arc: `ringColor.copy(alpha = 150f / 255f)` with `StrokeCap.Round`, animated over `300ms`
+ *   with `DecelerateInterpolator` (`B0.d.setProgressWithAnimation`)
  * - Top indicator point at `-90°`: `Color.White`, diameter = `strokeWidth * 0.85f`
  * - Title at `15%` y (`minDim * 0.13f`, `colors.tertiary`)
  * - Value at `50%` y (`minDim * 0.25f`, `colors.primary`)
@@ -461,6 +471,20 @@ fun HardwareRingGauge(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
+    val clampedTarget = value.coerceIn(minValue, maxValue)
+    val animatedRingProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(clampedTarget) {
+        if (animatedRingProgress.value != clampedTarget) {
+            animatedRingProgress.animateTo(
+                targetValue = clampedTarget,
+                animationSpec = tween(
+                    durationMillis = 300,
+                    easing = RingDecelerateEasing
+                )
+            )
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier.aspectRatio(1f),
@@ -489,17 +513,17 @@ fun HardwareRingGauge(
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
 
-            // Progress arc (alpha = 150/255 in B0.d)
-            val clamped = value.coerceIn(minValue, maxValue)
+            // Progress arc (alpha = 150/255 in B0.d), using animatedRingProgress
+            val ringProgress = animatedRingProgress.value.coerceIn(minValue, maxValue)
             val sweepAngle = if (!bidirectional) {
                 val denom = (maxValue - minValue).coerceAtLeast(0.001f)
-                ((clamped - minValue) / denom).coerceIn(0f, 1f) * 360f
+                ((ringProgress - minValue) / denom).coerceIn(0f, 1f) * 360f
             } else {
                 val median = 0f
-                if (clamped > median) {
-                    ((clamped - median) / (maxValue - median).coerceAtLeast(0.001f)).coerceIn(0f, 1f) * 360f
-                } else if (clamped < median) {
-                    -((median - clamped) / (median - minValue).coerceAtLeast(0.001f)).coerceIn(0f, 1f) * 360f
+                if (ringProgress > median) {
+                    ((ringProgress - median) / (maxValue - median).coerceAtLeast(0.001f)).coerceIn(0f, 1f) * 360f
+                } else if (ringProgress < median) {
+                    -((median - ringProgress) / (median - minValue).coerceAtLeast(0.001f)).coerceIn(0f, 1f) * 360f
                 } else {
                     0f
                 }

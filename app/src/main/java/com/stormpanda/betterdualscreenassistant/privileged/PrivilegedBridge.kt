@@ -416,13 +416,6 @@ object PrivilegedBridge {
     }
 
     fun readSysfsFile(path: String): String {
-        try {
-            val file = File(path)
-            if (file.canRead()) {
-                return file.readText().trim()
-            }
-        } catch (_: Throwable) {
-        }
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
             val data = Parcel.obtain()
@@ -439,6 +432,13 @@ object PrivilegedBridge {
                 data.recycle()
                 reply.recycle()
             }
+        }
+        try {
+            val file = File(path)
+            if (file.canRead()) {
+                return file.readText().trim()
+            }
+        } catch (_: Throwable) {
         }
         return PServerClient.exec("cat $path", wait = true).getOrDefault("").trim()
     }

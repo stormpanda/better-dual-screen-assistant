@@ -15,13 +15,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.math.ceil
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 data class HardwareTelemetryState(
     val currentFps: Int = 60,
-    val cpuTempCelsius: Float = 40f,
+    val cpuTempCelsius: Float = 56f,
     val fanSpeedPercent: Int = 0,
     val cpuCurFreqGhz: Float = 0f,
     val cpuMaxFreqGhz: Float = 3.2f,
@@ -48,6 +50,13 @@ class TelemetryMonitor(private val context: Context) {
         private const val THERMAL_CPU_PATH = "/sys/devices/virtual/thermal/thermal_zone48/temp"
         private const val BATTERY_CURRENT_NOW_PATH = "/sys/class/power_supply/battery/current_now"
         private const val BATTERY_VOLTAGE_NOW_PATH = "/sys/class/power_supply/battery/voltage_now"
+
+        private fun roundDiv(numerator: Long, denominator: Long, scale: Int = 2): Float {
+            if (denominator == 0L) return 0f
+            return BigDecimal.valueOf(numerator)
+                .divide(BigDecimal.valueOf(denominator), scale, RoundingMode.HALF_UP)
+                .toFloat()
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -63,21 +72,28 @@ class TelemetryMonitor(private val context: Context) {
         if (pollingJob?.isActive == true) return
         lastFlips = -1
         lastFlipTimestampMs = 0L
+        // Reset ring gauges to 0f on attach, matching app:hirv_progress="0" in stock layout
+        _state.value = _state.value.copy(
+            cpuCurFreqGhz = 0f,
+            gpuCurFreqMhz = 0f,
+            powerWatts = 0f,
+            ramUsedGb = 0f
+        )
         pollingJob = scope.launch {
             val maxCpuRaw = PrivilegedBridge.readSysfsLong(CPU_MAX_FREQ_PATH)
             val (cpuMaxVal, cpuUnitStr) = if (maxCpuRaw >= 1_000_000L) {
-                (maxCpuRaw / 1_000_000f) to "GHz"
+                roundDiv(maxCpuRaw, 1_000_000L) to "GHz"
             } else if (maxCpuRaw >= 1_000L) {
-                (maxCpuRaw / 1_000f) to "MHz"
+                roundDiv(maxCpuRaw, 1_000L) to "MHz"
             } else {
                 3.2f to "GHz"
             }
 
             val maxGpuRaw = PrivilegedBridge.readSysfsLong(GPU_MAX_FREQ_PATH)
             val (gpuMaxVal, gpuUnitStr) = if (maxGpuRaw >= 1_000_000_000L) {
-                (maxGpuRaw / 1_000_000_000f) to "GHz"
+                roundDiv(maxGpuRaw, 1_000_000_000L) to "GHz"
             } else if (maxGpuRaw >= 1_000_000L) {
-                (maxGpuRaw / 1_000_000f) to "MHz"
+                roundDiv(maxGpuRaw, 1_000_000L) to "MHz"
             } else {
                 680f to "MHz"
             }
@@ -91,6 +107,18 @@ class TelemetryMonitor(private val context: Context) {
                 12f
             }
 
+            _state.value = _state.value.copy(
+                cpuMaxFreqGhz = cpuMaxVal,
+                cpuUnit = cpuUnitStr,
+                gpuMaxFreqMhz = gpuMaxVal,
+                gpuUnit = gpuUnitStr,
+                ramTotalGb = totalRamGb
+            )
+
+            // Replicate stock CpuRingView / GpuRingView / PwrRingView / RamRingView onAttachedToWindow
+            // postDelayed(..., 500L) before starting the first animated progress update
+            delay(500L)
+
             while (isActive) {
                 val fps = sampleFps()
                 val tempRaw = PrivilegedBridge.readSysfsLong(THERMAL_CPU_PATH)
@@ -100,24 +128,22 @@ class TelemetryMonitor(private val context: Context) {
 
                 val curCpuRaw = PrivilegedBridge.readSysfsLong(CPU_CUR_FREQ_PATH)
                 val cpuCurVal = if (cpuUnitStr == "GHz") {
-                    curCpuRaw / 1_000_000f
+                    roundDiv(curCpuRaw, 1_000_000L)
                 } else {
-                    curCpuRaw / 1_000f
+                    roundDiv(curCpuRaw, 1_000L)
                 }
 
                 val curGpuRaw = PrivilegedBridge.readSysfsLong(GPU_CUR_FREQ_PATH)
                 val gpuCurVal = if (gpuUnitStr == "GHz") {
-                    curGpuRaw / 1_000_000_000f
+                    roundDiv(curGpuRaw, 1_000_000_000L)
                 } else {
-                    curGpuRaw / 1_000_000f
+                    roundDiv(curGpuRaw, 1_000_000L)
                 }
 
                 val currentNowUa = PrivilegedBridge.readSysfsLong(BATTERY_CURRENT_NOW_PATH)
                 val voltageNowUv = PrivilegedBridge.readSysfsLong(BATTERY_VOLTAGE_NOW_PATH)
-                // Replicate S0.n power calculation: -(current_mA * voltage_mV) / 1e6 -> Watts
-                val currentMa = currentNowUa / 1000f
-                val voltageMv = voltageNowUv / 1000f
-                val powerWatts = -((currentMa * voltageMv) / 1_000_000f)
+                // Replicate S0.n power calculation: (current_now / 1e6f) * (voltage_now / 1e6f) -> Watts
+                val powerWatts = (currentNowUa / 1_000_000f) * (voltageNowUv / 1_000_000f)
 
                 am?.getMemoryInfo(memInfo)
                 val usedRamGb = ((memInfo.totalMem - memInfo.availMem).coerceAtLeast(0L)) / 1_000_000_000f
@@ -145,6 +171,12 @@ class TelemetryMonitor(private val context: Context) {
     fun stop() {
         pollingJob?.cancel()
         pollingJob = null
+        _state.value = _state.value.copy(
+            cpuCurFreqGhz = 0f,
+            gpuCurFreqMhz = 0f,
+            powerWatts = 0f,
+            ramUsedGb = 0f
+        )
     }
 
     private fun sampleFps(): Int {
