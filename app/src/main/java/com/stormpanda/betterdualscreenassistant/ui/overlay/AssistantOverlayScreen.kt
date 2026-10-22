@@ -116,6 +116,7 @@ fun AssistantOverlayScreen(
     val dualBrightness by repository.dualBrightness.collectAsState()
     val topBrightness by repository.topBrightness.collectAsState()
     val bottomBrightness by repository.bottomBrightness.collectAsState()
+    val dualVolume by repository.dualVolumePercent.collectAsState()
     val primaryVolume by repository.primaryVolumePercent.collectAsState()
     val secondaryVolume by repository.secondaryVolumePercent.collectAsState()
 
@@ -187,6 +188,7 @@ fun AssistantOverlayScreen(
                             dualBrightness = dualBrightness,
                             topBrightness = topBrightness,
                             bottomBrightness = bottomBrightness,
+                            dualVolume = dualVolume,
                             primaryVolume = primaryVolume,
                             secondaryVolume = secondaryVolume,
                             onSelectDisplayMode = { mode ->
@@ -210,6 +212,9 @@ fun AssistantOverlayScreen(
                             },
                             onBottomBrightnessChange = { pct, temp ->
                                 repository.setDisplayBrightnessPercent(4, pct, temp)
+                            },
+                            onDualVolumeChange = { pct ->
+                                repository.setDualVolumePercent(pct)
                             },
                             onPrimaryVolumeChange = { pct ->
                                 repository.setPrimaryVolumePercent(pct)
@@ -527,7 +532,7 @@ fun AssistantOverlayScreen(
  * - Bottom 50% (`marginTop = 10.dp`):
  *   - Split vertically 50% / 50% into two side-by-side rounded cards (`20.dp` radius, `colors.panelBackground`):
  *     - Left card: 3 brightness sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height.
- *     - Right card: 2 volume sliders (`Top Screen`, `Bottom Screen`) from `12%` to `88%` height.
+ *     - Right card: 3 volume sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height.
  */
 @Composable
 private fun ScreenControlTab(
@@ -535,12 +540,14 @@ private fun ScreenControlTab(
     dualBrightness: Int,
     topBrightness: Int,
     bottomBrightness: Int,
+    dualVolume: Int,
     primaryVolume: Int,
     secondaryVolume: Int,
     onSelectDisplayMode: (Int) -> Unit,
     onDualBrightnessChange: (Int, Boolean) -> Unit,
     onTopBrightnessChange: (Int, Boolean) -> Unit,
     onBottomBrightnessChange: (Int, Boolean) -> Unit,
+    onDualVolumeChange: (Int) -> Unit,
     onPrimaryVolumeChange: (Int) -> Unit,
     onSecondaryVolumeChange: (Int) -> Unit
 ) {
@@ -630,7 +637,7 @@ private fun ScreenControlTab(
                 Spacer(modifier = Modifier.weight(0.06f))
             }
 
-            // Right 50%: VolumeControlPanel (2 volume sliders, 12%..88% vertical guidelines)
+            // Right 50%: VolumeControlPanel (3 volume sliders, 6%..94% vertical guidelines)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -640,7 +647,16 @@ private fun ScreenControlTab(
                     .background(colors.panelBackground)
                     .padding(horizontal = 10.dp)
             ) {
-                Spacer(modifier = Modifier.weight(0.12f))
+                Spacer(modifier = Modifier.weight(0.06f))
+                HorizontalSlidingBar(
+                    label = stringResource(R.string.sliding_dual_screen),
+                    progress = dualVolume,
+                    kind = SliderKind.VOLUME,
+                    onProgressChange = { pct, _ -> onDualVolumeChange(pct) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.293f)
+                )
                 HorizontalSlidingBar(
                     label = stringResource(R.string.sliding_main_screen),
                     progress = primaryVolume,
@@ -648,7 +664,7 @@ private fun ScreenControlTab(
                     onProgressChange = { pct, _ -> onPrimaryVolumeChange(pct) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.38f)
+                        .weight(0.293f)
                 )
                 HorizontalSlidingBar(
                     label = stringResource(R.string.sliding_secondary_screen),
@@ -657,9 +673,9 @@ private fun ScreenControlTab(
                     onProgressChange = { pct, _ -> onSecondaryVolumeChange(pct) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.38f)
+                        .weight(0.293f)
                 )
-                Spacer(modifier = Modifier.weight(0.12f))
+                Spacer(modifier = Modifier.weight(0.06f))
             }
         }
     }

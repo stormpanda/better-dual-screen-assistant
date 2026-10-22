@@ -62,6 +62,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
         const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
         const val PREF_SAVED_OS_THEME_JSON = "saved_os_theme_json"
+        const val PREF_DUAL_VOLUME_PERCENT = "dual_volume_percent"
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -153,6 +154,9 @@ class SystemSettingsRepository(private val context: Context) {
     val bottomBrightness: StateFlow<Int> = _bottomBrightness.asStateFlow()
 
     // Volume (0..100% for slider UI)
+    private val _dualVolumePercent = MutableStateFlow(readDualVolumePercent())
+    val dualVolumePercent: StateFlow<Int> = _dualVolumePercent.asStateFlow()
+
     private val _primaryVolumePercent = MutableStateFlow(readPrimaryVolumePercent())
     val primaryVolumePercent: StateFlow<Int> = _primaryVolumePercent.asStateFlow()
 
@@ -188,12 +192,15 @@ class SystemSettingsRepository(private val context: Context) {
                 _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
                 syncOsThemeIfNeeded()
             }
+            PREF_DUAL_VOLUME_PERCENT -> {
+                _dualVolumePercent.value = readDualVolumePercent()
+            }
         }
     }
 
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            _primaryVolumePercent.value = readPrimaryVolumePercent()
+            _primaryVolumePercent.value = readPrimaryVolumePercent(_primaryVolumePercent.value)
         }
     }
 
@@ -293,8 +300,9 @@ class SystemSettingsRepository(private val context: Context) {
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
         _topBrightness.value = readDisplayBrightnessPercent(0)
         _bottomBrightness.value = readDisplayBrightnessPercent(4)
-        _primaryVolumePercent.value = readPrimaryVolumePercent()
-        _secondaryVolumePercent.value = readSecondaryVolumePercent()
+        _dualVolumePercent.value = readDualVolumePercent()
+        _primaryVolumePercent.value = readPrimaryVolumePercent(_primaryVolumePercent.value)
+        _secondaryVolumePercent.value = readSecondaryVolumePercent(_secondaryVolumePercent.value)
     }
 
     fun refreshDisplayBrightness() {
@@ -667,6 +675,14 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
+    fun setDualVolumePercent(percent: Int) {
+        val p = percent.coerceIn(0, 100)
+        _dualVolumePercent.value = p
+        prefs.edit().putInt(PREF_DUAL_VOLUME_PERCENT, p).apply()
+        setPrimaryVolumePercent(p)
+        setSecondaryVolumePercent(p)
+    }
+
     fun setPrimaryVolumePercent(percent: Int) {
         val p = percent.coerceIn(0, 100)
         _primaryVolumePercent.value = p
@@ -784,16 +800,35 @@ class SystemSettingsRepository(private val context: Context) {
         return (((b - min) / (max - min)) * 100f).roundToInt().coerceIn(0, 100)
     }
 
-    private fun readPrimaryVolumePercent(): Int {
+    private fun readDualVolumePercent(): Int {
+        if (prefs.contains(PREF_DUAL_VOLUME_PERCENT)) {
+            return prefs.getInt(PREF_DUAL_VOLUME_PERCENT, 50).coerceIn(0, 100)
+        }
+        return readPrimaryVolumePercent()
+    }
+
+    private fun readPrimaryVolumePercent(currentPercent: Int = -1): Int {
         val maxVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
         val minVol = audioManager?.getStreamMinVolume(AudioManager.STREAM_MUSIC) ?: 0
         val curVol = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 5
         if (maxVol <= minVol) return 0
+        if (currentPercent in 0..100) {
+            val expectedStep = ((currentPercent / 100f) * (maxVol - minVol) + minVol).roundToInt()
+            if (expectedStep == curVol) {
+                return currentPercent
+            }
+        }
         return (((curVol - minVol).toFloat() / (maxVol - minVol)) * 100f).roundToInt().coerceIn(0, 100)
     }
 
-    private fun readSecondaryVolumePercent(): Int {
+    private fun readSecondaryVolumePercent(currentPercent: Int = -1): Int {
         val cur = getInt(KEY_SECONDARY_SCREEN_VOLUME_LEVEL, 7).coerceIn(0, 15)
+        if (currentPercent in 0..100) {
+            val expectedStep = ((currentPercent / 100f) * 15f).roundToInt().coerceIn(0, 15)
+            if (expectedStep == cur) {
+                return currentPercent
+            }
+        }
         return ((cur / 15f) * 100f).roundToInt().coerceIn(0, 100)
     }
 
