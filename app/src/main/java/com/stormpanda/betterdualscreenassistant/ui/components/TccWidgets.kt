@@ -199,7 +199,8 @@ fun TccButton(
 
 enum class SliderKind {
     BRIGHTNESS,
-    VOLUME
+    VOLUME,
+    LED_BRIGHTNESS
 }
 
 /**
@@ -240,6 +241,7 @@ fun HorizontalSlidingBar(
             displayProgress <= 66 -> R.drawable.ic_volume_2
             else -> R.drawable.ic_volume_3
         }
+        SliderKind.LED_BRIGHTNESS -> R.drawable.ic_qs_ambient_light
     }
 
     Row(

@@ -85,6 +85,8 @@ private enum class ActiveDialog {
     FAN_CONTROL,
     CONTROLLER_STYLE,
     THEME_MODE,
+    TRIGGER_MODE,
+    SCREENSHOT,
     CLOSE_BOTTOM_TIP
 }
 
@@ -96,6 +98,9 @@ fun AssistantOverlayScreen(
     onSelectTab: (Int) -> Unit,
     onOpenRecentsRequest: () -> Unit,
     onCleanMemoryRequest: () -> Unit,
+    onSwapScreensRequest: () -> Unit = {},
+    onToggleTouchLockRequest: () -> Unit = {},
+    onCaptureScreenshotRequest: (Int) -> Unit = {},
     onDismissOverlayRequest: () -> Unit
 ) {
     val themeMode by repository.themeMode.collectAsState()
@@ -116,6 +121,21 @@ fun AssistantOverlayScreen(
     val refreshRate by repository.refreshRate.collectAsState()
     val quickTileOrder by repository.quickTileOrder.collectAsState()
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
+
+    val showLedBrightnessSlider by repository.showLedBrightnessSlider.collectAsState()
+    val ledBrightnessPercent by repository.ledBrightnessPercent.collectAsState()
+    val wifiEnabled by repository.wifiEnabled.collectAsState()
+    val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
+    val dndEnabled by repository.dndEnabled.collectAsState()
+    val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
+    val autoBrightnessEnabled by repository.autoBrightnessEnabled.collectAsState()
+    val touchLockEnabled by repository.touchLockEnabled.collectAsState()
+    val triggerMode by repository.triggerMode.collectAsState()
+    val chargeLimit80 by repository.chargeLimit80.collectAsState()
+    val gamepadMouseMode by repository.gamepadMouseMode.collectAsState()
+    val keyMapperEnabled by repository.keyMapperEnabled.collectAsState()
+    val keepScreenOn by repository.keepScreenOn.collectAsState()
+    val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
 
     val dualBrightness by repository.dualBrightness.collectAsState()
     val topBrightness by repository.topBrightness.collectAsState()
@@ -195,6 +215,9 @@ fun AssistantOverlayScreen(
                             topBrightness = topBrightness,
                             bottomBrightness = bottomBrightness,
                             isDualBrightnessActive = isDualBrightnessActive,
+                            showLedBrightnessSlider = showLedBrightnessSlider,
+                            ledBrightnessPercent = ledBrightnessPercent,
+                            ambientLightEnabled = ambientLight,
                             dualVolume = dualVolume,
                             primaryVolume = primaryVolume,
                             secondaryVolume = secondaryVolume,
@@ -221,6 +244,9 @@ fun AssistantOverlayScreen(
                             onBottomBrightnessChange = { pct, temp ->
                                 repository.setDisplayBrightnessPercent(4, pct, temp)
                             },
+                            onLedBrightnessChange = { pct ->
+                                repository.setLedBrightnessPercent(pct)
+                            },
                             onDualVolumeChange = { pct ->
                                 repository.setDualVolumePercent(pct)
                             },
@@ -245,6 +271,18 @@ fun AssistantOverlayScreen(
                             ambientLight = ambientLight,
                             forceLandscape = forceLandscape,
                             themeMode = themeMode,
+                            wifiEnabled = wifiEnabled,
+                            bluetoothEnabled = bluetoothEnabled,
+                            dndEnabled = dndEnabled,
+                            airplaneModeEnabled = airplaneModeEnabled,
+                            autoBrightnessEnabled = autoBrightnessEnabled,
+                            touchLockEnabled = touchLockEnabled,
+                            triggerMode = triggerMode,
+                            chargeLimit80 = chargeLimit80,
+                            gamepadMouseMode = gamepadMouseMode,
+                            keyMapperEnabled = keyMapperEnabled,
+                            keepScreenOn = keepScreenOn,
+                            preventAccidentalHome = preventAccidentalHome,
                             quickTileOrder = quickTileOrder,
                             disabledQuickTiles = disabledQuickTiles,
                             onToggleRefreshRate = { repository.toggleRefreshRate() },
@@ -253,7 +291,19 @@ fun AssistantOverlayScreen(
                             onToggleVibrate = { repository.toggleVibrate() },
                             onCleanMemory = onCleanMemoryRequest,
                             onToggleAmbientLight = { repository.toggleAmbientLight() },
-                            onToggleForceLandscape = { repository.toggleForceLandscape() }
+                            onToggleForceLandscape = { repository.toggleForceLandscape() },
+                            onToggleWifi = { repository.toggleWifi() },
+                            onToggleBluetooth = { repository.toggleBluetooth() },
+                            onToggleDnd = { repository.toggleDnd() },
+                            onToggleAirplaneMode = { repository.toggleAirplaneMode() },
+                            onToggleAutoBrightness = { repository.toggleAutoBrightness() },
+                            onSwapScreens = onSwapScreensRequest,
+                            onToggleTouchLock = onToggleTouchLockRequest,
+                            onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
+                            onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
+                            onToggleKeyMapper = { repository.toggleKeyMapper() },
+                            onToggleKeepScreenOn = { repository.toggleKeepScreenOn() },
+                            onTogglePreventAccidentalHome = { repository.togglePreventAccidentalHome() }
                         )
                     }
                 }
@@ -529,6 +579,69 @@ fun AssistantOverlayScreen(
                         onDismiss = { activeDialog = ActiveDialog.NONE }
                     )
                 }
+
+                ActiveDialog.TRIGGER_MODE -> {
+                    val options = listOf(
+                        TccDialogOption(
+                            id = 1,
+                            label = "Analog Only",
+                            iconRes = R.drawable.ic_qs_trigger_mode
+                        ),
+                        TccDialogOption(
+                            id = 0,
+                            label = "Digital Only",
+                            iconRes = R.drawable.ic_qs_trigger_mode
+                        ),
+                        TccDialogOption(
+                            id = 2,
+                            label = "Both (Analog + Digital)",
+                            iconRes = R.drawable.ic_qs_trigger_mode
+                        )
+                    )
+                    TccOptionDialog(
+                        title = "L2 / R2 Trigger Mode",
+                        options = options,
+                        selectedId = triggerMode,
+                        onSelectOption = { selected ->
+                            repository.setTriggerMode(selected)
+                            coroutineScope.launch {
+                                delay(300L)
+                                activeDialog = ActiveDialog.NONE
+                            }
+                        },
+                        onDismiss = { activeDialog = ActiveDialog.NONE }
+                    )
+                }
+
+                ActiveDialog.SCREENSHOT -> {
+                    val options = listOf(
+                        TccDialogOption(
+                            id = 0,
+                            label = "Top Screen",
+                            iconRes = R.drawable.ic_just_screen_above
+                        ),
+                        TccDialogOption(
+                            id = 1,
+                            label = "Bottom Screen",
+                            iconRes = R.drawable.ic_just_screen_below
+                        ),
+                        TccDialogOption(
+                            id = 2,
+                            label = "Both Screens",
+                            iconRes = R.drawable.ic_dual_screen_display
+                        )
+                    )
+                    TccOptionDialog(
+                        title = "Capture Screenshot",
+                        options = options,
+                        selectedId = -1,
+                        onSelectOption = { selected ->
+                            activeDialog = ActiveDialog.NONE
+                            onCaptureScreenshotRequest(selected)
+                        },
+                        onDismiss = { activeDialog = ActiveDialog.NONE }
+                    )
+                }
             }
         }
     }
@@ -541,7 +654,8 @@ fun AssistantOverlayScreen(
  *     `Dual-screen display`, `Only top screen`, `Only bottom screen`.
  * - Bottom 50% (`marginTop = 10.dp`):
  *   - Split vertically 50% / 50% into two side-by-side rounded cards (`20.dp` radius, `colors.panelBackground`):
- *     - Left card: 3 brightness sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height.
+ *     - Left card: 3 brightness sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height,
+ *       plus optional 4th `Stick LED` brightness slider when enabled.
  *     - Right card: 3 volume sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height.
  */
 @Composable
@@ -551,6 +665,9 @@ private fun ScreenControlTab(
     topBrightness: Int,
     bottomBrightness: Int,
     isDualBrightnessActive: Boolean,
+    showLedBrightnessSlider: Boolean,
+    ledBrightnessPercent: Int,
+    ambientLightEnabled: Boolean,
     dualVolume: Int,
     primaryVolume: Int,
     secondaryVolume: Int,
@@ -559,6 +676,7 @@ private fun ScreenControlTab(
     onDualBrightnessChange: (Int, Boolean) -> Unit,
     onTopBrightnessChange: (Int, Boolean) -> Unit,
     onBottomBrightnessChange: (Int, Boolean) -> Unit,
+    onLedBrightnessChange: (Int) -> Unit,
     onDualVolumeChange: (Int) -> Unit,
     onPrimaryVolumeChange: (Int) -> Unit,
     onSecondaryVolumeChange: (Int) -> Unit
@@ -608,7 +726,9 @@ private fun ScreenControlTab(
                 .weight(0.5f)
                 .padding(top = 10.dp)
         ) {
-            // Left 50%: ScreenControlPanel (3 brightness sliders, 6%..94% vertical guidelines)
+            // Left 50%: ScreenControlPanel (3 brightness sliders, or 4 when Stick LED slider is enabled)
+            val brightnessSpacerWeight = if (showLedBrightnessSlider) 0.04f else 0.06f
+            val brightnessRowWeight = if (showLedBrightnessSlider) 0.23f else 0.293f
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -618,7 +738,7 @@ private fun ScreenControlTab(
                     .background(colors.panelBackground)
                     .padding(horizontal = 10.dp)
             ) {
-                Spacer(modifier = Modifier.weight(0.06f))
+                Spacer(modifier = Modifier.weight(brightnessSpacerWeight))
                 HorizontalSlidingBar(
                     label = stringResource(R.string.sliding_dual_screen),
                     progress = dualBrightness,
@@ -627,7 +747,7 @@ private fun ScreenControlTab(
                     isFillDimmed = !isDualBrightnessActive,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.293f)
+                        .weight(brightnessRowWeight)
                 )
                 HorizontalSlidingBar(
                     label = stringResource(R.string.sliding_main_screen),
@@ -636,7 +756,7 @@ private fun ScreenControlTab(
                     onProgressChange = onTopBrightnessChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.293f)
+                        .weight(brightnessRowWeight)
                 )
                 HorizontalSlidingBar(
                     label = stringResource(R.string.sliding_secondary_screen),
@@ -645,9 +765,21 @@ private fun ScreenControlTab(
                     onProgressChange = onBottomBrightnessChange,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.293f)
+                        .weight(brightnessRowWeight)
                 )
-                Spacer(modifier = Modifier.weight(0.06f))
+                if (showLedBrightnessSlider) {
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_stick_led),
+                        progress = ledBrightnessPercent,
+                        kind = SliderKind.LED_BRIGHTNESS,
+                        onProgressChange = { pct, _ -> onLedBrightnessChange(pct) },
+                        isFillDimmed = !ambientLightEnabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(brightnessRowWeight)
+                    )
+                }
+                Spacer(modifier = Modifier.weight(brightnessSpacerWeight))
             }
 
             // Right 50%: VolumeControlPanel (3 volume sliders, 6%..94% vertical guidelines)
@@ -727,6 +859,18 @@ private fun SystemSettingsTab(
     ambientLight: Boolean,
     forceLandscape: Boolean,
     themeMode: Int,
+    wifiEnabled: Boolean,
+    bluetoothEnabled: Boolean,
+    dndEnabled: Boolean,
+    airplaneModeEnabled: Boolean,
+    autoBrightnessEnabled: Boolean,
+    touchLockEnabled: Boolean,
+    triggerMode: Int,
+    chargeLimit80: Boolean,
+    gamepadMouseMode: Boolean,
+    keyMapperEnabled: Boolean,
+    keepScreenOn: Boolean,
+    preventAccidentalHome: Boolean,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     onToggleRefreshRate: () -> Unit,
@@ -735,7 +879,19 @@ private fun SystemSettingsTab(
     onToggleVibrate: () -> Unit,
     onCleanMemory: () -> Unit,
     onToggleAmbientLight: () -> Unit,
-    onToggleForceLandscape: () -> Unit
+    onToggleForceLandscape: () -> Unit,
+    onToggleWifi: () -> Unit,
+    onToggleBluetooth: () -> Unit,
+    onToggleDnd: () -> Unit,
+    onToggleAirplaneMode: () -> Unit,
+    onToggleAutoBrightness: () -> Unit,
+    onSwapScreens: () -> Unit,
+    onToggleTouchLock: () -> Unit,
+    onToggleChargeLimit80: () -> Unit,
+    onToggleGamepadMouseMode: () -> Unit,
+    onToggleKeyMapper: () -> Unit,
+    onToggleKeepScreenOn: () -> Unit,
+    onTogglePreventAccidentalHome: () -> Unit
 ) {
     val colors = LocalTccColors.current
     val coroutineScope = rememberCoroutineScope()
@@ -882,6 +1038,167 @@ private fun SystemSettingsTab(
                             iconRes = R.drawable.ic_qs_theme_mode,
                             selected = themeSelected,
                             onClick = { onOpenDialog(ActiveDialog.THEME_MODE) }
+                        )
+                    )
+                }
+
+                // Android System Toggles
+                QuickSettingTileId.WIFI -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Wi-Fi",
+                            iconRes = R.drawable.ic_qs_wifi,
+                            selected = wifiEnabled,
+                            onClick = onToggleWifi
+                        )
+                    )
+                }
+
+                QuickSettingTileId.BLUETOOTH -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Bluetooth",
+                            iconRes = R.drawable.ic_bluetooth,
+                            selected = bluetoothEnabled,
+                            onClick = onToggleBluetooth
+                        )
+                    )
+                }
+
+                QuickSettingTileId.DO_NOT_DISTURB -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Do Not Disturb",
+                            iconRes = R.drawable.ic_qs_dnd,
+                            selected = dndEnabled,
+                            onClick = onToggleDnd
+                        )
+                    )
+                }
+
+                QuickSettingTileId.AIRPLANE_MODE -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Airplane Mode",
+                            iconRes = R.drawable.ic_qs_airplane,
+                            selected = airplaneModeEnabled,
+                            onClick = onToggleAirplaneMode
+                        )
+                    )
+                }
+
+                QuickSettingTileId.AUTO_BRIGHTNESS -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Auto-Brightness",
+                            iconRes = R.drawable.ic_qs_auto_brightness,
+                            selected = autoBrightnessEnabled,
+                            onClick = onToggleAutoBrightness
+                        )
+                    )
+                }
+
+                // Tools
+                QuickSettingTileId.SWAP_SCREENS -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Swap Screens",
+                            iconRes = R.drawable.ic_qs_swap_screens,
+                            selected = false,
+                            onClick = onSwapScreens
+                        )
+                    )
+                }
+
+                QuickSettingTileId.TOUCH_LOCK -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = if (touchLockEnabled) "Touch Locked" else "Touch Lock",
+                            iconRes = R.drawable.ic_qs_touch_lock,
+                            selected = touchLockEnabled,
+                            onClick = onToggleTouchLock
+                        )
+                    )
+                }
+
+                QuickSettingTileId.SCREENSHOT -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Screenshot",
+                            iconRes = R.drawable.ic_qs_screenshot,
+                            selected = false,
+                            onClick = { onOpenDialog(ActiveDialog.SCREENSHOT) }
+                        )
+                    )
+                }
+
+                QuickSettingTileId.TRIGGER_MODE -> {
+                    val triggerLabel = when (triggerMode) {
+                        1 -> "Trigger: Analog"
+                        0 -> "Trigger: Digital"
+                        else -> "Trigger: Both"
+                    }
+                    add(
+                        QuickSettingTileModel(
+                            label = triggerLabel,
+                            iconRes = R.drawable.ic_qs_trigger_mode,
+                            selected = triggerMode != 2,
+                            onClick = { onOpenDialog(ActiveDialog.TRIGGER_MODE) }
+                        )
+                    )
+                }
+
+                QuickSettingTileId.CHARGE_LIMIT_80 -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "80% Charge Limit",
+                            iconRes = R.drawable.ic_qs_charge_limit,
+                            selected = chargeLimit80,
+                            onClick = onToggleChargeLimit80
+                        )
+                    )
+                }
+
+                QuickSettingTileId.GAMEPAD_MOUSE_MODE -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Mouse Mode",
+                            iconRes = R.drawable.ic_qs_mouse_mode,
+                            selected = gamepadMouseMode,
+                            onClick = onToggleGamepadMouseMode
+                        )
+                    )
+                }
+
+                QuickSettingTileId.KEY_MAPPER -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Key Mapper",
+                            iconRes = R.drawable.ic_qs_key_mapper,
+                            selected = keyMapperEnabled,
+                            onClick = onToggleKeyMapper
+                        )
+                    )
+                }
+
+                QuickSettingTileId.KEEP_SCREEN_ON -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Keep Screen On",
+                            iconRes = R.drawable.ic_qs_keep_awake,
+                            selected = keepScreenOn,
+                            onClick = onToggleKeepScreenOn
+                        )
+                    )
+                }
+
+                QuickSettingTileId.PREVENT_ACCIDENTAL_HOME -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Home Lock",
+                            iconRes = R.drawable.ic_qs_prevent_home,
+                            selected = preventAccidentalHome,
+                            onClick = onTogglePreventAccidentalHome
                         )
                     )
                 }

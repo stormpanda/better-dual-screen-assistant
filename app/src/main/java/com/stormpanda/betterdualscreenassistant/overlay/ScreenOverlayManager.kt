@@ -161,6 +161,10 @@ class ScreenOverlayManager(
             cleanupExitingAssistant()
 
             repository.refreshAll()
+            if (repository.dualScreenDisplayMode.value == 0 && repository.touchLockEnabled.value) {
+                // Temporarily allow bottom-screen touch while the Assistant Overlay is open
+                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
+            }
             val wm = getWindowManagerForDisplay(BOTTOM_DISPLAY_ID) ?: return@post
             val displayContext = getDisplayContext(BOTTOM_DISPLAY_ID)
             val realSize = getDisplayRealSize(BOTTOM_DISPLAY_ID, fallbackWidth = 1240, fallbackHeight = 1080)
@@ -188,6 +192,15 @@ class ScreenOverlayManager(
                         },
                         onCleanMemoryRequest = {
                             performCleanMemoryWithToast()
+                        },
+                        onSwapScreensRequest = {
+                            performSwapScreensWithToast()
+                        },
+                        onToggleTouchLockRequest = {
+                            performToggleTouchLockWithToast()
+                        },
+                        onCaptureScreenshotRequest = { targetMode ->
+                            performScreenshotWithToast(targetMode)
                         },
                         onDismissOverlayRequest = {
                             hideAssistantOverlay()
@@ -246,6 +259,7 @@ class ScreenOverlayManager(
             assistantLifecycle = null
             isAssistantShowing = false
             telemetryMonitor.stop()
+            repository.reapplyTouchDisableForCurrentMode()
 
             if (immediate) {
                 try {
@@ -369,6 +383,56 @@ class ScreenOverlayManager(
             }
             showBottomToast(message)
         }
+    }
+
+    fun performSwapScreensWithToast() {
+        hideAssistantOverlay()
+        mainHandler.postDelayed({
+            Thread {
+                val swapped = repository.swapScreens()
+                mainHandler.post {
+                    if (swapped) {
+                        showBottomToast("Swapped apps between screens")
+                    } else {
+                        showBottomToast("No movable foreground apps to swap")
+                    }
+                }
+            }.start()
+        }, 220L)
+    }
+
+    fun performToggleTouchLockWithToast() {
+        mainHandler.post {
+            val locked = repository.toggleTouchLock()
+            if (locked) {
+                hideAssistantOverlay()
+                showBottomToast("Bottom screen touch locked (open Assistant to unlock)")
+            } else {
+                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
+                showBottomToast("Bottom screen touch unlocked")
+            }
+        }
+    }
+
+    fun performScreenshotWithToast(targetMode: Int) {
+        hideAssistantOverlay()
+        mainHandler.postDelayed({
+            Thread {
+                val ok = PrivilegedBridge.captureScreenshot(context, targetMode)
+                val targetName = when (targetMode) {
+                    0 -> "Top screen"
+                    1 -> "Bottom screen"
+                    else -> "Both screens"
+                }
+                mainHandler.post {
+                    if (ok) {
+                        showBottomToast("Saved $targetName screenshot to Pictures/Screenshots")
+                    } else {
+                        showBottomToast("Failed to capture $targetName screenshot")
+                    }
+                }
+            }.start()
+        }, 280L)
     }
 
     fun showBottomToast(message: String) {

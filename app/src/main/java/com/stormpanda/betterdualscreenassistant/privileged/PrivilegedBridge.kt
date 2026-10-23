@@ -534,6 +534,149 @@ object PrivilegedBridge {
         PServerClient.exec("settings put system $key \"$value\"", wait = true)
     }
 
+    fun putGlobalSettingInt(context: Context, key: String, value: Int) {
+        try {
+            if (android.provider.Settings.Global.putInt(context.contentResolver, key, value)) {
+                return
+            }
+        } catch (_: Throwable) {
+        }
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeString("global")
+                data.writeString(key)
+                data.writeString(value.toString())
+                binder.transact(PrivilegedHelperMain.TRANSACTION_PUT_SYSTEM_SETTING, data, reply, 0)
+                reply.readException()
+                return
+            } catch (_: Throwable) {
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        PServerClient.exec("settings put global $key $value", wait = true)
+    }
+
+    fun putSecureSettingInt(context: Context, key: String, value: Int) {
+        try {
+            if (android.provider.Settings.Secure.putInt(context.contentResolver, key, value)) {
+                return
+            }
+        } catch (_: Throwable) {
+        }
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeString("secure")
+                data.writeString(key)
+                data.writeString(value.toString())
+                binder.transact(PrivilegedHelperMain.TRANSACTION_PUT_SYSTEM_SETTING, data, reply, 0)
+                reply.readException()
+                return
+            } catch (_: Throwable) {
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        PServerClient.exec("settings put secure $key $value", wait = true)
+    }
+
+    fun swapDisplayTasks(context: Context): Boolean {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_SWAP_DISPLAY_TASKS, data, reply, 0)
+                reply.readException()
+                return reply.readInt() != 0
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper swapDisplayTasks failed, trying fallback", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        ensureStarted(context)
+        val script = """
+            top_task=$(dumpsys activity activities | awk '/Display #0/{d=0} /Display #4/{d=4} /Task\{.*type=standard/{if (match($0, /#[0-9]+/)) {id=substr($0, RSTART+1, RLENGTH-1); if (d==0 && t0=="") t0=id; if (d==4 && t4=="") t4=id}} END{print t0 ":" t4}')
+            t0=${'$'}{top_task%:*}
+            t4=${'$'}{top_task#*:}
+            if [ -n "${'$'}t0" ] && [ -n "${'$'}t4" ]; then
+                am display move-stack "${'$'}t0" 4
+                am display move-stack "${'$'}t4" 0
+                echo "OK"
+            elif [ -n "${'$'}t0" ]; then
+                am display move-stack "${'$'}t0" 4
+                echo "OK"
+            elif [ -n "${'$'}t4" ]; then
+                am display move-stack "${'$'}t4" 0
+                echo "OK"
+            fi
+        """.trimIndent()
+        return PServerClient.exec(script, wait = true).getOrDefault("").contains("OK")
+    }
+
+    /**
+     * Captures a screenshot of the Top screen (`targetMode == 0`), Bottom screen (`targetMode == 1`),
+     * or Both screens (`targetMode == 2`) into `/sdcard/Pictures/Screenshots/` and notifies MediaScanner.
+     */
+    fun captureScreenshot(context: Context, targetMode: Int): Boolean {
+        val sfOut = PServerClient.exec("dumpsys SurfaceFlinger --display-id", wait = true).getOrDefault("")
+        var topPhysId: String? = null
+        var bottomPhysId: String? = null
+        val regex = Regex("""Display\s+(\d+)\s+\([^)]*port=(\d+)""")
+        for (match in regex.findAll(sfOut)) {
+            val physId = match.groupValues[1]
+            val port = match.groupValues[2]
+            if (port == "131") topPhysId = physId
+            if (port == "132") bottomPhysId = physId
+        }
+
+        val dir = "/sdcard/Pictures/Screenshots"
+        val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val paths = mutableListOf<String>()
+        val cmds = mutableListOf("mkdir -p $dir")
+
+        if (targetMode == 0 || targetMode == 2) {
+            val topPath = "$dir/Screenshot_${ts}_Top.png"
+            paths.add(topPath)
+            val dArg = if (!topPhysId.isNullOrEmpty()) "-d $topPhysId" else ""
+            cmds.add("/system/bin/screencap -p $dArg $topPath")
+        }
+        if (targetMode == 1 || targetMode == 2) {
+            val bottomPath = "$dir/Screenshot_${ts}_Bottom.png"
+            paths.add(bottomPath)
+            val dArg = if (!bottomPhysId.isNullOrEmpty()) "-d $bottomPhysId" else "-d 4"
+            cmds.add("/system/bin/screencap -p $dArg $bottomPath")
+        }
+
+        val res = PServerClient.exec(cmds.joinToString(" && "), wait = true)
+        if (paths.isNotEmpty()) {
+            try {
+                android.media.MediaScannerConnection.scanFile(
+                    context.applicationContext,
+                    paths.toTypedArray(),
+                    arrayOf("image/png"),
+                    null
+                )
+            } catch (_: Throwable) {
+            }
+        }
+        return res.isSuccess
+    }
+
     fun applyOsThemeOverlay(
         context: Context,
         resourceNames: Array<String>,

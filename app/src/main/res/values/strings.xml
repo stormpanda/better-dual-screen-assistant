@@ -29,6 +29,7 @@
     <string name="sliding_dual_screen">Dual Screen</string>
     <string name="sliding_main_screen">Top Screen</string>
     <string name="sliding_secondary_screen">Bottom Screen</string>
+    <string name="sliding_stick_led">Stick LED</string>
     <string name="sliding_volume_text">Volume</string>
     <string name="text_charging_separation_title">Direct Power Supply</string>
     <string name="text_clear_memory_title">Clean Memory</string>

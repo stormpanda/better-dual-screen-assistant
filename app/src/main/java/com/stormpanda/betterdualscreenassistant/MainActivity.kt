@@ -109,6 +109,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
+import com.stormpanda.betterdualscreenassistant.system.QuickSettingCategory
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
@@ -367,6 +368,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
     val showCloseBottomScreenTip by repo.showCloseBottomScreenTip.collectAsState()
     val rememberLastTab by repo.rememberLastTab.collectAsState()
+    val showLedBrightnessSlider by repo.showLedBrightnessSlider.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
@@ -541,6 +543,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 stockDisabled = stockDisabled,
                                                 showCloseBottomScreenTip = showCloseBottomScreenTip,
                                                 rememberLastTab = rememberLastTab,
+                                                showLedBrightnessSlider = showLedBrightnessSlider,
                                                 onToggleReplaceStock = { replaceStock ->
                                                     stockDisabled = replaceStock
                                                     scope.launch(Dispatchers.IO) {
@@ -559,6 +562,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleRememberLastTab = { enabled ->
                                                     repo.setRememberLastTab(enabled)
+                                                },
+                                                onToggleShowLedBrightnessSlider = { enabled ->
+                                                    repo.setShowLedBrightnessSlider(enabled)
                                                 }
                                             )
                                         }
@@ -674,10 +680,12 @@ private fun GeneralSettingsTabContent(
     stockDisabled: Boolean,
     showCloseBottomScreenTip: Boolean,
     rememberLastTab: Boolean,
+    showLedBrightnessSlider: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onOpenOverlay: () -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
-    onToggleRememberLastTab: (Boolean) -> Unit
+    onToggleRememberLastTab: (Boolean) -> Unit,
+    onToggleShowLedBrightnessSlider: (Boolean) -> Unit
 ) {
     GamepadToggleCard(
         title = "Replace Stock Assistant",
@@ -709,6 +717,14 @@ private fun GeneralSettingsTabContent(
     )
 
     GamepadToggleCard(
+        title = "Show Stick LED Brightness Slider",
+        description = "Add a 4th brightness slider in the Mode tab to control joystick & ambient LED brightness",
+        checked = showLedBrightnessSlider,
+        icon = Icons.Rounded.Tune,
+        onCheckedChange = onToggleShowLedBrightnessSlider
+    )
+
+    GamepadToggleCard(
         title = "Confirm Before Turning Off Bottom Screen",
         description = "Show the wake-up reminder dialog before blanking the bottom screen",
         checked = showCloseBottomScreenTip,
@@ -732,7 +748,8 @@ private fun QuickTogglesSettingsTabContent(
     val totalCount = QuickSettingTileId.entries.size
     val activeCount = activeTiles.size
     val isModified = remember(quickTileOrder, disabledQuickTiles) {
-        quickTileOrder != QuickSettingTileId.defaultOrder || disabledQuickTiles.isNotEmpty()
+        quickTileOrder != QuickSettingTileId.defaultOrder ||
+            disabledQuickTiles != QuickSettingTileId.defaultDisabled
     }
 
     QuickTogglesVisualReorderCard(
@@ -744,12 +761,12 @@ private fun QuickTogglesSettingsTabContent(
 
     GamepadActionCard(
         title = "Enable / Disable Toggles",
-        description = "Choose which quick setting toggles appear in the assistant overlay",
+        description = "Configure Stock AYN toggles, Android System toggles, and Tools",
         icon = Icons.Rounded.Checklist,
         trailingContent = {
             GamepadPill(
                 text = "$activeCount / $totalCount Active",
-                isAccent = disabledQuickTiles.isNotEmpty()
+                isAccent = disabledQuickTiles != QuickSettingTileId.defaultDisabled
             )
         },
         onClick = onOpenEnableDisableSubPage
@@ -759,9 +776,9 @@ private fun QuickTogglesSettingsTabContent(
         title = "Reset Quick Toggles",
         confirmTitle = "Confirm Reset to Default",
         description = if (isModified) {
-            "Restore default stock toggle order and re-enable all $totalCount toggles"
+            "Restore default toggle order and category defaults (Stock AYN on, Android System & Tools off)"
         } else {
-            "All toggles are currently in their default order and enabled"
+            "All toggles are currently in their default order and category state"
         },
         confirmDescription = "Press A again to reset toggle order and visibility, or B to cancel",
         actionText = "Reset",
@@ -1314,27 +1331,45 @@ private fun EnableDisableTogglesSubPageContent(
 
     GamepadInfoBox(
         text = "Toggle Visibility ($enabledCount of $totalCount Active)",
-        description = "Disabled toggles are hidden from the bottom-screen Quick Settings panel. At least 1 toggle must remain enabled."
+        description = "Stock AYN toggles are enabled by default; Android System toggles and Tools are disabled by default. At least 1 toggle must remain enabled."
     )
 
-    quickTileOrder.forEachIndexed { index, tile ->
-        val isEnabled = tile !in disabledQuickTiles
-        val canToggle = !isEnabled || enabledCount > 1
-        GamepadToggleCard(
-            title = tile.title,
-            description = if (!canToggle) {
-                "${tile.description} (At least 1 toggle must stay enabled)"
-            } else {
-                tile.description
-            },
-            checked = isEnabled,
-            enabled = canToggle,
-            itemKey = "toggle_visibility_${tile.key}",
-            onCheckedChange = { nextEnabled ->
-                onSetTileEnabled(tile, nextEnabled)
-            },
-            modifier = if (index == 0) Modifier.firstDeckItem() else Modifier
+    var isFirstItem = true
+    QuickSettingCategory.entries.forEach { category ->
+        val categoryTiles = remember(quickTileOrder, category) {
+            quickTileOrder.filter { it.category == category }
+        }
+        val activeInCategory = categoryTiles.count { it !in disabledQuickTiles }
+
+        GamepadSectionHeader(
+            text = "${category.title} ($activeInCategory / ${categoryTiles.size})"
         )
+
+        categoryTiles.forEach { tile ->
+            val isEnabled = tile !in disabledQuickTiles
+            val canToggle = !isEnabled || enabledCount > 1
+            val itemModifier = if (isFirstItem) {
+                isFirstItem = false
+                Modifier.firstDeckItem()
+            } else {
+                Modifier
+            }
+            GamepadToggleCard(
+                title = tile.title,
+                description = if (!canToggle) {
+                    "${tile.description} (At least 1 toggle must stay enabled)"
+                } else {
+                    tile.description
+                },
+                checked = isEnabled,
+                enabled = canToggle,
+                itemKey = "toggle_visibility_${tile.key}",
+                onCheckedChange = { nextEnabled ->
+                    onSetTileEnabled(tile, nextEnabled)
+                },
+                modifier = itemModifier
+            )
+        }
     }
 }
 

@@ -1,6 +1,9 @@
 package com.stormpanda.betterdualscreenassistant.system
 
 import android.app.ActivityManager
+import android.app.NotificationManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -11,12 +14,14 @@ import android.database.ContentObserver
 import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.app.UiModeManager
 import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.compose.ui.graphics.toArgb
+import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.DEFAULT_MEGINGIARD_ACCENT_ARGB
@@ -55,10 +60,19 @@ class SystemSettingsRepository(private val context: Context) {
         const val KEY_TCC_THEME_MODE = "tcc_theme_mode"
         const val KEY_PEAK_REFRESH_RATE = "peak_refresh_rate"
         const val KEY_MIN_REFRESH_RATE = "min_refresh_rate"
+        const val KEY_LED_BRIGHTNESS_PERCENT = "led_light_brightness_percent"
+        const val KEY_TRIGGER_INPUT_MODE = "trigger_input_mode"
+        const val KEY_CHARGE_LIMIT_80 = "percent_80_charge_limit"
+        const val KEY_GAMEPAD_MOUSE_MODE = "global_gamepad_to_mouse_mode"
+        const val KEY_ADAPTER_ENABLE = "key_adapter_enable"
+        const val KEY_SHOW_FLOATING_ICON = "is_show_floatingIcon"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_PREVENT_ACCIDENTAL_HOME = "prevent_press_home_accidentally"
 
         const val PREFS_NAME = "better_dsa_prefs"
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
         const val PREF_REMEMBER_LAST_TAB = "remember_last_tab"
+        const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -69,6 +83,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_DUAL_VOLUME_ACTIVE = "dual_volume_active"
         const val PREF_QUICK_TILE_ORDER = "quick_tile_order"
         const val PREF_DISABLED_QUICK_TILES = "disabled_quick_tiles"
+        const val PREF_KNOWN_QUICK_TILES = "known_quick_tiles"
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -95,6 +110,9 @@ class SystemSettingsRepository(private val context: Context) {
     private val contentResolver = context.contentResolver
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val displayManager = context.getSystemService(DisplayManager::class.java)
+    private val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
+    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+    private val notificationManager = context.getSystemService(NotificationManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -180,6 +198,55 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
     )
     val rememberLastTab: StateFlow<Boolean> = _rememberLastTab.asStateFlow()
+
+    private val _showLedBrightnessSlider = MutableStateFlow(
+        prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+    )
+    val showLedBrightnessSlider: StateFlow<Boolean> = _showLedBrightnessSlider.asStateFlow()
+
+    private val _ledBrightnessPercent = MutableStateFlow(readLedBrightnessPercent())
+    val ledBrightnessPercent: StateFlow<Int> = _ledBrightnessPercent.asStateFlow()
+
+    // Android System Toggles
+    private val _wifiEnabled = MutableStateFlow(readWifiEnabled())
+    val wifiEnabled: StateFlow<Boolean> = _wifiEnabled.asStateFlow()
+
+    private val _bluetoothEnabled = MutableStateFlow(readBluetoothEnabled())
+    val bluetoothEnabled: StateFlow<Boolean> = _bluetoothEnabled.asStateFlow()
+
+    private val _dndEnabled = MutableStateFlow(readDndEnabled())
+    val dndEnabled: StateFlow<Boolean> = _dndEnabled.asStateFlow()
+
+    private val _airplaneModeEnabled = MutableStateFlow(readAirplaneModeEnabled())
+    val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
+
+    private val _autoBrightnessEnabled = MutableStateFlow(
+        getInt(Settings.System.SCREEN_BRIGHTNESS_MODE, 0) == 1
+    )
+    val autoBrightnessEnabled: StateFlow<Boolean> = _autoBrightnessEnabled.asStateFlow()
+
+    // Tools Toggles
+    private val _touchLockEnabled = MutableStateFlow(false)
+    val touchLockEnabled: StateFlow<Boolean> = _touchLockEnabled.asStateFlow()
+
+    // Trigger Mode: 1 = Analog, 0 = Digital, 2 = Both
+    private val _triggerMode = MutableStateFlow(getInt(KEY_TRIGGER_INPUT_MODE, 2))
+    val triggerMode: StateFlow<Int> = _triggerMode.asStateFlow()
+
+    private val _chargeLimit80 = MutableStateFlow(getInt(KEY_CHARGE_LIMIT_80, 0) == 1)
+    val chargeLimit80: StateFlow<Boolean> = _chargeLimit80.asStateFlow()
+
+    private val _gamepadMouseMode = MutableStateFlow(getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1)
+    val gamepadMouseMode: StateFlow<Boolean> = _gamepadMouseMode.asStateFlow()
+
+    private val _keyMapperEnabled = MutableStateFlow(getInt(KEY_SHOW_FLOATING_ICON, 0) == 1)
+    val keyMapperEnabled: StateFlow<Boolean> = _keyMapperEnabled.asStateFlow()
+
+    private val _keepScreenOn = MutableStateFlow(getInt(KEY_KEEP_SCREEN_ON, 0) == 1)
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    private val _preventAccidentalHome = MutableStateFlow(getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1)
+    val preventAccidentalHome: StateFlow<Boolean> = _preventAccidentalHome.asStateFlow()
 
     private val _quickTileOrder = MutableStateFlow(readSavedQuickTileOrder())
     val quickTileOrder: StateFlow<List<QuickSettingTileId>> = _quickTileOrder.asStateFlow()
@@ -287,6 +354,10 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_REMEMBER_LAST_TAB -> {
                 _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
             }
+            PREF_SHOW_LED_BRIGHTNESS_SLIDER -> {
+                _showLedBrightnessSlider.value =
+                    prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+            }
             PREF_QUICK_TILE_ORDER -> {
                 _quickTileOrder.value = readSavedQuickTileOrder()
             }
@@ -298,11 +369,27 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val updated = readPrimaryVolumePercent(_primaryVolumePercent.value)
-            if (updated != _primaryVolumePercent.value) {
-                _primaryVolumePercent.value = updated
-                _isDualVolumeActive.value = false
-                prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+            when (intent?.action) {
+                "android.media.VOLUME_CHANGED_ACTION" -> {
+                    val updated = readPrimaryVolumePercent(_primaryVolumePercent.value)
+                    if (updated != _primaryVolumePercent.value) {
+                        _primaryVolumePercent.value = updated
+                        _isDualVolumeActive.value = false
+                        prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+                    }
+                }
+                WifiManager.WIFI_STATE_CHANGED_ACTION -> {
+                    _wifiEnabled.value = readWifiEnabled()
+                }
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    _bluetoothEnabled.value = readBluetoothEnabled()
+                }
+                NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> {
+                    _dndEnabled.value = readDndEnabled()
+                }
+                Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
+                    _airplaneModeEnabled.value = readAirplaneModeEnabled()
+                }
             }
         }
     }
@@ -329,11 +416,32 @@ class SystemSettingsRepository(private val context: Context) {
             KEY_FORCE_LANDSCAPE,
             KEY_TCC_THEME_MODE,
             KEY_PEAK_REFRESH_RATE,
+            KEY_LED_BRIGHTNESS_PERCENT,
+            KEY_TRIGGER_INPUT_MODE,
+            KEY_CHARGE_LIMIT_80,
+            KEY_GAMEPAD_MOUSE_MODE,
+            KEY_SHOW_FLOATING_ICON,
+            KEY_KEEP_SCREEN_ON,
+            KEY_PREVENT_ACCIDENTAL_HOME,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
             "screen_brightness"
         )
         for (key in keys) {
             contentResolver.registerContentObserver(
                 Settings.System.getUriFor(key),
+                false,
+                settingsObserver
+            )
+        }
+        val globalKeys = listOf(
+            Settings.Global.WIFI_ON,
+            Settings.Global.BLUETOOTH_ON,
+            Settings.Global.AIRPLANE_MODE_ON,
+            "zen_mode"
+        )
+        for (gKey in globalKeys) {
+            contentResolver.registerContentObserver(
+                Settings.Global.getUriFor(gKey),
                 false,
                 settingsObserver
             )
@@ -355,7 +463,13 @@ class SystemSettingsRepository(private val context: Context) {
         } catch (_: Throwable) {
         }
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
-        val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+        val filter = IntentFilter().apply {
+            addAction("android.media.VOLUME_CHANGED_ACTION")
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+        }
         context.registerReceiver(volumeReceiver, filter)
         refreshAll()
     }
@@ -403,6 +517,19 @@ class SystemSettingsRepository(private val context: Context) {
         _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
         _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+        _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+        _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
+        _wifiEnabled.value = readWifiEnabled()
+        _bluetoothEnabled.value = readBluetoothEnabled()
+        _dndEnabled.value = readDndEnabled()
+        _airplaneModeEnabled.value = readAirplaneModeEnabled()
+        _autoBrightnessEnabled.value = getInt(Settings.System.SCREEN_BRIGHTNESS_MODE, 0) == 1
+        _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
+        _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
+        _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
+        _keyMapperEnabled.value = getInt(KEY_SHOW_FLOATING_ICON, 0) == 1
+        _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
+        _preventAccidentalHome.value = getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
         _quickTileOrder.value = readSavedQuickTileOrder()
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         if (refreshMegingiardTheme) {
@@ -433,10 +560,12 @@ class SystemSettingsRepository(private val context: Context) {
         when (mode) {
             0 -> {
                 PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0)
-                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
+                val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
+                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
                 PrivilegedBridge.setPinScreenMode(context, 0)
             }
             1 -> {
+                _touchLockEnabled.value = false
                 PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
                 PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
@@ -444,6 +573,7 @@ class SystemSettingsRepository(private val context: Context) {
                 _screenFocusLock.value = 1
             }
             2 -> {
+                _touchLockEnabled.value = false
                 PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
                 PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
@@ -455,7 +585,10 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun reapplyTouchDisableForCurrentMode() {
         when (_dualScreenDisplayMode.value) {
-            0 -> PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
+            0 -> {
+                val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
+                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
+            }
             1 -> PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
             2 -> PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
         }
@@ -922,6 +1055,143 @@ class SystemSettingsRepository(private val context: Context) {
         _rememberLastTab.value = enabled
     }
 
+    fun setShowLedBrightnessSlider(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, enabled).apply()
+        _showLedBrightnessSlider.value = enabled
+    }
+
+    fun setLedBrightnessPercent(percent: Int) {
+        val p = percent.coerceIn(0, 100)
+        _ledBrightnessPercent.value = p
+        val linear = (p / 100f).coerceIn(0f, 1f)
+        PrivilegedBridge.putSystemSettingFloat(context, KEY_LED_BRIGHTNESS_PERCENT, linear)
+    }
+
+    fun toggleWifi() {
+        val next = !_wifiEnabled.value
+        _wifiEnabled.value = next
+        themeSyncExecutor.execute {
+            @Suppress("DEPRECATION")
+            val handled = try {
+                wifiManager?.setWifiEnabled(next) == true
+            } catch (_: Throwable) {
+                false
+            }
+            if (!handled) {
+                PServerClient.exec("svc wifi ${if (next) "enable" else "disable"}", wait = false)
+            }
+        }
+    }
+
+    fun toggleBluetooth() {
+        val next = !_bluetoothEnabled.value
+        _bluetoothEnabled.value = next
+        themeSyncExecutor.execute {
+            @Suppress("DEPRECATION", "MissingPermission")
+            val handled = try {
+                val adapter = bluetoothManager?.adapter
+                if (adapter != null) {
+                    if (next) adapter.enable() else adapter.disable()
+                } else {
+                    false
+                }
+            } catch (_: Throwable) {
+                false
+            }
+            if (!handled) {
+                PServerClient.exec("svc bluetooth ${if (next) "enable" else "disable"}", wait = false)
+            }
+        }
+    }
+
+    fun toggleDnd() {
+        val next = !_dndEnabled.value
+        _dndEnabled.value = next
+        PrivilegedBridge.putGlobalSettingInt(context, "zen_mode", if (next) 1 else 0)
+        themeSyncExecutor.execute {
+            PServerClient.exec("cmd notification set_dnd ${if (next) "on" else "off"}", wait = false)
+        }
+    }
+
+    fun toggleAirplaneMode() {
+        val next = !_airplaneModeEnabled.value
+        _airplaneModeEnabled.value = next
+        PrivilegedBridge.putGlobalSettingInt(
+            context,
+            Settings.Global.AIRPLANE_MODE_ON,
+            if (next) 1 else 0
+        )
+        themeSyncExecutor.execute {
+            PServerClient.exec(
+                "cmd connectivity airplane-mode ${if (next) "enable" else "disable"}",
+                wait = false
+            )
+        }
+    }
+
+    fun toggleAutoBrightness() {
+        val next = !_autoBrightnessEnabled.value
+        _autoBrightnessEnabled.value = next
+        PrivilegedBridge.putSystemSettingInt(
+            context,
+            Settings.System.SCREEN_BRIGHTNESS_MODE,
+            if (next) 1 else 0
+        )
+    }
+
+    fun swapScreens(): Boolean {
+        return PrivilegedBridge.swapDisplayTasks(context)
+    }
+
+    fun toggleTouchLock(): Boolean {
+        val next = !_touchLockEnabled.value
+        _touchLockEnabled.value = next
+        return next
+    }
+
+    fun setTriggerMode(mode: Int) {
+        val normalized = mode.coerceIn(0, 2)
+        PrivilegedBridge.putSystemSettingInt(context, KEY_TRIGGER_INPUT_MODE, normalized)
+        _triggerMode.value = normalized
+    }
+
+    fun toggleChargeLimit80() {
+        val next = !_chargeLimit80.value
+        PrivilegedBridge.putSystemSettingInt(context, KEY_CHARGE_LIMIT_80, if (next) 1 else 0)
+        _chargeLimit80.value = next
+    }
+
+    fun toggleGamepadMouseMode() {
+        val next = !_gamepadMouseMode.value
+        PrivilegedBridge.putSystemSettingInt(context, KEY_GAMEPAD_MOUSE_MODE, if (next) 1 else 0)
+        _gamepadMouseMode.value = next
+    }
+
+    fun toggleKeyMapper() {
+        val next = !_keyMapperEnabled.value
+        if (next) {
+            PrivilegedBridge.putSystemSettingInt(context, KEY_ADAPTER_ENABLE, 1)
+        }
+        PrivilegedBridge.putSystemSettingInt(context, KEY_SHOW_FLOATING_ICON, if (next) 1 else 0)
+        _keyMapperEnabled.value = next
+    }
+
+    fun toggleKeepScreenOn() {
+        val next = !_keepScreenOn.value
+        PrivilegedBridge.putSystemSettingInt(context, KEY_KEEP_SCREEN_ON, if (next) 1 else 0)
+        _keepScreenOn.value = next
+    }
+
+    fun togglePreventAccidentalHome() {
+        val next = !_preventAccidentalHome.value
+        PrivilegedBridge.putSystemSettingInt(
+            context,
+            KEY_PREVENT_ACCIDENTAL_HOME,
+            if (next) 1 else 0
+        )
+        _preventAccidentalHome.value = next
+    }
+
     fun setQuickTileOrder(newOrder: List<QuickSettingTileId>) {
         val normalized = normalizeQuickTileOrder(newOrder)
         _quickTileOrder.value = normalized
@@ -962,18 +1232,32 @@ class SystemSettingsRepository(private val context: Context) {
         }
         val updated = current.toSet()
         _disabledQuickTiles.value = updated
-        prefs.edit().putString(
-            PREF_DISABLED_QUICK_TILES,
-            updated.joinToString(",") { it.key }
-        ).apply()
+        prefs.edit()
+            .putString(
+                PREF_DISABLED_QUICK_TILES,
+                updated.joinToString(",") { it.key }
+            )
+            .putString(
+                PREF_KNOWN_QUICK_TILES,
+                QuickSettingTileId.entries.joinToString(",") { it.key }
+            )
+            .apply()
     }
 
     fun resetQuickTilesToDefault() {
+        val defaultDisabled = QuickSettingTileId.defaultDisabled
         _quickTileOrder.value = QuickSettingTileId.defaultOrder
-        _disabledQuickTiles.value = emptySet()
+        _disabledQuickTiles.value = defaultDisabled
         prefs.edit()
             .remove(PREF_QUICK_TILE_ORDER)
-            .remove(PREF_DISABLED_QUICK_TILES)
+            .putString(
+                PREF_DISABLED_QUICK_TILES,
+                defaultDisabled.joinToString(",") { it.key }
+            )
+            .putString(
+                PREF_KNOWN_QUICK_TILES,
+                QuickSettingTileId.entries.joinToString(",") { it.key }
+            )
             .apply()
     }
 
@@ -1000,9 +1284,53 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     private fun readSavedDisabledQuickTiles(): Set<QuickSettingTileId> {
-        val raw = prefs.getString(PREF_DISABLED_QUICK_TILES, null)
-        if (raw.isNullOrBlank()) return emptySet()
-        val parsed = raw.split(",").mapNotNull { QuickSettingTileId.fromKey(it.trim()) }.toSet()
+        val allKnownKeysStr = QuickSettingTileId.entries.joinToString(",") { it.key }
+        if (!prefs.contains(PREF_DISABLED_QUICK_TILES)) {
+            val defaultDisabled = QuickSettingTileId.defaultDisabled
+            prefs.edit()
+                .putString(
+                    PREF_DISABLED_QUICK_TILES,
+                    defaultDisabled.joinToString(",") { it.key }
+                )
+                .putString(PREF_KNOWN_QUICK_TILES, allKnownKeysStr)
+                .apply()
+            return defaultDisabled
+        }
+
+        val raw = prefs.getString(PREF_DISABLED_QUICK_TILES, "") ?: ""
+        val parsed = raw.split(",")
+            .mapNotNull { token -> QuickSettingTileId.fromKey(token.trim()) }
+            .toMutableSet()
+
+        val knownRaw = prefs.getString(PREF_KNOWN_QUICK_TILES, null)
+        val knownTiles = if (knownRaw == null) {
+            // Upgrading from version that only had STOCK_AYN tiles
+            QuickSettingTileId.entries
+                .filter { it.category == QuickSettingCategory.STOCK_AYN }
+                .toSet()
+        } else {
+            knownRaw.split(",").mapNotNull { QuickSettingTileId.fromKey(it.trim()) }.toSet()
+        }
+
+        var migrated = false
+        for (tile in QuickSettingTileId.entries) {
+            if (tile !in knownTiles) {
+                migrated = true
+                if (!tile.enabledByDefault) {
+                    parsed.add(tile)
+                }
+            }
+        }
+        if (migrated) {
+            prefs.edit()
+                .putString(
+                    PREF_DISABLED_QUICK_TILES,
+                    parsed.joinToString(",") { it.key }
+                )
+                .putString(PREF_KNOWN_QUICK_TILES, allKnownKeysStr)
+                .apply()
+        }
+
         return if (parsed.size >= QuickSettingTileId.entries.size) {
             parsed.drop(1).toSet()
         } else {
@@ -1092,6 +1420,58 @@ class SystemSettingsRepository(private val context: Context) {
             "1,1"
         }
         return raw.split(",").any { it.trim() == "1" }
+    }
+
+    private fun readLedBrightnessPercent(currentPercent: Int = -1): Int {
+        val rawFloat = try {
+            Settings.System.getFloat(contentResolver, KEY_LED_BRIGHTNESS_PERCENT, 0.5f)
+        } catch (_: Throwable) {
+            0.5f
+        }
+        val computed = (rawFloat.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
+        if (currentPercent in 0..100 && kotlin.math.abs(computed - currentPercent) <= 1) {
+            return currentPercent
+        }
+        return computed
+    }
+
+    private fun readWifiEnabled(): Boolean {
+        return try {
+            wifiManager?.isWifiEnabled
+                ?: (Settings.Global.getInt(contentResolver, Settings.Global.WIFI_ON, 0) != 0)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun readBluetoothEnabled(): Boolean {
+        return try {
+            bluetoothManager?.adapter?.isEnabled
+                ?: (Settings.Global.getInt(contentResolver, Settings.Global.BLUETOOTH_ON, 0) != 0)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun readDndEnabled(): Boolean {
+        return try {
+            val filter = notificationManager?.currentInterruptionFilter
+            if (filter != null && filter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN) {
+                filter != NotificationManager.INTERRUPTION_FILTER_ALL
+            } else {
+                Settings.Global.getInt(contentResolver, "zen_mode", 0) != 0
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun readAirplaneModeEnabled(): Boolean {
+        return try {
+            Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun readDisplayBrightnessPercent(displayId: Int, currentPercent: Int = -1): Int {

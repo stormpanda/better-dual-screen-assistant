@@ -52,8 +52,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SHUTDOWN = IBinder.FIRST_CALL_TRANSACTION + 13
     const val TRANSACTION_APPLY_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 14
     const val TRANSACTION_CLEAR_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 15
+    const val TRANSACTION_SWAP_DISPLAY_TASKS = IBinder.FIRST_CALL_TRANSACTION + 16
 
-    const val HELPER_PROTOCOL_VERSION = 6
+    const val HELPER_PROTOCOL_VERSION = 7
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -176,6 +177,19 @@ object PrivilegedHelperMain {
             }
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to get IActivityManager", t)
+            null
+        }
+
+        private val activityTaskManagerProxy: Any? = try {
+            val binder = getServiceMethod.invoke(null, "activity_task") as? IBinder
+            if (binder != null) {
+                val stubClass = Class.forName("android.app.IActivityTaskManager\$Stub")
+                stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+            } else {
+                null
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to get IActivityTaskManager", t)
             null
         }
 
@@ -443,7 +457,11 @@ object PrivilegedHelperMain {
                         val key = data.readString() ?: ""
                         val value = data.readString() ?: ""
                         if (key.isNotEmpty()) {
-                            putSystemSettingInternal(key, value)
+                            when (type) {
+                                "secure" -> putSecureSettingInternal(key, value)
+                                "global" -> putGlobalSettingInternal(key, value)
+                                else -> putSystemSettingInternal(key, value)
+                            }
                         }
                         reply?.writeNoException()
                         true
@@ -503,6 +521,12 @@ object PrivilegedHelperMain {
                             clearOsThemeOverlayInternal(restoreNightMode, restoreThemeJson)
                         }
                         reply?.writeNoException()
+                        true
+                    }
+                    TRANSACTION_SWAP_DISPLAY_TASKS -> {
+                        val swapped = swapDisplayTasksInternal()
+                        reply?.writeNoException()
+                        reply?.writeInt(if (swapped) 1 else 0)
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)
@@ -569,6 +593,98 @@ object PrivilegedHelperMain {
                 callProviderExternal("settings", "PUT_secure", key, extras)
             } catch (_: Throwable) {
             }
+        }
+
+        private fun putGlobalSettingInternal(key: String, value: String) {
+            try {
+                val extras = Bundle().apply {
+                    putString("value", value)
+                    putInt("_user", 0)
+                }
+                callProviderExternal("settings", "PUT_global", key, extras)
+            } catch (_: Throwable) {
+            }
+        }
+
+        private fun swapDisplayTasksInternal(): Boolean {
+            val atm = activityTaskManagerProxy ?: return false
+            return try {
+                val getTasksMethod = atm.javaClass.getMethod(
+                    "getAllRootTaskInfosOnDisplay",
+                    Int::class.javaPrimitiveType
+                )
+                val moveTaskMethod = atm.javaClass.getMethod(
+                    "moveRootTaskToDisplay",
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
+                val topTasks = getTasksMethod.invoke(atm, 0) as? List<*> ?: emptyList<Any?>()
+                val bottomTasks = getTasksMethod.invoke(atm, 4) as? List<*> ?: emptyList<Any?>()
+
+                val topTaskId = findTopStandardTaskId(topTasks)
+                val bottomTaskId = findTopStandardTaskId(bottomTasks)
+
+                when {
+                    topTaskId > 0 && bottomTaskId > 0 -> {
+                        moveTaskMethod.invoke(atm, topTaskId, 4)
+                        moveTaskMethod.invoke(atm, bottomTaskId, 0)
+                        true
+                    }
+                    topTaskId > 0 -> {
+                        moveTaskMethod.invoke(atm, topTaskId, 4)
+                        true
+                    }
+                    bottomTaskId > 0 -> {
+                        moveTaskMethod.invoke(atm, bottomTaskId, 0)
+                        true
+                    }
+                    else -> false
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "swapDisplayTasksInternal failed", t)
+                false
+            }
+        }
+
+        private fun findTopStandardTaskId(tasks: List<*>): Int {
+            var fallbackId = -1
+            for (task in tasks) {
+                if (task == null) continue
+                try {
+                    val taskId = task.javaClass.getField("taskId").getInt(task)
+                    if (taskId <= 0) continue
+                    val topActivity =
+                        task.javaClass.getField("topActivity").get(task) as? android.content.ComponentName
+                            ?: continue
+                    val pkg = topActivity.packageName
+                    if (pkg == APP_PACKAGE_NAME ||
+                        pkg == STOCK_PACKAGE_NAME ||
+                        pkg == SYSUI_PACKAGE
+                    ) {
+                        continue
+                    }
+                    val config = task.javaClass.getField("configuration").get(task)
+                    val winConfig = config?.javaClass?.getField("windowConfiguration")?.get(config)
+                    val actType = winConfig?.javaClass?.getMethod("getActivityType")?.invoke(winConfig) as? Int ?: 0
+                    if (actType != 1) {
+                        // 1 == WindowConfiguration.ACTIVITY_TYPE_STANDARD (excludes home/recents)
+                        continue
+                    }
+                    val visible = try {
+                        task.javaClass.getField("visible").getBoolean(task)
+                    } catch (_: Throwable) {
+                        true
+                    }
+                    if (visible) {
+                        return taskId
+                    }
+                    if (fallbackId < 0) {
+                        fallbackId = taskId
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            return fallbackId
         }
 
         private fun isPackageInstalledInternal(pkg: String): Boolean {
