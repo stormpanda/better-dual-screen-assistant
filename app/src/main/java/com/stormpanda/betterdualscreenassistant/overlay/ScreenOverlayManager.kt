@@ -396,11 +396,7 @@ class ScreenOverlayManager(
             } else if (isTemporaryBottomClosed || isBottomScreenBlanked) {
                 isTemporaryBottomClosed = false
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
-                PrivilegedBridge.putSystemSettingInt(
-                    context,
-                    SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-                    0
-                )
+                repository.restoreDualScreenFocusLock()
                 setBottomScreenBlanked(false)
             }
         }
