@@ -201,7 +201,7 @@ class SystemSettingsRepository(private val context: Context) {
     val rememberLastTab: StateFlow<Boolean> = _rememberLastTab.asStateFlow()
 
     private val _showLedBrightnessSlider = MutableStateFlow(
-        prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+        prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
     )
     val showLedBrightnessSlider: StateFlow<Boolean> = _showLedBrightnessSlider.asStateFlow()
 
@@ -357,7 +357,7 @@ class SystemSettingsRepository(private val context: Context) {
             }
             PREF_SHOW_LED_BRIGHTNESS_SLIDER -> {
                 _showLedBrightnessSlider.value =
-                    prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+                    prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
             }
             PREF_SHOW_SWAP_SCREENS_BUTTON -> {
                 _showSwapScreensButton.value =
@@ -521,7 +521,7 @@ class SystemSettingsRepository(private val context: Context) {
         _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
         _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
-        _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+        _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()

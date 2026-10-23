@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -684,154 +685,159 @@ private fun ScreenControlTab(
 ) {
     val colors = LocalTccColors.current
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Top 50%: ScreenModeControlPanel
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.5f)
-                .padding(top = 8.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(colors.panelBackground)
-                .padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TccButton(
-                label = stringResource(R.string.dualscreen_asynchronous_display),
-                iconRes = R.drawable.ic_dual_screen_display,
-                selected = dualScreenMode == 0,
-                onClick = { onSelectDisplayMode(0) },
-                modifier = Modifier.padding(15.dp)
-            )
-            TccButton(
-                label = stringResource(R.string.only_theupper_screen_displayed),
-                iconRes = R.drawable.ic_just_screen_above,
-                selected = dualScreenMode == 1,
-                onClick = { onSelectDisplayMode(1) },
-                modifier = Modifier.padding(15.dp)
-            )
-            TccButton(
-                label = stringResource(R.string.only_following_screen_displayed),
-                iconRes = R.drawable.ic_just_screen_below,
-                selected = dualScreenMode == 2,
-                onClick = { onSelectDisplayMode(2) },
-                modifier = Modifier.padding(15.dp)
-            )
-            if (showSwapScreensButton) {
-                TccButton(
-                    label = stringResource(R.string.swap_screens_mode_text),
-                    iconRes = R.drawable.ic_qs_swap_screens,
-                    selected = false,
-                    onClick = onSwapScreens,
-                    modifier = Modifier.padding(15.dp)
-                )
-            }
-        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Reference 3-slider card geometry from the stock 50% / 50% split:
+        // Each slider always keeps this exact height regardless of whether 3 or 4 sliders are shown.
+        val referenceThreeSliderCardHeight = (maxHeight * 0.5f) - 10.dp
+        val sliderHeight = referenceThreeSliderCardHeight * 0.2933f
+        val cardVerticalPad = referenceThreeSliderCardHeight * 0.06f
+        val bottomCardsHeight = (sliderHeight * 4f) + (cardVerticalPad * 2f)
 
-        // Bottom 50%: SlidingControlPanel (Brightness on Left 50%, Volume on Right 50%)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.5f)
-                .padding(top = 10.dp)
-        ) {
-            // Left 50%: ScreenControlPanel (3 brightness sliders, or 4 when Stick LED slider is enabled)
-            val brightnessSpacerWeight = if (showLedBrightnessSlider) 0.04f else 0.06f
-            val brightnessRowWeight = if (showLedBrightnessSlider) 0.23f else 0.293f
-            Column(
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Upper Card: ScreenModeControlPanel (reduced height so bottom cards fit 4 full-height sliders)
+            Row(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .weight(1f)
-                    .fillMaxHeight()
-                    .padding(end = 5.dp)
+                    .padding(top = 8.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(colors.panelBackground)
-                    .padding(horizontal = 10.dp)
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Spacer(modifier = Modifier.weight(brightnessSpacerWeight))
-                HorizontalSlidingBar(
-                    label = stringResource(R.string.sliding_dual_screen),
-                    progress = dualBrightness,
-                    kind = SliderKind.BRIGHTNESS,
-                    onProgressChange = onDualBrightnessChange,
-                    isFillDimmed = !isDualBrightnessActive,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(brightnessRowWeight)
+                TccButton(
+                    label = stringResource(R.string.dualscreen_asynchronous_display),
+                    iconRes = R.drawable.ic_dual_screen_display,
+                    selected = dualScreenMode == 0,
+                    onClick = { onSelectDisplayMode(0) },
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
                 )
-                HorizontalSlidingBar(
-                    label = stringResource(R.string.sliding_main_screen),
-                    progress = topBrightness,
-                    kind = SliderKind.BRIGHTNESS,
-                    onProgressChange = onTopBrightnessChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(brightnessRowWeight)
+                TccButton(
+                    label = stringResource(R.string.only_theupper_screen_displayed),
+                    iconRes = R.drawable.ic_just_screen_above,
+                    selected = dualScreenMode == 1,
+                    onClick = { onSelectDisplayMode(1) },
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
                 )
-                HorizontalSlidingBar(
-                    label = stringResource(R.string.sliding_secondary_screen),
-                    progress = bottomBrightness,
-                    kind = SliderKind.BRIGHTNESS,
-                    onProgressChange = onBottomBrightnessChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(brightnessRowWeight)
+                TccButton(
+                    label = stringResource(R.string.only_following_screen_displayed),
+                    iconRes = R.drawable.ic_just_screen_below,
+                    selected = dualScreenMode == 2,
+                    onClick = { onSelectDisplayMode(2) },
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
                 )
-                if (showLedBrightnessSlider) {
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_stick_led),
-                        progress = ledBrightnessPercent,
-                        kind = SliderKind.LED_BRIGHTNESS,
-                        onProgressChange = { pct, _ -> onLedBrightnessChange(pct) },
-                        isFillDimmed = !ambientLightEnabled,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(brightnessRowWeight)
+                if (showSwapScreensButton) {
+                    TccButton(
+                        label = stringResource(R.string.swap_screens_mode_text),
+                        iconRes = R.drawable.ic_qs_swap_screens,
+                        selected = false,
+                        onClick = onSwapScreens,
+                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
                     )
                 }
-                Spacer(modifier = Modifier.weight(brightnessSpacerWeight))
             }
 
-            // Right 50%: VolumeControlPanel (3 volume sliders, 6%..94% vertical guidelines)
-            Column(
+            // Lower Section: SlidingControlPanel (Brightness on Left 50%, Volume on Right 50%)
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .padding(start = 5.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(colors.panelBackground)
-                    .padding(horizontal = 10.dp)
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .height(bottomCardsHeight)
             ) {
-                Spacer(modifier = Modifier.weight(0.06f))
-                HorizontalSlidingBar(
-                    label = stringResource(R.string.sliding_dual_screen),
-                    progress = dualVolume,
-                    kind = SliderKind.VOLUME,
-                    onProgressChange = { pct, _ -> onDualVolumeChange(pct) },
-                    isFillDimmed = !isDualVolumeActive,
+                // Left 50%: ScreenControlPanel (3 or 4 brightness sliders, each fixed at sliderHeight)
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.293f)
-                )
-                HorizontalSlidingBar(
-                    label = stringResource(R.string.sliding_main_screen),
-                    progress = primaryVolume,
-                    kind = SliderKind.VOLUME,
-                    onProgressChange = { pct, _ -> onPrimaryVolumeChange(pct) },
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(end = 5.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(colors.panelBackground)
+                        .padding(horizontal = 10.dp, vertical = cardVerticalPad),
+                    verticalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_dual_screen),
+                        progress = dualBrightness,
+                        kind = SliderKind.BRIGHTNESS,
+                        onProgressChange = onDualBrightnessChange,
+                        isFillDimmed = !isDualBrightnessActive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(sliderHeight)
+                    )
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_main_screen),
+                        progress = topBrightness,
+                        kind = SliderKind.BRIGHTNESS,
+                        onProgressChange = onTopBrightnessChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(sliderHeight)
+                    )
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_secondary_screen),
+                        progress = bottomBrightness,
+                        kind = SliderKind.BRIGHTNESS,
+                        onProgressChange = onBottomBrightnessChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(sliderHeight)
+                    )
+                    if (showLedBrightnessSlider) {
+                        HorizontalSlidingBar(
+                            label = stringResource(R.string.sliding_stick_led),
+                            progress = ledBrightnessPercent,
+                            kind = SliderKind.LED_BRIGHTNESS,
+                            onProgressChange = { pct, _ -> onLedBrightnessChange(pct) },
+                            isFillDimmed = !ambientLightEnabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(sliderHeight)
+                        )
+                    }
+                }
+
+                // Right 50%: VolumeControlPanel (3 volume sliders, each fixed at sliderHeight)
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.293f)
-                )
-                HorizontalSlidingBar(
-                    label = stringResource(R.string.sliding_secondary_screen),
-                    progress = secondaryVolume,
-                    kind = SliderKind.VOLUME,
-                    onProgressChange = { pct, _ -> onSecondaryVolumeChange(pct) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.293f)
-                )
-                Spacer(modifier = Modifier.weight(0.06f))
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(start = 5.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(colors.panelBackground)
+                        .padding(horizontal = 10.dp, vertical = cardVerticalPad),
+                    verticalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_dual_screen),
+                        progress = dualVolume,
+                        kind = SliderKind.VOLUME,
+                        onProgressChange = { pct, _ -> onDualVolumeChange(pct) },
+                        isFillDimmed = !isDualVolumeActive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(sliderHeight)
+                    )
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_main_screen),
+                        progress = primaryVolume,
+                        kind = SliderKind.VOLUME,
+                        onProgressChange = { pct, _ -> onPrimaryVolumeChange(pct) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(sliderHeight)
+                    )
+                    HorizontalSlidingBar(
+                        label = stringResource(R.string.sliding_secondary_screen),
+                        progress = secondaryVolume,
+                        kind = SliderKind.VOLUME,
+                        onProgressChange = { pct, _ -> onSecondaryVolumeChange(pct) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(sliderHeight)
+                    )
+                }
             }
         }
     }
