@@ -1,7 +1,9 @@
 package com.stormpanda.betterdualscreenassistant
 
+import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
@@ -40,7 +42,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ColorLens
@@ -107,6 +108,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
@@ -161,7 +163,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         window.isNavigationBarContrastEnforced = false
-        AssistantForegroundService.startService(this)
+        ensureOverlayStateForDisplay()
 
         setContent {
             val context = LocalContext.current
@@ -218,6 +220,28 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ensureOverlayStateForDisplay()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        ensureOverlayStateForDisplay()
+    }
+
+    private fun ensureOverlayStateForDisplay() {
+        val currentDisplayId = display?.displayId ?: Display.DEFAULT_DISPLAY
+        if (currentDisplayId != ScreenOverlayManager.BOTTOM_DISPLAY_ID) {
+            AssistantForegroundService.startService(
+                this,
+                AssistantForegroundService.ACTION_SHOW_OVERLAY
+            )
+        } else {
+            AssistantForegroundService.startService(this)
         }
     }
 
@@ -556,12 +580,6 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                         refreshStatus()
                                                     }
                                                 },
-                                                onOpenOverlay = {
-                                                    AssistantForegroundService.startService(
-                                                        context,
-                                                        AssistantForegroundService.ACTION_SHOW_OVERLAY
-                                                    )
-                                                },
                                                 onToggleCloseBottomScreenTip = { enabled ->
                                                     repo.setNoMoreCloseBottomScreenTip(!enabled)
                                                 },
@@ -695,7 +713,6 @@ private fun GeneralSettingsTabContent(
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
-    onOpenOverlay: () -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
     onToggleShowEditButton: (Boolean) -> Unit,
@@ -713,14 +730,6 @@ private fun GeneralSettingsTabContent(
         icon = Icons.Rounded.Layers,
         onCheckedChange = onToggleReplaceStock,
         modifier = Modifier.firstDeckItem()
-    )
-
-    GamepadActionCard(
-        title = "Open Assistant Overlay",
-        description = "Launch the Dual Screen Assistant overlay on the bottom screen (displayId = 4)",
-        icon = Icons.AutoMirrored.Rounded.OpenInNew,
-        actionText = "Open",
-        onClick = onOpenOverlay
     )
 
     GamepadToggleCard(
