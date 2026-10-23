@@ -73,6 +73,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
         const val PREF_REMEMBER_LAST_TAB = "remember_last_tab"
         const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
+        const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -204,6 +205,11 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val showLedBrightnessSlider: StateFlow<Boolean> = _showLedBrightnessSlider.asStateFlow()
 
+    private val _showSwapScreensButton = MutableStateFlow(
+        prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
+    )
+    val showSwapScreensButton: StateFlow<Boolean> = _showSwapScreensButton.asStateFlow()
+
     private val _ledBrightnessPercent = MutableStateFlow(readLedBrightnessPercent())
     val ledBrightnessPercent: StateFlow<Int> = _ledBrightnessPercent.asStateFlow()
 
@@ -219,11 +225,6 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val _airplaneModeEnabled = MutableStateFlow(readAirplaneModeEnabled())
     val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
-
-    private val _autoBrightnessEnabled = MutableStateFlow(
-        getInt(Settings.System.SCREEN_BRIGHTNESS_MODE, 0) == 1
-    )
-    val autoBrightnessEnabled: StateFlow<Boolean> = _autoBrightnessEnabled.asStateFlow()
 
     // Tools Toggles
     private val _touchLockEnabled = MutableStateFlow(false)
@@ -358,6 +359,10 @@ class SystemSettingsRepository(private val context: Context) {
                 _showLedBrightnessSlider.value =
                     prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
             }
+            PREF_SHOW_SWAP_SCREENS_BUTTON -> {
+                _showSwapScreensButton.value =
+                    prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
+            }
             PREF_QUICK_TILE_ORDER -> {
                 _quickTileOrder.value = readSavedQuickTileOrder()
             }
@@ -423,7 +428,6 @@ class SystemSettingsRepository(private val context: Context) {
             KEY_SHOW_FLOATING_ICON,
             KEY_KEEP_SCREEN_ON,
             KEY_PREVENT_ACCIDENTAL_HOME,
-            Settings.System.SCREEN_BRIGHTNESS_MODE,
             "screen_brightness"
         )
         for (key in keys) {
@@ -518,12 +522,12 @@ class SystemSettingsRepository(private val context: Context) {
         _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
         _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, false)
+        _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
         _bluetoothEnabled.value = readBluetoothEnabled()
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
-        _autoBrightnessEnabled.value = getInt(Settings.System.SCREEN_BRIGHTNESS_MODE, 0) == 1
         _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
@@ -1060,6 +1064,11 @@ class SystemSettingsRepository(private val context: Context) {
         _showLedBrightnessSlider.value = enabled
     }
 
+    fun setShowSwapScreensButton(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, enabled).apply()
+        _showSwapScreensButton.value = enabled
+    }
+
     fun setLedBrightnessPercent(percent: Int) {
         val p = percent.coerceIn(0, 100)
         _ledBrightnessPercent.value = p
@@ -1127,16 +1136,6 @@ class SystemSettingsRepository(private val context: Context) {
                 wait = false
             )
         }
-    }
-
-    fun toggleAutoBrightness() {
-        val next = !_autoBrightnessEnabled.value
-        _autoBrightnessEnabled.value = next
-        PrivilegedBridge.putSystemSettingInt(
-            context,
-            Settings.System.SCREEN_BRIGHTNESS_MODE,
-            if (next) 1 else 0
-        )
     }
 
     fun swapScreens(): Boolean {

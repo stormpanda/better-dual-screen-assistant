@@ -123,12 +123,12 @@ fun AssistantOverlayScreen(
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
 
     val showLedBrightnessSlider by repository.showLedBrightnessSlider.collectAsState()
+    val showSwapScreensButton by repository.showSwapScreensButton.collectAsState()
     val ledBrightnessPercent by repository.ledBrightnessPercent.collectAsState()
     val wifiEnabled by repository.wifiEnabled.collectAsState()
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
     val dndEnabled by repository.dndEnabled.collectAsState()
     val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
-    val autoBrightnessEnabled by repository.autoBrightnessEnabled.collectAsState()
     val touchLockEnabled by repository.touchLockEnabled.collectAsState()
     val triggerMode by repository.triggerMode.collectAsState()
     val chargeLimit80 by repository.chargeLimit80.collectAsState()
@@ -215,6 +215,7 @@ fun AssistantOverlayScreen(
                             topBrightness = topBrightness,
                             bottomBrightness = bottomBrightness,
                             isDualBrightnessActive = isDualBrightnessActive,
+                            showSwapScreensButton = showSwapScreensButton,
                             showLedBrightnessSlider = showLedBrightnessSlider,
                             ledBrightnessPercent = ledBrightnessPercent,
                             ambientLightEnabled = ambientLight,
@@ -235,6 +236,7 @@ fun AssistantOverlayScreen(
                                     repository.setDualScreenDisplayMode(mode)
                                 }
                             },
+                            onSwapScreens = onSwapScreensRequest,
                             onDualBrightnessChange = { pct, temp ->
                                 repository.setDualScreenBrightnessPercent(pct, temp)
                             },
@@ -275,7 +277,6 @@ fun AssistantOverlayScreen(
                             bluetoothEnabled = bluetoothEnabled,
                             dndEnabled = dndEnabled,
                             airplaneModeEnabled = airplaneModeEnabled,
-                            autoBrightnessEnabled = autoBrightnessEnabled,
                             touchLockEnabled = touchLockEnabled,
                             triggerMode = triggerMode,
                             chargeLimit80 = chargeLimit80,
@@ -296,8 +297,6 @@ fun AssistantOverlayScreen(
                             onToggleBluetooth = { repository.toggleBluetooth() },
                             onToggleDnd = { repository.toggleDnd() },
                             onToggleAirplaneMode = { repository.toggleAirplaneMode() },
-                            onToggleAutoBrightness = { repository.toggleAutoBrightness() },
-                            onSwapScreens = onSwapScreensRequest,
                             onToggleTouchLock = onToggleTouchLockRequest,
                             onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
                             onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
@@ -665,6 +664,7 @@ private fun ScreenControlTab(
     topBrightness: Int,
     bottomBrightness: Int,
     isDualBrightnessActive: Boolean,
+    showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     ledBrightnessPercent: Int,
     ambientLightEnabled: Boolean,
@@ -673,6 +673,7 @@ private fun ScreenControlTab(
     secondaryVolume: Int,
     isDualVolumeActive: Boolean,
     onSelectDisplayMode: (Int) -> Unit,
+    onSwapScreens: () -> Unit,
     onDualBrightnessChange: (Int, Boolean) -> Unit,
     onTopBrightnessChange: (Int, Boolean) -> Unit,
     onBottomBrightnessChange: (Int, Boolean) -> Unit,
@@ -717,6 +718,15 @@ private fun ScreenControlTab(
                 onClick = { onSelectDisplayMode(2) },
                 modifier = Modifier.padding(15.dp)
             )
+            if (showSwapScreensButton) {
+                TccButton(
+                    label = stringResource(R.string.swap_screens_mode_text),
+                    iconRes = R.drawable.ic_qs_swap_screens,
+                    selected = false,
+                    onClick = onSwapScreens,
+                    modifier = Modifier.padding(15.dp)
+                )
+            }
         }
 
         // Bottom 50%: SlidingControlPanel (Brightness on Left 50%, Volume on Right 50%)
@@ -863,7 +873,6 @@ private fun SystemSettingsTab(
     bluetoothEnabled: Boolean,
     dndEnabled: Boolean,
     airplaneModeEnabled: Boolean,
-    autoBrightnessEnabled: Boolean,
     touchLockEnabled: Boolean,
     triggerMode: Int,
     chargeLimit80: Boolean,
@@ -884,8 +893,6 @@ private fun SystemSettingsTab(
     onToggleBluetooth: () -> Unit,
     onToggleDnd: () -> Unit,
     onToggleAirplaneMode: () -> Unit,
-    onToggleAutoBrightness: () -> Unit,
-    onSwapScreens: () -> Unit,
     onToggleTouchLock: () -> Unit,
     onToggleChargeLimit80: () -> Unit,
     onToggleGamepadMouseMode: () -> Unit,
@@ -1087,29 +1094,7 @@ private fun SystemSettingsTab(
                     )
                 }
 
-                QuickSettingTileId.AUTO_BRIGHTNESS -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Auto-Brightness",
-                            iconRes = R.drawable.ic_qs_auto_brightness,
-                            selected = autoBrightnessEnabled,
-                            onClick = onToggleAutoBrightness
-                        )
-                    )
-                }
-
                 // Tools
-                QuickSettingTileId.SWAP_SCREENS -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Swap Screens",
-                            iconRes = R.drawable.ic_qs_swap_screens,
-                            selected = false,
-                            onClick = onSwapScreens
-                        )
-                    )
-                }
-
                 QuickSettingTileId.TOUCH_LOCK -> {
                     add(
                         QuickSettingTileModel(

@@ -26,6 +26,7 @@
     <string name="navigation_task_manage_text">Task</string>
     <string name="only_following_screen_displayed">Only bottom screen</string>
     <string name="only_theupper_screen_displayed">Only top screen</string>
+    <string name="swap_screens_mode_text">Swap screens</string>
     <string name="sliding_dual_screen">Dual Screen</string>
     <string name="sliding_main_screen">Top Screen</string>
     <string name="sliding_secondary_screen">Bottom Screen</string>

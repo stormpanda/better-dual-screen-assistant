@@ -138,22 +138,8 @@ enum class QuickSettingTileId(
         iconRes = R.drawable.ic_qs_airplane,
         category = QuickSettingCategory.ANDROID_SYSTEM
     ),
-    AUTO_BRIGHTNESS(
-        key = "auto_brightness",
-        title = "Auto-Brightness",
-        description = "Toggle adaptive screen brightness sensor",
-        iconRes = R.drawable.ic_qs_auto_brightness,
-        category = QuickSettingCategory.ANDROID_SYSTEM
-    ),
 
     // 3. Tools (OFF by default)
-    SWAP_SCREENS(
-        key = "swap_screens",
-        title = "Swap Screens",
-        description = "Swap active foreground apps between Top and Bottom screens",
-        iconRes = R.drawable.ic_qs_swap_screens,
-        category = QuickSettingCategory.TOOLS
-    ),
     TOUCH_LOCK(
         key = "touch_lock",
         title = "Touch Lock",

@@ -369,6 +369,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val showCloseBottomScreenTip by repo.showCloseBottomScreenTip.collectAsState()
     val rememberLastTab by repo.rememberLastTab.collectAsState()
     val showLedBrightnessSlider by repo.showLedBrightnessSlider.collectAsState()
+    val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
@@ -543,6 +544,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 stockDisabled = stockDisabled,
                                                 showCloseBottomScreenTip = showCloseBottomScreenTip,
                                                 rememberLastTab = rememberLastTab,
+                                                showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
                                                 onToggleReplaceStock = { replaceStock ->
                                                     stockDisabled = replaceStock
@@ -562,6 +564,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleRememberLastTab = { enabled ->
                                                     repo.setRememberLastTab(enabled)
+                                                },
+                                                onToggleShowSwapScreensButton = { enabled ->
+                                                    repo.setShowSwapScreensButton(enabled)
                                                 },
                                                 onToggleShowLedBrightnessSlider = { enabled ->
                                                     repo.setShowLedBrightnessSlider(enabled)
@@ -680,11 +685,13 @@ private fun GeneralSettingsTabContent(
     stockDisabled: Boolean,
     showCloseBottomScreenTip: Boolean,
     rememberLastTab: Boolean,
+    showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onOpenOverlay: () -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
+    onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit
 ) {
     GamepadToggleCard(
@@ -714,6 +721,14 @@ private fun GeneralSettingsTabContent(
         checked = rememberLastTab,
         icon = Icons.Rounded.Tab,
         onCheckedChange = onToggleRememberLastTab
+    )
+
+    GamepadToggleCard(
+        title = "Show Swap Screens Button",
+        description = "Display a 4th button in the Mode tab's screen control card to swap active foreground apps between Top and Bottom screens",
+        checked = showSwapScreensButton,
+        icon = Icons.Rounded.Sync,
+        onCheckedChange = onToggleShowSwapScreensButton
     )
 
     GamepadToggleCard(
