@@ -40,6 +40,12 @@ object PrivilegedBridge {
     @Volatile
     private var savedBottomBrightness: Float = 0.4f
 
+    @Volatile
+    private var topScreenBlanked: Boolean = false
+
+    @Volatile
+    private var topScreenShowCoverWindow: Boolean = false
+
     private class PendingOsThemeRequest(
         val apply: Boolean,
         val resourceNames: Array<String>,
@@ -79,6 +85,9 @@ object PrivilegedBridge {
         helperBinder = binder
         _isHelperConnected.value = true
         registerClientWithHelper(binder)
+        if (topScreenBlanked) {
+            dispatchTopScreenBlankedToBinder(binder, topScreenBlanked, topScreenShowCoverWindow)
+        }
         pendingOsThemeRequest?.let { req ->
             scope.launch {
                 dispatchOsThemeRequestToBinder(binder, req)
@@ -300,6 +309,45 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+    }
+
+    fun setTopScreenBlanked(
+        context: Context,
+        blank: Boolean,
+        showCoverWindow: Boolean = blank
+    ) {
+        topScreenBlanked = blank
+        topScreenShowCoverWindow = showCoverWindow
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            if (dispatchTopScreenBlankedToBinder(binder, blank, showCoverWindow)) {
+                return
+            }
+        }
+        ensureStarted(context)
+    }
+
+    private fun dispatchTopScreenBlankedToBinder(
+        binder: IBinder,
+        blank: Boolean,
+        showCoverWindow: Boolean
+    ): Boolean {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            data.writeInt(if (blank) 1 else 0)
+            data.writeInt(if (showCoverWindow) 1 else 0)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_SET_TOP_SCREEN_BLANKED, data, reply, 0)
+            reply.readException()
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper setTopScreenBlanked failed", t)
+            false
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
     }
 
     fun setSystemProperty(key: String, value: String) {

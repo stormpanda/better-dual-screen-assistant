@@ -9,6 +9,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Point
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.os.Bundle
@@ -76,6 +77,58 @@ private class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, Saved
     fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
+    }
+}
+
+/**
+ * Fullscreen black blanking view modeled after stock `T0.c`:
+ * - Applies `systemUiVisibility = 4102` (`IMMERSIVE_STICKY | FULLSCREEN | HIDE_NAVIGATION`) and
+ *   [WindowInsetsController.hide] for status/navigation/gesture bars on attach and focus change.
+ * - Excludes system gesture rects across the entire view bounds (`T0.c.setSystemGestureExclusion`).
+ */
+private class BlankOverlayView(context: Context) : View(context) {
+    init {
+        setBackgroundColor(Color.BLACK)
+        setOnTouchListener { _, _ -> true }
+        isFocusable = true
+        isFocusableInTouchMode = true
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        applySystemBarsHidden()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) {
+            applySystemBarsHidden()
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) {
+            systemGestureExclusionRects = listOf(Rect(-w, -h, w, h))
+        }
+    }
+
+    fun applySystemBarsHidden() {
+        @Suppress("DEPRECATION")
+        systemUiVisibility = 4102 or
+            SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        val controller = windowInsetsController
+        if (controller != null) {
+            controller.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(
+                WindowInsets.Type.statusBars() or
+                    WindowInsets.Type.navigationBars() or
+                    WindowInsets.Type.systemBars()
+            )
+        }
     }
 }
 
@@ -370,9 +423,12 @@ class ScreenOverlayManager(
             } else {
                 repository.reapplyTouchDisableForCurrentMode()
                 if (isTopScreenBlanked) {
+                    topBlankView?.let { applyImmersiveFullscreen(it) }
+                    PrivilegedBridge.setTopScreenBlanked(context, blank = true, showCoverWindow = true)
                     PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, -1.0f, false)
                 }
                 if (isBottomScreenBlanked) {
+                    bottomBlankView?.let { applyImmersiveFullscreen(it) }
                     PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
                 }
             }
@@ -532,21 +588,33 @@ class ScreenOverlayManager(
                 savedTopBrightnessLinear = cur
                 PrivilegedBridge.updateSavedBrightness(top = cur)
             }
-            val view = View(getDisplayContext(TOP_DISPLAY_ID)).apply {
-                setBackgroundColor(Color.BLACK)
+            PrivilegedBridge.setTopScreenBlanked(context, blank = true, showCoverWindow = false)
+            topBlankView?.let { stale ->
+                try {
+                    wm.removeViewImmediate(stale)
+                } catch (_: Throwable) {
+                }
+                topBlankView = null
+            }
+            val view = BlankOverlayView(getDisplayContext(TOP_DISPLAY_ID)).apply {
                 alpha = 0f
-                setOnTouchListener { _, _ -> true }
             }
             val lp = createBlankOverlayLayoutParams(TOP_DISPLAY_ID, 1920, 1080)
             try {
                 wm.addView(view, lp)
                 applyImmersiveFullscreen(view)
+                view.requestFocus()
                 topBlankView = view
                 ObjectAnimator.ofFloat(view, "alpha", 0f, 1f).apply {
                     duration = FADE_DURATION_MS
                     addListener(object : AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: Animator) {
                             if (isTopScreenBlanked) {
+                                PrivilegedBridge.setTopScreenBlanked(
+                                    context,
+                                    blank = true,
+                                    showCoverWindow = true
+                                )
                                 PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, -1.0f, false)
                             }
                         }
@@ -558,6 +626,7 @@ class ScreenOverlayManager(
             }
         } else {
             isTopScreenBlanked = false
+            PrivilegedBridge.setTopScreenBlanked(context, blank = false, showCoverWindow = false)
             val restore = savedTopBrightnessLinear ?: 0.4f
             PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, restore, false)
             val view = topBlankView ?: return
@@ -588,10 +657,15 @@ class ScreenOverlayManager(
                 savedBottomBrightnessLinear = cur
                 PrivilegedBridge.updateSavedBrightness(bottom = cur)
             }
-            val view = View(getDisplayContext(BOTTOM_DISPLAY_ID)).apply {
-                setBackgroundColor(Color.BLACK)
+            bottomBlankView?.let { stale ->
+                try {
+                    wm.removeViewImmediate(stale)
+                } catch (_: Throwable) {
+                }
+                bottomBlankView = null
+            }
+            val view = BlankOverlayView(getDisplayContext(BOTTOM_DISPLAY_ID)).apply {
                 alpha = 0f
-                setOnTouchListener { _, _ -> true }
             }
             val lp = createBlankOverlayLayoutParams(BOTTOM_DISPLAY_ID, 1240, 1080)
             try {
@@ -652,16 +726,29 @@ class ScreenOverlayManager(
         fallbackHeight: Int
     ): WindowManager.LayoutParams {
         val size = getDisplayRealSize(displayId, fallbackWidth, fallbackHeight)
+        // Replicate stock ScreenUtil.c()/d() flags (132608 = FLAG_ALT_FOCUSABLE_IM | FLAG_FULLSCREEN |
+        // FLAG_LAYOUT_NO_LIMITS) without FLAG_NOT_FOCUSABLE so DisplayPolicy/InsetsPolicy allows this
+        // fullscreen window to hide the Status Bar and Gesture Bar on Display 0.
+        // Never include FLAG_LAYOUT_NO_LIMITS on Display 4 (BOTTOM_DISPLAY_ID).
+        var flags = WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR or
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
+            WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
+        if (displayId == TOP_DISPLAY_ID) {
+            flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        }
         return WindowManager.LayoutParams(
-            size.x,
-            size.y,
+            if (displayId == TOP_DISPLAY_ID) WindowManager.LayoutParams.MATCH_PARENT else size.x,
+            if (displayId == TOP_DISPLAY_ID) WindowManager.LayoutParams.MATCH_PARENT else size.y,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_FULLSCREEN,
-            PixelFormat.OPAQUE
+            flags,
+            PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.CENTER
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+            title = "primaryScreenTopLayout"
             layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
@@ -678,12 +765,24 @@ class ScreenOverlayManager(
     }
 
     private fun applyImmersiveFullscreen(view: View) {
+        if (view is BlankOverlayView) {
+            view.applySystemBarsHidden()
+        }
         view.post {
+            @Suppress("DEPRECATION")
+            view.systemUiVisibility = 4102 or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
             val controller = view.windowInsetsController
             if (controller != null) {
                 controller.systemBarsBehavior =
                     WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.hide(
+                    WindowInsets.Type.statusBars() or
+                        WindowInsets.Type.navigationBars() or
+                        WindowInsets.Type.systemBars()
+                )
             }
         }
     }

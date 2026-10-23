@@ -5,6 +5,10 @@ import android.app.ActivityManager
 import android.content.AttributionSource
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
 import android.os.Binder
 import android.os.Bundle
 import android.os.Handler
@@ -14,6 +18,9 @@ import android.os.Parcel
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -53,13 +60,27 @@ object PrivilegedHelperMain {
     const val TRANSACTION_APPLY_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 14
     const val TRANSACTION_CLEAR_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 15
     const val TRANSACTION_SWAP_DISPLAY_TASKS = IBinder.FIRST_CALL_TRANSACTION + 16
+    const val TRANSACTION_SET_TOP_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 17
 
-    const val HELPER_PROTOCOL_VERSION = 7
+    const val HELPER_PROTOCOL_VERSION = 8
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
     private const val TYPED_VALUE_INT_COLOR_ARGB8 = 0x1c
     private const val KEY_THEME_CUSTOMIZATION_PACKAGES = "theme_customization_overlay_packages"
+
+    // StatusBarManager.DISABLE_* flags that hide top-screen status bar elements without blocking hardware keys
+    private const val STATUS_BAR_DISABLE_EXPAND = 0x00010000
+    private const val STATUS_BAR_DISABLE_NOTIFICATION_ICONS = 0x00020000
+    private const val STATUS_BAR_DISABLE_NOTIFICATION_ALERTS = 0x00040000
+    private const val STATUS_BAR_DISABLE_SYSTEM_INFO = 0x00100000
+    private const val STATUS_BAR_DISABLE_CLOCK = 0x00800000
+    private const val STATUS_BAR_BLANK_MASK =
+        STATUS_BAR_DISABLE_EXPAND or
+            STATUS_BAR_DISABLE_NOTIFICATION_ICONS or
+            STATUS_BAR_DISABLE_NOTIFICATION_ALERTS or
+            STATUS_BAR_DISABLE_SYSTEM_INFO or
+            STATUS_BAR_DISABLE_CLOCK
 
     private const val WATCHDOG_POLL_INTERVAL_MS = 250L
     private const val FORCE_STOP_GRACE_MS = 1500L
@@ -244,6 +265,23 @@ object PrivilegedHelperMain {
             Log.e(TAG, "Failed to get IUiModeManager", t)
             null
         }
+
+        private val statusBarServiceProxy: Any? = try {
+            val binder = getServiceMethod.invoke(null, "statusbar") as? IBinder
+            if (binder != null) {
+                val stubClass = Class.forName("com.android.internal.statusbar.IStatusBarService\$Stub")
+                stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+            } else {
+                null
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to get IStatusBarService", t)
+            null
+        }
+
+        private val statusBarDisableToken = Binder()
+        private var topDisplayContext: Context? = null
+        private var topBootProgressBlankView: View? = null
 
         private val pServerBinder: IBinder? = try {
             getServiceMethod.invoke(null, "PServerBinder") as? IBinder
@@ -529,6 +567,15 @@ object PrivilegedHelperMain {
                         reply?.writeInt(if (swapped) 1 else 0)
                         true
                     }
+                    TRANSACTION_SET_TOP_SCREEN_BLANKED -> {
+                        val blank = data.readInt() != 0
+                        val showCoverWindow = data.readInt() != 0
+                        mainHandler.post {
+                            setTopScreenBlankedInternal(blank, showCoverWindow)
+                        }
+                        reply?.writeNoException()
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -768,6 +815,9 @@ object PrivilegedHelperMain {
          */
         private fun restoreDisplayAndStockAssistant() {
             try {
+                // 0. Remove any helper top-screen blank cover window and re-enable status bar
+                setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
+
                 // 1. Restore top (0) and bottom (4) display brightness if blanked (< 0.005f)
                 val topCur = getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f }
                 if (topCur < 0.005f) {
@@ -1156,6 +1206,114 @@ object PrivilegedHelperMain {
             } finally {
                 data.recycle()
                 reply.recycle()
+            }
+        }
+
+        private fun getOrCreateDisplay0Context(): Context? {
+            topDisplayContext?.let { return it }
+            return try {
+                try {
+                    Class.forName("android.view.ThreadedRenderer")
+                        .getMethod("disable", Boolean::class.javaPrimitiveType)
+                        .invoke(null, true)
+                } catch (_: Throwable) {
+                }
+                val atClass = Class.forName("android.app.ActivityThread")
+                val currentAt = atClass.getMethod("currentActivityThread").invoke(null)
+                    ?: atClass.getMethod("systemMain").invoke(null)
+                val sysCtx = (systemContext ?: atClass.getMethod("getSystemContext").invoke(currentAt) as? Context)
+                    ?: return null
+                try {
+                    sysCtx.applicationInfo?.let { appInfo ->
+                        appInfo.flags = appInfo.flags and ApplicationInfo.FLAG_HARDWARE_ACCELERATED.inv()
+                    }
+                } catch (_: Throwable) {
+                }
+                val dm = sysCtx.getSystemService(DisplayManager::class.java)
+                val display0 = dm?.getDisplay(0)
+                val ctx = if (display0 != null) sysCtx.createDisplayContext(display0) else sysCtx
+                topDisplayContext = ctx
+                ctx
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to obtain Display 0 context in helper", t)
+                null
+            }
+        }
+
+        private fun setStatusBarBlankDisabledInternal(disabled: Boolean) {
+            val sbs = statusBarServiceProxy ?: return
+            try {
+                val flags = if (disabled) STATUS_BAR_BLANK_MASK else 0
+                val disableMethod = sbs.javaClass.methods.firstOrNull { m ->
+                    m.name == "disable" && m.parameterTypes.size == 3
+                }
+                if (disableMethod != null) {
+                    disableMethod.invoke(sbs, flags, statusBarDisableToken, "android")
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "setStatusBarBlankDisabledInternal($disabled) failed", t)
+            }
+        }
+
+        /**
+         * Ensures the top screen (Display 0) has all status bar and gesture bar elements hidden:
+         * 1. Disables status bar clock, notification icons, system icons, and heads-up alerts via `IStatusBarService`.
+         * 2. Attaches a `type = 2021` (`TYPE_BOOT_PROGRESS`, Layer 27 — above `TYPE_STATUS_BAR` Layer 15 and
+         *    `TYPE_NAVIGATION_BAR` Layer 24, matching stock `ScreenUtil.c()`) solid black cover window when
+         *    [showCoverWindow] is true.
+         */
+        private fun setTopScreenBlankedInternal(blank: Boolean, showCoverWindow: Boolean) {
+            setStatusBarBlankDisabledInternal(blank)
+            val ctx = getOrCreateDisplay0Context() ?: return
+            val wm = ctx.getSystemService(WindowManager::class.java) ?: return
+            if (blank && showCoverWindow) {
+                if (topBootProgressBlankView != null) return
+                val view = object : View(ctx) {
+                    override fun onAttachedToWindow() {
+                        super.onAttachedToWindow()
+                        @Suppress("DEPRECATION")
+                        systemUiVisibility = 4102 or
+                            SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                            SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                            SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    }
+
+                    override fun onDraw(canvas: Canvas) {
+                        canvas.drawColor(Color.BLACK)
+                    }
+                }.apply {
+                    setBackgroundColor(Color.BLACK)
+                }
+                val lp = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    2021, // TYPE_BOOT_PROGRESS (Layer 27, above StatusBar & NavigationBar)
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR,
+                    PixelFormat.OPAQUE
+                ).apply {
+                    gravity = Gravity.CENTER
+                    title = "primaryScreenTopLayout"
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+                try {
+                    wm.addView(view, lp)
+                    topBootProgressBlankView = view
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Failed to attach type=2021 top blank cover window", t)
+                }
+            } else {
+                val existing = topBootProgressBlankView ?: return
+                topBootProgressBlankView = null
+                try {
+                    wm.removeViewImmediate(existing)
+                } catch (_: Throwable) {
+                }
             }
         }
     }

@@ -584,7 +584,7 @@ class SystemSettingsRepository(private val context: Context) {
                 PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
                 PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
-                PrivilegedBridge.setPinScreenMode(context, 1)
+                PrivilegedBridge.setPinScreenMode(context, 0)
                 _screenFocusLock.value = 1
             }
             2 -> {
@@ -592,7 +592,7 @@ class SystemSettingsRepository(private val context: Context) {
                 PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
                 PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
-                PrivilegedBridge.setPinScreenMode(context, 2)
+                PrivilegedBridge.setPinScreenMode(context, 0)
                 _screenFocusLock.value = 2
             }
         }
