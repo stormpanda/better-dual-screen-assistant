@@ -27,8 +27,10 @@ This file provides essential context, architectural invariants, hardware quirks,
   - Do **not** attempt to simulate usage of the app on the device (e.g., waking the screen, injecting input events, starting overlay intents to inspect UI, or taking screenshots) to test your implementation.
   - Instead, after building (and optionally installing) your changes, **ask the user to perform the testing** on the device if verification is needed.
 - **Common Commands**:
-  - Build debug APK: `./gradlew assembleDebug`
-  - Install on device: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk`
+  - Build debug APK (`app/debug/`): `./scripts/debug.sh build` (or `./gradlew assembleDebug`)
+  - Install debug APK on device: `./scripts/debug.sh install`
+  - Build & install debug APK in one step: `./scripts/debug.sh build-install`
+  - Build / install release APK (`app/release/`): `./scripts/release.sh {build|install|build-install}`
   - Start foreground service: `/Users/maikthomalla/Library/Android/sdk/platform-tools/adb shell am start-foreground-service -n com.stormpanda.betterdualscreenassistant/.service.AssistantForegroundService`
 - **Capturing Display Screenshots via ADB (Only When Explicitly Requested)**:
   - Physical display IDs (`screencap -d <id>`) are assigned per boot/reconnect by SurfaceFlinger. Query current IDs with:

@@ -1,7 +1,14 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+val localProperties = Properties().also { props ->
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { stream -> props.load(stream) }
 }
 
 android {
@@ -16,8 +23,40 @@ android {
         versionName = "1.0.0"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFileProp = localProperties.getProperty("bdsa.keystore.file")
+                ?: localProperties.getProperty("megingiard.keystore.file")
+            val keyPasswordProp = localProperties.getProperty("bdsa.keystore.key.password")
+                ?: localProperties.getProperty("megingiard.keystore.key.password")
+            val storePasswordProp = localProperties.getProperty("bdsa.keystore.password")
+                ?: localProperties.getProperty("megingiard.keystore.password")
+            val aliasProp = localProperties.getProperty("bdsa.keystore.alias")
+                ?: localProperties.getProperty("megingiard.keystore.alias")
+
+            val candidateFile = when {
+                !keystoreFileProp.isNullOrBlank() -> rootProject.file(keystoreFileProp)
+                rootProject.file("bdsa.jks").exists() -> rootProject.file("bdsa.jks")
+                else -> rootProject.file("megingiard.jks")
+            }
+
+            if (!keyPasswordProp.isNullOrBlank() && !storePasswordProp.isNullOrBlank() && !aliasProp.isNullOrBlank()) {
+                storeFile = candidateFile
+                storePassword = storePasswordProp
+                keyAlias = aliasProp
+                keyPassword = keyPasswordProp
+            }
+        }
+    }
+
     buildTypes {
         release {
+            val releaseSigningConfig = signingConfigs.findByName("release")
+            signingConfig = if (releaseSigningConfig != null && releaseSigningConfig.storeFile?.exists() == true) {
+                releaseSigningConfig
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

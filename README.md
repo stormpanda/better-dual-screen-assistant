@@ -64,14 +64,28 @@ Although installed as a regular user APK without shared system UID keys, the app
 - Android SDK (API 35) & JDK 17+
 - An **AYN Thor** connected via ADB
 
-### Build Debug APK
+### Debug Workflow (`scripts/debug.sh`)
 ```bash
-./gradlew assembleDebug
+# Build debug APK (copied to app/debug/)
+./scripts/debug.sh build
+
+# Install built debug APK on connected AYN Thor via ADB
+./scripts/debug.sh install
+
+# Build and install in a single step
+./scripts/debug.sh build-install
 ```
 
-### Install via ADB
+### Release Workflow (`scripts/release.sh`)
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# Build release APK and SHA-256 checksum (in app/release/)
+./scripts/release.sh build
+
+# Copy to /sdcard/Download and install on connected AYN Thor via ADB
+./scripts/release.sh install
+
+# Build and install in a single step
+./scripts/release.sh build-install
 ```
 
 Once launched (or upon device boot), the foreground service automatically grants its required overlay/settings permissions via `PServerBinder`, suppresses the stock `DualScreenAssistant`, and begins listening for the physical TCC button.
