@@ -19,6 +19,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,8 +80,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -92,6 +96,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +105,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
@@ -114,6 +120,8 @@ import com.stormpanda.megingiard.settings.ThemeMode
 import com.stormpanda.megingiard.ui.AppColors
 import com.stormpanda.megingiard.ui.AppPalettes
 import com.stormpanda.megingiard.ui.BumperDirection
+import com.stormpanda.megingiard.ui.DialogToastManager
+import com.stormpanda.megingiard.ui.DialogToastPill
 import com.stormpanda.megingiard.ui.GamepadActionCard
 import com.stormpanda.megingiard.ui.GamepadCardRow
 import com.stormpanda.megingiard.ui.GamepadCategoryTile
@@ -135,6 +143,7 @@ import com.stormpanda.megingiard.ui.PrimaryOverlayInputBridge
 import com.stormpanda.megingiard.ui.colorSchemeFor
 import com.stormpanda.megingiard.ui.cycle
 import com.stormpanda.megingiard.ui.firstDeckItem
+import com.stormpanda.megingiard.ui.launchUrlOnPrimaryDisplay
 import com.stormpanda.megingiard.ui.megingiardTypography
 import com.stormpanda.megingiard.ui.paletteFor
 import kotlinx.coroutines.Dispatchers
@@ -343,6 +352,7 @@ private val MegingiardThemeOptions = listOf(
     AppThemeOption.ROYAL_ASGARD
 )
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val context = LocalContext.current
@@ -413,171 +423,253 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
         }
     }
 
-    GamepadTwoPaneScaffold(
-        scrollableDeck = false,
-        isCustomBackActive = subPageStack.isNotEmpty(),
-        onCustomBack = {
-            subPageStack = subPageStack.dropLast(1)
-        },
-        navigationKey = subPageStack,
-        sidebarContent = {
-            LauncherCategory.entries.forEach { category ->
-                GamepadCategoryTile(
-                    title = category.title,
-                    icon = category.icon,
-                    selected = (currentSubPage?.parentCategory ?: selectedCategory) == category,
-                    onClick = {
-                        selectedCategory = category
-                        subPageStack = emptyList()
-                    }
+    val colors = LocalAppColors.current
+    val activeToast by DialogToastManager.currentToast.collectAsStateWithLifecycle()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .background(colors.surfaceVariant.copy(alpha = 0.8f))
+                .padding(horizontal = 20.dp)
+                .focusProperties {
+                    canFocus = false
+                    enter = { FocusRequester.Cancel }
+                },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(7.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_background),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = 1.5f
+                            scaleY = 1.5f
+                        }
+                )
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = 1.5f
+                            scaleY = 1.5f
+                        }
                 )
             }
-        },
-        content = {
-            AnimatedContent(
-                targetState = subPageStack,
-                transitionSpec = {
-                    val direction = if (targetState.size < initialState.size) -1 else 1
-                    slideInHorizontally { width -> width * direction }.togetherWith(
-                        slideOutHorizontally { width -> -width * direction }
-                    )
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                text = "BetterDualScreenAssistant",
+                color = colors.onSurface,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+
+            DialogToastPill(
+                toast = activeToast,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Image(
+                painter = painterResource(R.drawable.support_me_on_kofi_dark),
+                contentDescription = stringResource(R.string.settings_support_app),
+                modifier = Modifier
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        launchUrlOnPrimaryDisplay(context, "https://ko-fi.com/stormpanda")
+                    }
+                    .focusProperties { canFocus = false }
+            )
+        }
+
+        // Content Area
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .focusGroup()
+        ) {
+            GamepadTwoPaneScaffold(
+                scrollableDeck = false,
+                isCustomBackActive = subPageStack.isNotEmpty(),
+                onCustomBack = {
+                    subPageStack = subPageStack.dropLast(1)
                 },
-                label = "LauncherSubPageAnimation"
-            ) { stack ->
-                val subPage = stack.lastOrNull()
-                when (subPage) {
-                    null -> {
-                        GamepadDeck(title = selectedCategory.title) {
-                            when (selectedCategory) {
-                                LauncherCategory.GENERAL -> {
-                                    GeneralSettingsTabContent(
-                                        stockDisabled = stockDisabled,
-                                        showCloseBottomScreenTip = showCloseBottomScreenTip,
-                                        rememberLastTab = rememberLastTab,
-                                        onToggleReplaceStock = { replaceStock ->
-                                            stockDisabled = replaceStock
-                                            scope.launch(Dispatchers.IO) {
-                                                PServerClient.setStockAssistantEnabled(!replaceStock, context)
-                                                refreshStatus()
-                                            }
-                                        },
-                                        onOpenOverlay = {
-                                            AssistantForegroundService.startService(
-                                                context,
-                                                AssistantForegroundService.ACTION_SHOW_OVERLAY
+                navigationKey = subPageStack,
+                sidebarContent = {
+                    LauncherCategory.entries.forEach { category ->
+                        GamepadCategoryTile(
+                            title = category.title,
+                            icon = category.icon,
+                            selected = (currentSubPage?.parentCategory ?: selectedCategory) == category,
+                            onClick = {
+                                selectedCategory = category
+                                subPageStack = emptyList()
+                            }
+                        )
+                    }
+                },
+                content = {
+                    AnimatedContent(
+                        targetState = subPageStack,
+                        transitionSpec = {
+                            val direction = if (targetState.size < initialState.size) -1 else 1
+                            slideInHorizontally { width -> width * direction }.togetherWith(
+                                slideOutHorizontally { width -> -width * direction }
+                            )
+                        },
+                        label = "LauncherSubPageAnimation"
+                    ) { stack ->
+                        val subPage = stack.lastOrNull()
+                        when (subPage) {
+                            null -> {
+                                GamepadDeck(title = selectedCategory.title) {
+                                    when (selectedCategory) {
+                                        LauncherCategory.GENERAL -> {
+                                            GeneralSettingsTabContent(
+                                                stockDisabled = stockDisabled,
+                                                showCloseBottomScreenTip = showCloseBottomScreenTip,
+                                                rememberLastTab = rememberLastTab,
+                                                onToggleReplaceStock = { replaceStock ->
+                                                    stockDisabled = replaceStock
+                                                    scope.launch(Dispatchers.IO) {
+                                                        PServerClient.setStockAssistantEnabled(!replaceStock, context)
+                                                        refreshStatus()
+                                                    }
+                                                },
+                                                onOpenOverlay = {
+                                                    AssistantForegroundService.startService(
+                                                        context,
+                                                        AssistantForegroundService.ACTION_SHOW_OVERLAY
+                                                    )
+                                                },
+                                                onToggleCloseBottomScreenTip = { enabled ->
+                                                    repo.setNoMoreCloseBottomScreenTip(!enabled)
+                                                },
+                                                onToggleRememberLastTab = { enabled ->
+                                                    repo.setRememberLastTab(enabled)
+                                                }
                                             )
-                                        },
-                                        onToggleCloseBottomScreenTip = { enabled ->
-                                            repo.setNoMoreCloseBottomScreenTip(!enabled)
-                                        },
-                                        onToggleRememberLastTab = { enabled ->
-                                            repo.setRememberLastTab(enabled)
+                                        }
+
+                                        LauncherCategory.QUICK_TOGGLES -> {
+                                            QuickTogglesSettingsTabContent(
+                                                quickTileOrder = quickTileOrder,
+                                                disabledQuickTiles = disabledQuickTiles,
+                                                onMoveActiveTile = { fromIndex, toIndex ->
+                                                    repo.moveActiveQuickTile(fromIndex, toIndex)
+                                                },
+                                                onOpenEnableDisableSubPage = {
+                                                    subPageStack = listOf(LauncherSubPage.ENABLE_DISABLE_TOGGLES)
+                                                },
+                                                onResetDefaults = {
+                                                    repo.resetQuickTilesToDefault()
+                                                },
+                                                onGridActiveChanged = { active ->
+                                                    isVisualReorderGridActive = active
+                                                }
+                                            )
+                                        }
+
+                                        LauncherCategory.APPEARANCE -> {
+                                            AppearanceSettingsTabContent(
+                                                selectedTheme = selectedTheme,
+                                                customAccentArgb = customAccentArgb,
+                                                customSwatchColorArgb = customSwatchColorArgb,
+                                                injectSystemTheme = injectSystemTheme,
+                                                syncedMegingiardOption = syncedMegingiardOption,
+                                                isMegingiardAvailable = isMegingiardAvailable,
+                                                onSelectTheme = { repo.setThemeMode(it.id) },
+                                                onSelectAccentColor = { repo.setCustomAccentArgb(it) },
+                                                onOpenCustomAccent = {
+                                                    subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
+                                                },
+                                                onToggleInjectSystemTheme = { repo.setInjectOsTheme(it) }
+                                            )
+                                        }
+
+                                        LauncherCategory.DIAGNOSTICS -> {
+                                            DiagnosticsSettingsTabContent(
+                                                helperConnected = helperConnected,
+                                                pServerAvailable = pServerAvailable,
+                                                stockDisabled = stockDisabled,
+                                                isMegingiardAvailable = isMegingiardAvailable,
+                                                syncedMegingiardOption = syncedMegingiardOption,
+                                                isRefreshing = isRefreshingStatus,
+                                                onReconnectAndRefresh = {
+                                                    if (isRefreshingStatus) return@DiagnosticsSettingsTabContent
+                                                    isRefreshingStatus = true
+                                                    scope.launch(Dispatchers.IO) {
+                                                        PrivilegedBridge.ensureInitialized(context)
+                                                        PServerClient.ensurePermissionsGranted(context)
+                                                        repo.refreshAll()
+                                                        refreshStatus()
+                                                        withContext(Dispatchers.Main) {
+                                                            isRefreshingStatus = false
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            LauncherSubPage.CUSTOM_ACCENT -> {
+                                GamepadDeck(
+                                    breadcrumbs = listOf(
+                                        LauncherCategory.APPEARANCE.title,
+                                        "Custom Color"
+                                    )
+                                ) {
+                                    CustomAccentSubPageContent(
+                                        initialColor = Color(customSwatchColorArgb),
+                                        onSaveColor = { newColor ->
+                                            val argb = newColor.toArgb()
+                                            customSwatchColorArgb = argb
+                                            repo.setCustomAccentArgb(argb)
+                                            subPageStack = subPageStack.dropLast(1)
                                         }
                                     )
                                 }
+                            }
 
-                                LauncherCategory.QUICK_TOGGLES -> {
-                                    QuickTogglesSettingsTabContent(
+                            LauncherSubPage.ENABLE_DISABLE_TOGGLES -> {
+                                GamepadDeck(
+                                    breadcrumbs = listOf(
+                                        LauncherCategory.QUICK_TOGGLES.title,
+                                        "Enable / Disable"
+                                    )
+                                ) {
+                                    EnableDisableTogglesSubPageContent(
                                         quickTileOrder = quickTileOrder,
                                         disabledQuickTiles = disabledQuickTiles,
-                                        onMoveActiveTile = { fromIndex, toIndex ->
-                                            repo.moveActiveQuickTile(fromIndex, toIndex)
-                                        },
-                                        onOpenEnableDisableSubPage = {
-                                            subPageStack = listOf(LauncherSubPage.ENABLE_DISABLE_TOGGLES)
-                                        },
-                                        onResetDefaults = {
-                                            repo.resetQuickTilesToDefault()
-                                        },
-                                        onGridActiveChanged = { active ->
-                                            isVisualReorderGridActive = active
-                                        }
-                                    )
-                                }
-
-                                LauncherCategory.APPEARANCE -> {
-                                    AppearanceSettingsTabContent(
-                                        selectedTheme = selectedTheme,
-                                        customAccentArgb = customAccentArgb,
-                                        customSwatchColorArgb = customSwatchColorArgb,
-                                        injectSystemTheme = injectSystemTheme,
-                                        syncedMegingiardOption = syncedMegingiardOption,
-                                        isMegingiardAvailable = isMegingiardAvailable,
-                                        onSelectTheme = { repo.setThemeMode(it.id) },
-                                        onSelectAccentColor = { repo.setCustomAccentArgb(it) },
-                                        onOpenCustomAccent = {
-                                            subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
-                                        },
-                                        onToggleInjectSystemTheme = { repo.setInjectOsTheme(it) }
-                                    )
-                                }
-
-                                LauncherCategory.DIAGNOSTICS -> {
-                                    DiagnosticsSettingsTabContent(
-                                        helperConnected = helperConnected,
-                                        pServerAvailable = pServerAvailable,
-                                        stockDisabled = stockDisabled,
-                                        isMegingiardAvailable = isMegingiardAvailable,
-                                        syncedMegingiardOption = syncedMegingiardOption,
-                                        isRefreshing = isRefreshingStatus,
-                                        onReconnectAndRefresh = {
-                                            if (isRefreshingStatus) return@DiagnosticsSettingsTabContent
-                                            isRefreshingStatus = true
-                                            scope.launch(Dispatchers.IO) {
-                                                PrivilegedBridge.ensureInitialized(context)
-                                                PServerClient.ensurePermissionsGranted(context)
-                                                repo.refreshAll()
-                                                refreshStatus()
-                                                withContext(Dispatchers.Main) {
-                                                    isRefreshingStatus = false
-                                                }
-                                            }
+                                        onSetTileEnabled = { tile, enabled ->
+                                            repo.setQuickTileEnabled(tile, enabled)
                                         }
                                     )
                                 }
                             }
                         }
                     }
-
-                    LauncherSubPage.CUSTOM_ACCENT -> {
-                        GamepadDeck(
-                            breadcrumbs = listOf(
-                                LauncherCategory.APPEARANCE.title,
-                                "Custom Color"
-                            )
-                        ) {
-                            CustomAccentSubPageContent(
-                                initialColor = Color(customSwatchColorArgb),
-                                onSaveColor = { newColor ->
-                                    val argb = newColor.toArgb()
-                                    customSwatchColorArgb = argb
-                                    repo.setCustomAccentArgb(argb)
-                                    subPageStack = subPageStack.dropLast(1)
-                                }
-                            )
-                        }
-                    }
-
-                    LauncherSubPage.ENABLE_DISABLE_TOGGLES -> {
-                        GamepadDeck(
-                            breadcrumbs = listOf(
-                                LauncherCategory.QUICK_TOGGLES.title,
-                                "Enable / Disable"
-                            )
-                        ) {
-                            EnableDisableTogglesSubPageContent(
-                                quickTileOrder = quickTileOrder,
-                                disabledQuickTiles = disabledQuickTiles,
-                                onSetTileEnabled = { tile, enabled ->
-                                    repo.setQuickTileEnabled(tile, enabled)
-                                }
-                            )
-                        }
-                    }
                 }
-            }
+            )
         }
-    )
+    }
 }
 
 @Composable

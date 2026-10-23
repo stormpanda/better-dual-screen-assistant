@@ -108,6 +108,7 @@
 
     <!-- Common Gamepad and Dialog Strings (Megingiard shared/ui) -->
     <string name="settings_close">Close</string>
+    <string name="settings_support_app">Support this App</string>
     <string name="cd_drag_reorder">Drag to reorder</string>
     <string name="gamepad_action_save">Save</string>
     <string name="gamepad_action_save_and_exit">Save &amp; Exit</string>
