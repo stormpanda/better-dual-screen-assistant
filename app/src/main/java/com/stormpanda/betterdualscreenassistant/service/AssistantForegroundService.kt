@@ -116,7 +116,7 @@ class AssistantForegroundService : Service() {
         PrivilegedBridge.ensureInitialized(applicationContext)
         enforceStockTakeoverIfPreferred()
 
-        repository = SystemSettingsRepository(applicationContext).also { it.register() }
+        repository = SystemSettingsRepository.getInstance(applicationContext).also { it.register() }
         telemetryMonitor = TelemetryMonitor(applicationContext)
         overviewProxyClient = OverviewProxyClient(applicationContext).also { it.bind() }
         mappingServiceClient = MappingServiceClient(applicationContext) {

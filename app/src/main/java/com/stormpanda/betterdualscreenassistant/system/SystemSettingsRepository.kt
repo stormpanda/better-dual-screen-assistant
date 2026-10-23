@@ -26,6 +26,7 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.resolveTccPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
@@ -72,6 +73,19 @@ class SystemSettingsRepository(private val context: Context) {
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
 
+        @Volatile
+        private var instance: SystemSettingsRepository? = null
+
+        fun getInstance(context: Context): SystemSettingsRepository {
+            return instance ?: synchronized(this) {
+                instance ?: SystemSettingsRepository(context.applicationContext).also {
+                    instance = it
+                }
+            }
+        }
+
+        private const val OS_THEME_SYNC_DEBOUNCE_MS = 650L
+
         private val MEGINGIARD_RELEASE_THEME_URI: Uri =
             Uri.parse("content://com.stormpanda.megingiard.provider/theme")
         private val MEGINGIARD_DEBUG_THEME_URI: Uri =
@@ -83,6 +97,16 @@ class SystemSettingsRepository(private val context: Context) {
     private val displayManager = context.getSystemService(DisplayManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "BDSA-ThemeSync").apply { isDaemon = true }
+    }
+
+    @Volatile
+    private var preferredMegingiardThemeUri: Uri? = null
+
+    private val debouncedOsThemeSyncRunnable = Runnable {
+        syncOsThemeIfNeeded()
+    }
 
     // Display Mode: 0 = Dual, 1 = Top Only, 2 = Bottom Only
     private val _dualScreenDisplayMode = MutableStateFlow(getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, 0))
@@ -206,32 +230,47 @@ class SystemSettingsRepository(private val context: Context) {
     private val settingsObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             val refreshBrightness = uri == null || uri.lastPathSegment == "screen_brightness"
-            refreshAll(refreshDisplayBrightness = refreshBrightness)
+            refreshAll(
+                refreshDisplayBrightness = refreshBrightness,
+                refreshMegingiardTheme = false
+            )
         }
     }
 
     private val megingiardThemeObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            refreshMegingiardSyncedTheme()
+            refreshMegingiardSyncedThemeAsync(
+                changedUri = uri,
+                debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS
+            )
         }
     }
 
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             PREF_APP_THEME_MODE -> {
-                _themeMode.value = readSavedThemeMode()
-                syncOsThemeIfNeeded()
+                val saved = readSavedThemeMode()
+                if (_themeMode.value != saved) {
+                    _themeMode.value = saved
+                    scheduleOsThemeSync(0L)
+                }
             }
             PREF_CUSTOM_ACCENT_ARGB -> {
-                _customAccentArgb.value = prefs.getInt(
+                val saved = prefs.getInt(
                     PREF_CUSTOM_ACCENT_ARGB,
                     DEFAULT_MEGINGIARD_ACCENT_ARGB
                 )
-                syncOsThemeIfNeeded()
+                if (_customAccentArgb.value != saved) {
+                    _customAccentArgb.value = saved
+                    scheduleOsThemeSync(0L)
+                }
             }
             PREF_INJECT_OS_THEME -> {
-                _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
-                syncOsThemeIfNeeded()
+                val saved = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
+                if (_injectOsTheme.value != saved) {
+                    _injectOsTheme.value = saved
+                    scheduleOsThemeSync(0L)
+                }
             }
             PREF_DUAL_VOLUME_PERCENT -> {
                 _dualVolumePercent.value = readDualVolumePercent()
@@ -342,7 +381,10 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
-    fun refreshAll(refreshDisplayBrightness: Boolean = true) {
+    fun refreshAll(
+        refreshDisplayBrightness: Boolean = true,
+        refreshMegingiardTheme: Boolean = true
+    ) {
         _dualScreenDisplayMode.value = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
         _screenFocusLock.value = getInt(KEY_SCREEN_FOCUS_LOCK, 0)
         _performanceMode.value = getInt(KEY_PERFORMANCE_MODE, 0)
@@ -363,8 +405,11 @@ class SystemSettingsRepository(private val context: Context) {
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
         _quickTileOrder.value = readSavedQuickTileOrder()
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
-        refreshMegingiardSyncedTheme()
-        syncOsThemeIfNeeded()
+        if (refreshMegingiardTheme) {
+            refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+        } else {
+            syncOsThemeIfNeeded()
+        }
         _refreshRate.value = readRefreshRate()
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
         if (refreshDisplayBrightness) {
@@ -499,8 +544,8 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setThemeMode(mode: Int) {
-        prefs.edit().putInt(PREF_APP_THEME_MODE, mode).apply()
         _themeMode.value = mode
+        prefs.edit().putInt(PREF_APP_THEME_MODE, mode).apply()
         val stockEquivalent = when (mode) {
             1 -> 1
             3 -> 3
@@ -508,18 +553,20 @@ class SystemSettingsRepository(private val context: Context) {
         }
         PrivilegedBridge.putSystemSettingInt(context, KEY_TCC_THEME_MODE, stockEquivalent)
         if (mode == AppThemeOption.SYNC_MEGINGIARD.id) {
-            refreshMegingiardSyncedTheme()
+            refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+        } else {
+            scheduleOsThemeSync(0L)
         }
-        syncOsThemeIfNeeded()
     }
 
     fun setCustomAccentArgb(argb: Int) {
-        prefs.edit().putInt(PREF_CUSTOM_ACCENT_ARGB, argb).apply()
         _customAccentArgb.value = argb
-        syncOsThemeIfNeeded()
+        prefs.edit().putInt(PREF_CUSTOM_ACCENT_ARGB, argb).apply()
+        scheduleOsThemeSync(0L)
     }
 
     fun setInjectOsTheme(enabled: Boolean) {
+        _injectOsTheme.value = enabled
         if (enabled) {
             val editor = prefs.edit().putBoolean(PREF_INJECT_OS_THEME, true)
             if (!prefs.contains(PREF_SAVED_OS_NIGHT_MODE)) {
@@ -535,37 +582,100 @@ class SystemSettingsRepository(private val context: Context) {
         } else {
             prefs.edit().putBoolean(PREF_INJECT_OS_THEME, false).apply()
         }
-        _injectOsTheme.value = enabled
+        mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
         syncOsThemeIfNeeded(force = true)
     }
 
     fun refreshMegingiardSyncedTheme() {
-        val uris = listOf(MEGINGIARD_RELEASE_THEME_URI, MEGINGIARD_DEBUG_THEME_URI)
-        for (uri in uris) {
-            try {
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val modeIdx = cursor.getColumnIndex("theme_mode")
-                        val accentIdx = cursor.getColumnIndex("accent_color")
-                        val modeStr = if (modeIdx >= 0) cursor.getString(modeIdx) else null
-                        val accentInt = if (accentIdx >= 0 && !cursor.isNull(accentIdx)) {
-                            cursor.getInt(accentIdx)
-                        } else {
-                            null
+        refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+    }
+
+    private fun refreshMegingiardSyncedThemeAsync(
+        changedUri: Uri?,
+        debounceOsSyncMs: Long
+    ) {
+        themeSyncExecutor.execute {
+            val candidates = buildMegingiardCandidateUris(changedUri)
+            for (uri in candidates) {
+                if (!isProviderAuthorityInstalled(uri)) continue
+                try {
+                    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val modeIdx = cursor.getColumnIndex("theme_mode")
+                            val accentIdx = cursor.getColumnIndex("accent_color")
+                            val modeStr = if (modeIdx >= 0) cursor.getString(modeIdx) else null
+                            val accentInt = if (accentIdx >= 0 && !cursor.isNull(accentIdx)) {
+                                cursor.getInt(accentIdx)
+                            } else {
+                                null
+                            }
+                            preferredMegingiardThemeUri = uri
+                            val resolvedOption = AppThemeOption.fromMegingiardIpcName(modeStr)
+                            val changed = _syncedMegingiardOption.value != resolvedOption ||
+                                _syncedMegingiardAccentArgb.value != accentInt ||
+                                !_isMegingiardProviderAvailable.value
+                            _syncedMegingiardOption.value = resolvedOption
+                            _syncedMegingiardAccentArgb.value = accentInt
+                            _isMegingiardProviderAvailable.value = true
+                            if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
+                                (changed || debounceOsSyncMs == 0L)
+                            ) {
+                                scheduleOsThemeSync(debounceOsSyncMs)
+                            }
+                            return@execute
                         }
-                        _syncedMegingiardOption.value = AppThemeOption.fromMegingiardIpcName(modeStr)
-                        _syncedMegingiardAccentArgb.value = accentInt
-                        _isMegingiardProviderAvailable.value = true
-                        if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id) {
-                            syncOsThemeIfNeeded()
-                        }
-                        return
                     }
+                } catch (_: Throwable) {
                 }
-            } catch (_: Throwable) {
+            }
+            _isMegingiardProviderAvailable.value = false
+            if (debounceOsSyncMs == 0L) {
+                scheduleOsThemeSync(0L)
             }
         }
-        _isMegingiardProviderAvailable.value = false
+    }
+
+    private fun buildMegingiardCandidateUris(changedUri: Uri?): List<Uri> {
+        val ordered = LinkedHashSet<Uri>(3)
+        if (changedUri != null &&
+            (changedUri.authority == MEGINGIARD_RELEASE_THEME_URI.authority ||
+                changedUri.authority == MEGINGIARD_DEBUG_THEME_URI.authority)
+        ) {
+            ordered.add(
+                if (changedUri.authority == MEGINGIARD_DEBUG_THEME_URI.authority) {
+                    MEGINGIARD_DEBUG_THEME_URI
+                } else {
+                    MEGINGIARD_RELEASE_THEME_URI
+                }
+            )
+        }
+        preferredMegingiardThemeUri?.let { ordered.add(it) }
+        ordered.add(MEGINGIARD_RELEASE_THEME_URI)
+        ordered.add(MEGINGIARD_DEBUG_THEME_URI)
+        return ordered.toList()
+    }
+
+    private fun isProviderAuthorityInstalled(uri: Uri): Boolean {
+        val authority = uri.authority ?: return false
+        return try {
+            @Suppress("DEPRECATION")
+            context.packageManager.resolveContentProvider(authority, 0) != null
+        } catch (_: Throwable) {
+            true
+        }
+    }
+
+    private fun scheduleOsThemeSync(delayMs: Long) {
+        mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
+        if (delayMs <= 0L) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                syncOsThemeIfNeeded()
+            } else {
+                mainHandler.post(debouncedOsThemeSyncRunnable)
+            }
+        } else {
+            mainHandler.postDelayed(debouncedOsThemeSyncRunnable, delayMs)
+        }
     }
 
     private fun syncOsThemeIfNeeded(force: Boolean = false) {

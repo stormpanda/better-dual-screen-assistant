@@ -80,7 +80,9 @@ object PrivilegedBridge {
         _isHelperConnected.value = true
         registerClientWithHelper(binder)
         pendingOsThemeRequest?.let { req ->
-            dispatchOsThemeRequestToBinder(binder, req)
+            scope.launch {
+                dispatchOsThemeRequestToBinder(binder, req)
+            }
         }
     }
 
@@ -551,13 +553,16 @@ object PrivilegedBridge {
             savedThemeJson = savedThemeJson
         )
         pendingOsThemeRequest = req
-        val binder = helperBinder
-        if (binder != null && binder.isBinderAlive) {
-            if (dispatchOsThemeRequestToBinder(binder, req)) {
-                return
+        val appContext = context.applicationContext
+        scope.launch {
+            val binder = helperBinder
+            if (binder != null && binder.isBinderAlive) {
+                if (dispatchOsThemeRequestToBinder(binder, req)) {
+                    return@launch
+                }
             }
+            ensureStarted(appContext)
         }
-        ensureStarted(context)
     }
 
     fun clearOsThemeOverlay(context: Context?, restoreNightMode: Int, restoreThemeJson: String = "") {
@@ -571,14 +576,19 @@ object PrivilegedBridge {
             savedThemeJson = restoreThemeJson
         )
         pendingOsThemeRequest = req
-        val binder = helperBinder
-        if (binder != null && binder.isBinderAlive) {
-            if (dispatchOsThemeRequestToBinder(binder, req)) {
-                pendingOsThemeRequest = null
-                return
+        val appContext = context?.applicationContext
+        scope.launch {
+            val binder = helperBinder
+            if (binder != null && binder.isBinderAlive) {
+                if (dispatchOsThemeRequestToBinder(binder, req)) {
+                    if (pendingOsThemeRequest === req) {
+                        pendingOsThemeRequest = null
+                    }
+                    return@launch
+                }
             }
+            appContext?.let { ensureStarted(it) }
         }
-        context?.let { ensureStarted(it) }
     }
 
     private fun dispatchOsThemeRequestToBinder(

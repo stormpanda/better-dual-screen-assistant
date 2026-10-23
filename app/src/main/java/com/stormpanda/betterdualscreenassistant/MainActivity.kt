@@ -164,8 +164,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             val repo = remember {
-                AssistantForegroundService.instance?.repository
-                    ?: SystemSettingsRepository(context.applicationContext)
+                SystemSettingsRepository.getInstance(context.applicationContext).also {
+                    it.register()
+                }
             }
             val themeModeId by repo.themeMode.collectAsState()
             val customAccentArgb by repo.customAccentArgb.collectAsState()
@@ -396,10 +397,6 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                 stockDisabled = !sEnabled
             }
         }
-    }
-
-    LaunchedEffect(Unit) {
-        refreshStatus()
     }
 
     DisposableEffect(lifecycleOwner) {

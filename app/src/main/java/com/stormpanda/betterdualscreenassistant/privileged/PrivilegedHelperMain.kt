@@ -53,7 +53,7 @@ object PrivilegedHelperMain {
     const val TRANSACTION_APPLY_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 14
     const val TRANSACTION_CLEAR_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 15
 
-    const val HELPER_PROTOCOL_VERSION = 5
+    const val HELPER_PROTOCOL_VERSION = 6
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -483,21 +483,25 @@ object PrivilegedHelperMain {
                         val savedNightMode = data.readInt()
                         val injectedThemeJson = data.readString() ?: ""
                         val savedThemeJson = data.readString() ?: ""
-                        applyOsThemeOverlayInternal(
-                            resourceNames = resourceNames,
-                            colorValues = colorValues,
-                            targetNightMode = targetNightMode,
-                            savedNightMode = savedNightMode,
-                            injectedThemeJson = injectedThemeJson,
-                            savedThemeJson = savedThemeJson
-                        )
+                        mainHandler.post {
+                            applyOsThemeOverlayInternal(
+                                resourceNames = resourceNames,
+                                colorValues = colorValues,
+                                targetNightMode = targetNightMode,
+                                savedNightMode = savedNightMode,
+                                injectedThemeJson = injectedThemeJson,
+                                savedThemeJson = savedThemeJson
+                            )
+                        }
                         reply?.writeNoException()
                         true
                     }
                     TRANSACTION_CLEAR_OS_THEME -> {
                         val restoreNightMode = data.readInt()
                         val restoreThemeJson = data.readString() ?: ""
-                        clearOsThemeOverlayInternal(restoreNightMode, restoreThemeJson)
+                        mainHandler.post {
+                            clearOsThemeOverlayInternal(restoreNightMode, restoreThemeJson)
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -700,7 +704,7 @@ object PrivilegedHelperMain {
             colorValues: IntArray,
             targetNightMode: Int,
             savedNightMode: Int,
-            injectedThemeJson: String,
+            @Suppress("UNUSED_PARAMETER") injectedThemeJson: String,
             savedThemeJson: String
         ) {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
@@ -710,25 +714,29 @@ object PrivilegedHelperMain {
             if (savedThemeJson.isNotBlank() && !savedThemeJson.contains("\"999\"")) {
                 savedStockThemeJson = savedThemeJson
             }
+            val nightChanged = if (targetNightMode == 1 || targetNightMode == 2) {
+                setNightModeInternal(targetNightMode)
+            } else {
+                false
+            }
             if (resourceNames.isNotEmpty() && resourceNames.size == colorValues.size) {
+                val samePalette = osThemeOverlayActive &&
+                    lastOverlayResourceNames.contentEquals(resourceNames) &&
+                    lastOverlayColorValues.contentEquals(colorValues)
                 lastOverlayResourceNames = resourceNames
                 lastOverlayColorValues = colorValues
                 osThemeOverlayActive = true
-                if (injectedThemeJson.isNotBlank()) {
-                    putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, injectedThemeJson)
+                if (!samePalette || nightChanged) {
+                    commitOsThemeFabricatedOverlays(resourceNames, colorValues)
                 }
-                commitOsThemeFabricatedOverlays(resourceNames, colorValues)
-                mainHandler.postDelayed(reassertOverlayPriorityRunnable, 180L)
-                mainHandler.postDelayed(reassertOverlayPriorityRunnable, 450L)
+                if (nightChanged) {
+                    mainHandler.postDelayed(reassertOverlayPriorityRunnable, 200L)
+                }
             } else {
                 lastOverlayResourceNames = emptyArray()
                 lastOverlayColorValues = IntArray(0)
                 unregisterOsThemeOverlayOnly()
                 restoreStockThemeJsonInternal(savedThemeJson)
-            }
-
-            if (targetNightMode == 1 || targetNightMode == 2) {
-                setNightModeInternal(targetNightMode)
             }
         }
 
@@ -920,25 +928,26 @@ object PrivilegedHelperMain {
             }
         }
 
-        private fun setNightModeInternal(mode: Int) {
+        private fun setNightModeInternal(mode: Int): Boolean {
             val uim = uiModeManagerProxy
             if (uim != null) {
                 try {
                     val getNightMode = uim.javaClass.getMethod("getNightMode")
                     val current = getNightMode.invoke(uim) as? Int ?: -1
-                    if (current == mode) return
+                    if (current == mode) return false
                     val setNightMode = uim.javaClass.getMethod(
                         "setNightMode",
                         Int::class.javaPrimitiveType
                     )
                     setNightMode.invoke(uim, mode)
-                    return
+                    return true
                 } catch (t: Throwable) {
                     Log.w(TAG, "IUiModeManager.setNightMode($mode) failed, using fallback", t)
                 }
             }
             val cmdArg = if (mode == 2) "yes" else "no"
             execRootCommand("cmd uimode night $cmdArg")
+            return true
         }
 
         private fun setDisplayBrightnessInternal(displayId: Int, brightness: Float, temporary: Boolean) {
