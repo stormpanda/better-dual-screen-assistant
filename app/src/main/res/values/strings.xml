@@ -4,7 +4,7 @@
     <string name="battery_level_text">%1$d%%</string>
     <string name="current_device_does_not_support_120hz">The current device does not support 120HZ</string>
     <string name="current_frame_rate_tip">CURRENT FPS</string>
-    <string name="dualscreen_asynchronous_display">Dual-screen display</string>
+    <string name="dualscreen_asynchronous_display">Dual Screen</string>
     <string name="fan_option_disable">Ban On Use</string>
     <string name="fan_option_odin_style">Standard Style</string>
     <string name="fan_option_xbox_style">XBox Style</string>
@@ -24,10 +24,10 @@
     <string name="navigation_edit_text">Edit</string>
     <string name="navigation_screen_control_text">Mode</string>
     <string name="navigation_system_set_text">Settings</string>
-    <string name="navigation_task_manage_text">Task</string>
-    <string name="only_following_screen_displayed">Only bottom screen</string>
-    <string name="only_theupper_screen_displayed">Only top screen</string>
-    <string name="swap_screens_mode_text">Swap screens</string>
+    <string name="navigation_task_manage_text">Tasks</string>
+    <string name="only_following_screen_displayed">Bottom only</string>
+    <string name="only_theupper_screen_displayed">Top only</string>
+    <string name="swap_screens_mode_text">Swap Screens</string>
     <string name="sliding_dual_screen">Dual Screen</string>
     <string name="sliding_main_screen">Top Screen</string>
     <string name="sliding_secondary_screen">Bottom Screen</string>
@@ -65,9 +65,9 @@
     <string name="virtual_keyboard_text">Keyboard</string>
 
     <!-- Overlay UI String Keys -->
-    <string name="dual_screen_display">Dual-screen\ndisplay</string>
-    <string name="just_screen_above">Only top\nscreen</string>
-    <string name="just_screen_below">Only bottom\nscreen</string>
+    <string name="dual_screen_display">Dual Screen</string>
+    <string name="just_screen_above">Top only</string>
+    <string name="just_screen_below">Bottom only</string>
     <string name="close_screen">Close bottom\nscreen</string>
     <string name="dual_screen_brightness">Dual Screen\nBrightness</string>
     <string name="screen_above_brightness">Top Screen\nBrightness</string>
@@ -99,7 +99,7 @@
     <string name="light_theme_mode">Light\nTheme</string>
     <string name="dark_theme_mode">Dark\nTheme</string>
     <string name="screen_control">Mode</string>
-    <string name="task_manage">Task</string>
+    <string name="task_manage">Tasks</string>
     <string name="system_set">Settings</string>
     <string name="tip">Tip</string>
     <string name="wake_up_screen_tip">When the secondary screen is turned off, you can press the AYN key to wake up the screen.</string>
