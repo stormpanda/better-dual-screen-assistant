@@ -3,7 +3,9 @@ package com.stormpanda.betterdualscreenassistant.overlay
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
+import android.app.ActivityOptions
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Point
@@ -35,6 +37,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
@@ -201,6 +204,9 @@ class ScreenOverlayManager(
                         },
                         onCaptureScreenshotRequest = { targetMode ->
                             performScreenshotWithToast(targetMode)
+                        },
+                        onOpenEditRequest = {
+                            openMainActivityOnTopScreen()
                         },
                         onDismissOverlayRequest = {
                             hideAssistantOverlay()
@@ -433,6 +439,31 @@ class ScreenOverlayManager(
                 }
             }.start()
         }, 280L)
+    }
+
+    fun openMainActivityOnTopScreen() {
+        mainHandler.post {
+            try {
+                val intent = Intent(context, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                }
+                val options = ActivityOptions.makeBasic().apply {
+                    launchDisplayId = TOP_DISPLAY_ID
+                }
+                context.startActivity(intent, options.toBundle())
+            } catch (t: Throwable) {
+                Log.w(TAG, "Direct startActivity on display 0 failed, using root fallback", t)
+            }
+            // Ensure the activity task is moved to Display 0 even if it was already open on Display 4
+            PServerClient.exec(
+                "am start --display 0 --activity-single-top -n ${context.packageName}/.MainActivity",
+                wait = false
+            )
+        }
     }
 
     fun showBottomToast(message: String) {

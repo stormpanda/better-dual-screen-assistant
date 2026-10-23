@@ -98,6 +98,7 @@ fun AssistantOverlayScreen(
     activeTabFlow: StateFlow<Int>,
     onSelectTab: (Int) -> Unit,
     onOpenRecentsRequest: () -> Unit,
+    onOpenEditRequest: () -> Unit = {},
     onCleanMemoryRequest: () -> Unit,
     onSwapScreensRequest: () -> Unit = {},
     onToggleTouchLockRequest: () -> Unit = {},
@@ -125,6 +126,7 @@ fun AssistantOverlayScreen(
 
     val showLedBrightnessSlider by repository.showLedBrightnessSlider.collectAsState()
     val showSwapScreensButton by repository.showSwapScreensButton.collectAsState()
+    val showEditButton by repository.showEditButton.collectAsState()
     val ledBrightnessPercent by repository.ledBrightnessPercent.collectAsState()
     val wifiEnabled by repository.wifiEnabled.collectAsState()
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
@@ -310,8 +312,10 @@ fun AssistantOverlayScreen(
 
                 NavigationBarSection(
                     activeTab = activeTab,
+                    showEditButton = showEditButton,
                     onSelectTab = onSelectTab,
                     onOpenRecents = onOpenRecentsRequest,
+                    onOpenEdit = onOpenEditRequest,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 5.dp, start = 15.dp, end = 15.dp, bottom = 15.dp)
@@ -1619,8 +1623,10 @@ private fun QuickSettingsGridPage(
 @Composable
 private fun NavigationBarSection(
     activeTab: Int,
+    showEditButton: Boolean,
     onSelectTab: (Int) -> Unit,
     onOpenRecents: () -> Unit,
+    onOpenEdit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
@@ -1633,7 +1639,7 @@ private fun NavigationBarSection(
         contentAlignment = Alignment.Center
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(0.70f),
+            modifier = Modifier.fillMaxWidth(if (showEditButton) 0.82f else 0.70f),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1660,6 +1666,16 @@ private fun NavigationBarSection(
                 onClick = { onSelectTab(1) },
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
+
+            if (showEditButton) {
+                TccButton(
+                    label = stringResource(R.string.navigation_edit_text),
+                    iconRes = R.drawable.ic_nav_edit,
+                    selected = false,
+                    onClick = onOpenEdit,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
         }
     }
 }

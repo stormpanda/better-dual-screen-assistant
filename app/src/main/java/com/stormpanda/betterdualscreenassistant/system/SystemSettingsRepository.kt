@@ -74,6 +74,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_REMEMBER_LAST_TAB = "remember_last_tab"
         const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
+        const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -209,6 +210,11 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
     )
     val showSwapScreensButton: StateFlow<Boolean> = _showSwapScreensButton.asStateFlow()
+
+    private val _showEditButton = MutableStateFlow(
+        prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
+    )
+    val showEditButton: StateFlow<Boolean> = _showEditButton.asStateFlow()
 
     private val _ledBrightnessPercent = MutableStateFlow(readLedBrightnessPercent())
     val ledBrightnessPercent: StateFlow<Int> = _ledBrightnessPercent.asStateFlow()
@@ -362,6 +368,10 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_SHOW_SWAP_SCREENS_BUTTON -> {
                 _showSwapScreensButton.value =
                     prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
+            }
+            PREF_SHOW_EDIT_BUTTON -> {
+                _showEditButton.value =
+                    prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
             }
             PREF_QUICK_TILE_ORDER -> {
                 _quickTileOrder.value = readSavedQuickTileOrder()
@@ -523,6 +533,7 @@ class SystemSettingsRepository(private val context: Context) {
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
         _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
+        _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
         _bluetoothEnabled.value = readBluetoothEnabled()
@@ -1067,6 +1078,11 @@ class SystemSettingsRepository(private val context: Context) {
     fun setShowSwapScreensButton(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, enabled).apply()
         _showSwapScreensButton.value = enabled
+    }
+
+    fun setShowEditButton(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_SHOW_EDIT_BUTTON, enabled).apply()
+        _showEditButton.value = enabled
     }
 
     fun setLedBrightnessPercent(percent: Int) {

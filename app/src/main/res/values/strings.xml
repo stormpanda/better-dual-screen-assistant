@@ -21,6 +21,7 @@
     <string name="key_focus_mode_title_text">Focus Mode</string>
     <string name="key_focus_mode_touch_switchable">Auto-lock</string>
     <string name="navigation_app_manage_text">Application</string>
+    <string name="navigation_edit_text">Edit</string>
     <string name="navigation_screen_control_text">Mode</string>
     <string name="navigation_system_set_text">Settings</string>
     <string name="navigation_task_manage_text">Task</string>

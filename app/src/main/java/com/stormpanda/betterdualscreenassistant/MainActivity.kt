@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.DeveloperBoard
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.HealthAndSafety
@@ -370,6 +371,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val rememberLastTab by repo.rememberLastTab.collectAsState()
     val showLedBrightnessSlider by repo.showLedBrightnessSlider.collectAsState()
     val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
+    val showEditButton by repo.showEditButton.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
@@ -544,6 +546,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 stockDisabled = stockDisabled,
                                                 showCloseBottomScreenTip = showCloseBottomScreenTip,
                                                 rememberLastTab = rememberLastTab,
+                                                showEditButton = showEditButton,
                                                 showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
                                                 onToggleReplaceStock = { replaceStock ->
@@ -564,6 +567,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleRememberLastTab = { enabled ->
                                                     repo.setRememberLastTab(enabled)
+                                                },
+                                                onToggleShowEditButton = { enabled ->
+                                                    repo.setShowEditButton(enabled)
                                                 },
                                                 onToggleShowSwapScreensButton = { enabled ->
                                                     repo.setShowSwapScreensButton(enabled)
@@ -685,12 +691,14 @@ private fun GeneralSettingsTabContent(
     stockDisabled: Boolean,
     showCloseBottomScreenTip: Boolean,
     rememberLastTab: Boolean,
+    showEditButton: Boolean,
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onOpenOverlay: () -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
+    onToggleShowEditButton: (Boolean) -> Unit,
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit
 ) {
@@ -713,6 +721,14 @@ private fun GeneralSettingsTabContent(
         icon = Icons.AutoMirrored.Rounded.OpenInNew,
         actionText = "Open",
         onClick = onOpenOverlay
+    )
+
+    GamepadToggleCard(
+        title = "Show Edit Button in Overlay",
+        description = "Show an Edit button in the bottom navigation row that opens settings on the top screen while keeping the overlay open",
+        checked = showEditButton,
+        icon = Icons.Rounded.Edit,
+        onCheckedChange = onToggleShowEditButton
     )
 
     GamepadToggleCard(
