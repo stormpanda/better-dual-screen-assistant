@@ -154,7 +154,7 @@ class ScreenOverlayManager(
         mainHandler.post {
             if (initialTab != null) {
                 activeTabState.value = initialTab.coerceIn(0, 1)
-            } else if (!isAssistantShowing) {
+            } else if (!isAssistantShowing && !repository.rememberLastTab.value) {
                 activeTabState.value = 0
             }
             if (isAssistantShowing) return@post

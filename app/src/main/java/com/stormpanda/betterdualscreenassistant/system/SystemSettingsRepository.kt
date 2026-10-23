@@ -57,6 +57,7 @@ class SystemSettingsRepository(private val context: Context) {
 
         const val PREFS_NAME = "better_dsa_prefs"
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
+        const val PREF_REMEMBER_LAST_TAB = "remember_last_tab"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -65,6 +66,8 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_DUAL_VOLUME_PERCENT = "dual_volume_percent"
         const val PREF_DUAL_BRIGHTNESS_ACTIVE = "dual_brightness_active"
         const val PREF_DUAL_VOLUME_ACTIVE = "dual_volume_active"
+        const val PREF_QUICK_TILE_ORDER = "quick_tile_order"
+        const val PREF_DISABLED_QUICK_TILES = "disabled_quick_tiles"
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -149,6 +152,17 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val showCloseBottomScreenTip: StateFlow<Boolean> = _showCloseBottomScreenTip.asStateFlow()
 
+    private val _rememberLastTab = MutableStateFlow(
+        prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+    )
+    val rememberLastTab: StateFlow<Boolean> = _rememberLastTab.asStateFlow()
+
+    private val _quickTileOrder = MutableStateFlow(readSavedQuickTileOrder())
+    val quickTileOrder: StateFlow<List<QuickSettingTileId>> = _quickTileOrder.asStateFlow()
+
+    private val _disabledQuickTiles = MutableStateFlow(readSavedDisabledQuickTiles())
+    val disabledQuickTiles: StateFlow<Set<QuickSettingTileId>> = _disabledQuickTiles.asStateFlow()
+
     // Refresh Rate: 60 or 120
     private val _refreshRate = MutableStateFlow(readRefreshRate())
     val refreshRate: StateFlow<Int> = _refreshRate.asStateFlow()
@@ -230,6 +244,15 @@ class SystemSettingsRepository(private val context: Context) {
             }
             PREF_NO_MORE_CLOSE_TIP -> {
                 _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
+            }
+            PREF_REMEMBER_LAST_TAB -> {
+                _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+            }
+            PREF_QUICK_TILE_ORDER -> {
+                _quickTileOrder.value = readSavedQuickTileOrder()
+            }
+            PREF_DISABLED_QUICK_TILES -> {
+                _disabledQuickTiles.value = readSavedDisabledQuickTiles()
             }
         }
     }
@@ -337,6 +360,9 @@ class SystemSettingsRepository(private val context: Context) {
         )
         _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
         _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
+        _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+        _quickTileOrder.value = readSavedQuickTileOrder()
+        _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         refreshMegingiardSyncedTheme()
         syncOsThemeIfNeeded()
         _refreshRate.value = readRefreshRate()
@@ -779,6 +805,99 @@ class SystemSettingsRepository(private val context: Context) {
     fun setNoMoreCloseBottomScreenTip(noMore: Boolean) {
         prefs.edit().putBoolean(PREF_NO_MORE_CLOSE_TIP, noMore).apply()
         _showCloseBottomScreenTip.value = !noMore
+    }
+
+    fun setRememberLastTab(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_REMEMBER_LAST_TAB, enabled).apply()
+        _rememberLastTab.value = enabled
+    }
+
+    fun setQuickTileOrder(newOrder: List<QuickSettingTileId>) {
+        val normalized = normalizeQuickTileOrder(newOrder)
+        _quickTileOrder.value = normalized
+        prefs.edit().putString(
+            PREF_QUICK_TILE_ORDER,
+            normalized.joinToString(",") { it.key }
+        ).apply()
+    }
+
+    fun moveActiveQuickTile(fromActiveIndex: Int, toActiveIndex: Int) {
+        val currentOrder = _quickTileOrder.value
+        val disabled = _disabledQuickTiles.value
+        val activeList = currentOrder.filter { it !in disabled }.toMutableList()
+        if (fromActiveIndex !in activeList.indices || toActiveIndex !in activeList.indices) return
+        if (fromActiveIndex == toActiveIndex) return
+
+        val moved = activeList.removeAt(fromActiveIndex)
+        activeList.add(toActiveIndex, moved)
+
+        val activeIterator = activeList.iterator()
+        val rebuilt = currentOrder.map { item ->
+            if (item in disabled) item else activeIterator.next()
+        }
+        setQuickTileOrder(rebuilt)
+    }
+
+    fun setQuickTileEnabled(tile: QuickSettingTileId, enabled: Boolean) {
+        val current = _disabledQuickTiles.value.toMutableSet()
+        if (enabled) {
+            current.remove(tile)
+        } else {
+            val enabledCount = QuickSettingTileId.entries.size - current.size
+            if (tile !in current && enabledCount <= 1) {
+                // Keep at least 1 toggle enabled
+                return
+            }
+            current.add(tile)
+        }
+        val updated = current.toSet()
+        _disabledQuickTiles.value = updated
+        prefs.edit().putString(
+            PREF_DISABLED_QUICK_TILES,
+            updated.joinToString(",") { it.key }
+        ).apply()
+    }
+
+    fun resetQuickTilesToDefault() {
+        _quickTileOrder.value = QuickSettingTileId.defaultOrder
+        _disabledQuickTiles.value = emptySet()
+        prefs.edit()
+            .remove(PREF_QUICK_TILE_ORDER)
+            .remove(PREF_DISABLED_QUICK_TILES)
+            .apply()
+    }
+
+    private fun normalizeQuickTileOrder(order: List<QuickSettingTileId>): List<QuickSettingTileId> {
+        val result = mutableListOf<QuickSettingTileId>()
+        for (item in order) {
+            if (item !in result) {
+                result.add(item)
+            }
+        }
+        for (fallback in QuickSettingTileId.defaultOrder) {
+            if (fallback !in result) {
+                result.add(fallback)
+            }
+        }
+        return result
+    }
+
+    private fun readSavedQuickTileOrder(): List<QuickSettingTileId> {
+        val raw = prefs.getString(PREF_QUICK_TILE_ORDER, null)
+        if (raw.isNullOrBlank()) return QuickSettingTileId.defaultOrder
+        val parsed = raw.split(",").mapNotNull { QuickSettingTileId.fromKey(it.trim()) }
+        return normalizeQuickTileOrder(parsed)
+    }
+
+    private fun readSavedDisabledQuickTiles(): Set<QuickSettingTileId> {
+        val raw = prefs.getString(PREF_DISABLED_QUICK_TILES, null)
+        if (raw.isNullOrBlank()) return emptySet()
+        val parsed = raw.split(",").mapNotNull { QuickSettingTileId.fromKey(it.trim()) }.toSet()
+        return if (parsed.size >= QuickSettingTileId.entries.size) {
+            parsed.drop(1).toSet()
+        } else {
+            parsed
+        }
     }
 
     /**

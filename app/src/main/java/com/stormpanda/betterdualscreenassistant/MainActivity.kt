@@ -6,27 +6,47 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.FormatColorFill
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
@@ -34,13 +54,16 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsSuggest
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -57,40 +80,57 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
+import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.megingiard.settings.ThemeMode
 import com.stormpanda.megingiard.ui.AppColors
 import com.stormpanda.megingiard.ui.AppPalettes
 import com.stormpanda.megingiard.ui.BumperDirection
 import com.stormpanda.megingiard.ui.GamepadActionCard
+import com.stormpanda.megingiard.ui.GamepadCardRow
 import com.stormpanda.megingiard.ui.GamepadCategoryTile
 import com.stormpanda.megingiard.ui.GamepadChoiceCard
 import com.stormpanda.megingiard.ui.GamepadColorPaletteCard
 import com.stormpanda.megingiard.ui.GamepadColorSwatch
 import com.stormpanda.megingiard.ui.GamepadDeck
+import com.stormpanda.megingiard.ui.GamepadFocusCard
 import com.stormpanda.megingiard.ui.GamepadInfoBox
 import com.stormpanda.megingiard.ui.GamepadPill
 import com.stormpanda.megingiard.ui.GamepadSectionHeader
 import com.stormpanda.megingiard.ui.GamepadSliderCard
 import com.stormpanda.megingiard.ui.GamepadToggleCard
 import com.stormpanda.megingiard.ui.GamepadTwoPaneScaffold
+import com.stormpanda.megingiard.ui.GamepadTwoStepConfirmCard
 import com.stormpanda.megingiard.ui.LocalAppColors
+import com.stormpanda.megingiard.ui.LocalDeckBackInterceptor
 import com.stormpanda.megingiard.ui.PrimaryOverlayInputBridge
 import com.stormpanda.megingiard.ui.colorSchemeFor
 import com.stormpanda.megingiard.ui.cycle
@@ -266,6 +306,7 @@ private enum class LauncherCategory(
     val icon: ImageVector
 ) {
     GENERAL("General", Icons.Rounded.Tune),
+    QUICK_TOGGLES("Quick Toggles", Icons.Rounded.GridView),
     APPEARANCE("Appearance", Icons.Rounded.Palette),
     DIAGNOSTICS("Diagnostics", Icons.Rounded.HealthAndSafety)
 }
@@ -273,7 +314,8 @@ private enum class LauncherCategory(
 private enum class LauncherSubPage(
     val parentCategory: LauncherCategory
 ) {
-    CUSTOM_ACCENT(LauncherCategory.APPEARANCE)
+    CUSTOM_ACCENT(LauncherCategory.APPEARANCE),
+    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES)
 }
 
 private enum class ThemeSourceOption(
@@ -313,11 +355,15 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val injectSystemTheme by repo.injectOsTheme.collectAsState()
     val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
     val showCloseBottomScreenTip by repo.showCloseBottomScreenTip.collectAsState()
+    val rememberLastTab by repo.rememberLastTab.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
+    val quickTileOrder by repo.quickTileOrder.collectAsState()
+    val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
 
     var selectedCategory by rememberSaveable { mutableStateOf(LauncherCategory.GENERAL) }
     var subPageStack by rememberSaveable { mutableStateOf<List<LauncherSubPage>>(emptyList()) }
     val currentSubPage = subPageStack.lastOrNull()
+    var isVisualReorderGridActive by remember { mutableStateOf(false) }
 
     val helperConnected by PrivilegedBridge.isHelperConnected.collectAsState()
     var pServerAvailable by remember { mutableStateOf(false) }
@@ -360,8 +406,10 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val categoryList = remember { LauncherCategory.entries }
     LaunchedEffect(Unit) {
         PrimaryOverlayInputBridge.bumperEvents.collect { direction ->
-            selectedCategory = categoryList.cycle(selectedCategory, direction)
-            subPageStack = emptyList()
+            if (!isVisualReorderGridActive) {
+                selectedCategory = categoryList.cycle(selectedCategory, direction)
+                subPageStack = emptyList()
+            }
         }
     }
 
@@ -405,6 +453,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                     GeneralSettingsTabContent(
                                         stockDisabled = stockDisabled,
                                         showCloseBottomScreenTip = showCloseBottomScreenTip,
+                                        rememberLastTab = rememberLastTab,
                                         onToggleReplaceStock = { replaceStock ->
                                             stockDisabled = replaceStock
                                             scope.launch(Dispatchers.IO) {
@@ -420,6 +469,28 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                         },
                                         onToggleCloseBottomScreenTip = { enabled ->
                                             repo.setNoMoreCloseBottomScreenTip(!enabled)
+                                        },
+                                        onToggleRememberLastTab = { enabled ->
+                                            repo.setRememberLastTab(enabled)
+                                        }
+                                    )
+                                }
+
+                                LauncherCategory.QUICK_TOGGLES -> {
+                                    QuickTogglesSettingsTabContent(
+                                        quickTileOrder = quickTileOrder,
+                                        disabledQuickTiles = disabledQuickTiles,
+                                        onMoveActiveTile = { fromIndex, toIndex ->
+                                            repo.moveActiveQuickTile(fromIndex, toIndex)
+                                        },
+                                        onOpenEnableDisableSubPage = {
+                                            subPageStack = listOf(LauncherSubPage.ENABLE_DISABLE_TOGGLES)
+                                        },
+                                        onResetDefaults = {
+                                            repo.resetQuickTilesToDefault()
+                                        },
+                                        onGridActiveChanged = { active ->
+                                            isVisualReorderGridActive = active
                                         }
                                     )
                                 }
@@ -486,6 +557,23 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                             )
                         }
                     }
+
+                    LauncherSubPage.ENABLE_DISABLE_TOGGLES -> {
+                        GamepadDeck(
+                            breadcrumbs = listOf(
+                                LauncherCategory.QUICK_TOGGLES.title,
+                                "Enable / Disable"
+                            )
+                        ) {
+                            EnableDisableTogglesSubPageContent(
+                                quickTileOrder = quickTileOrder,
+                                disabledQuickTiles = disabledQuickTiles,
+                                onSetTileEnabled = { tile, enabled ->
+                                    repo.setQuickTileEnabled(tile, enabled)
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -496,9 +584,11 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 private fun GeneralSettingsTabContent(
     stockDisabled: Boolean,
     showCloseBottomScreenTip: Boolean,
+    rememberLastTab: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onOpenOverlay: () -> Unit,
-    onToggleCloseBottomScreenTip: (Boolean) -> Unit
+    onToggleCloseBottomScreenTip: (Boolean) -> Unit,
+    onToggleRememberLastTab: (Boolean) -> Unit
 ) {
     GamepadToggleCard(
         title = "Replace Stock Assistant",
@@ -522,12 +612,641 @@ private fun GeneralSettingsTabContent(
     )
 
     GamepadToggleCard(
+        title = "Remember Last Open Tab",
+        description = "Keep the last open overlay tab (Mode or Settings) in memory when reopening the assistant",
+        checked = rememberLastTab,
+        icon = Icons.Rounded.Tab,
+        onCheckedChange = onToggleRememberLastTab
+    )
+
+    GamepadToggleCard(
         title = "Confirm Before Turning Off Bottom Screen",
         description = "Show the wake-up reminder dialog before blanking the bottom screen",
         checked = showCloseBottomScreenTip,
         icon = Icons.Rounded.NotificationsActive,
         onCheckedChange = onToggleCloseBottomScreenTip
     )
+}
+
+@Composable
+private fun QuickTogglesSettingsTabContent(
+    quickTileOrder: List<QuickSettingTileId>,
+    disabledQuickTiles: Set<QuickSettingTileId>,
+    onMoveActiveTile: (fromIndex: Int, toIndex: Int) -> Unit,
+    onOpenEnableDisableSubPage: () -> Unit,
+    onResetDefaults: () -> Unit,
+    onGridActiveChanged: (Boolean) -> Unit
+) {
+    val activeTiles = remember(quickTileOrder, disabledQuickTiles) {
+        quickTileOrder.filter { it !in disabledQuickTiles }
+    }
+    val totalCount = QuickSettingTileId.entries.size
+    val activeCount = activeTiles.size
+    val isModified = remember(quickTileOrder, disabledQuickTiles) {
+        quickTileOrder != QuickSettingTileId.defaultOrder || disabledQuickTiles.isNotEmpty()
+    }
+
+    QuickTogglesVisualReorderCard(
+        activeTiles = activeTiles,
+        onMoveActiveTile = onMoveActiveTile,
+        onGridActiveChanged = onGridActiveChanged,
+        modifier = Modifier.firstDeckItem()
+    )
+
+    GamepadActionCard(
+        title = "Enable / Disable Toggles",
+        description = "Choose which quick setting toggles appear in the assistant overlay",
+        icon = Icons.Rounded.Checklist,
+        trailingContent = {
+            GamepadPill(
+                text = "$activeCount / $totalCount Active",
+                isAccent = disabledQuickTiles.isNotEmpty()
+            )
+        },
+        onClick = onOpenEnableDisableSubPage
+    )
+
+    GamepadTwoStepConfirmCard(
+        title = "Reset Quick Toggles",
+        confirmTitle = "Confirm Reset to Default",
+        description = if (isModified) {
+            "Restore default stock toggle order and re-enable all $totalCount toggles"
+        } else {
+            "All toggles are currently in their default order and enabled"
+        },
+        confirmDescription = "Press A again to reset toggle order and visibility, or B to cancel",
+        actionText = "Reset",
+        confirmActionText = "Confirm Reset",
+        icon = Icons.Rounded.RestartAlt,
+        enabled = isModified,
+        isDestructive = true,
+        onConfirm = onResetDefaults
+    )
+}
+
+@Composable
+private fun QuickTogglesVisualReorderCard(
+    activeTiles: List<QuickSettingTileId>,
+    onMoveActiveTile: (fromIndex: Int, toIndex: Int) -> Unit,
+    onGridActiveChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val appColors = LocalAppColors.current
+    val tccColors = LocalTccColors.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var isGridActive by remember { mutableStateOf(false) }
+    var cursorIndex by remember { mutableIntStateOf(0) }
+    var isGrabbed by remember { mutableStateOf(false) }
+
+    val pages = remember(activeTiles) { activeTiles.chunked(8) }
+    val pageCount = pages.size.coerceAtLeast(1)
+    val pagerState = rememberPagerState(pageCount = { pageCount })
+
+    LaunchedEffect(activeTiles.size) {
+        if (activeTiles.isEmpty()) {
+            cursorIndex = 0
+            isGrabbed = false
+        } else if (cursorIndex > activeTiles.lastIndex) {
+            cursorIndex = activeTiles.lastIndex
+        }
+    }
+
+    LaunchedEffect(isGridActive) {
+        onGridActiveChanged(isGridActive)
+        if (!isGridActive) {
+            isGrabbed = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onGridActiveChanged(false)
+        }
+    }
+
+    LaunchedEffect(cursorIndex, pageCount, isGridActive) {
+        if (isGridActive && activeTiles.isNotEmpty()) {
+            val targetPage = (cursorIndex / 8).coerceIn(0, pageCount - 1)
+            if (pagerState.currentPage != targetPage) {
+                pagerState.animateScrollToPage(targetPage)
+            }
+        }
+    }
+
+    LaunchedEffect(isGridActive, pageCount) {
+        if (isGridActive) {
+            PrimaryOverlayInputBridge.bumperEvents.collect { direction ->
+                when (direction) {
+                    BumperDirection.PREV -> {
+                        if (pagerState.currentPage > 0) {
+                            val newPage = pagerState.currentPage - 1
+                            val targetIdx = (newPage * 8 + (cursorIndex % 8)).coerceAtMost(activeTiles.lastIndex)
+                            if (isGrabbed) {
+                                onMoveActiveTile(cursorIndex, targetIdx)
+                            }
+                            cursorIndex = targetIdx
+                        }
+                    }
+                    BumperDirection.NEXT -> {
+                        if (pagerState.currentPage < pageCount - 1) {
+                            val newPage = pagerState.currentPage + 1
+                            val targetIdx = (newPage * 8 + (cursorIndex % 8)).coerceAtMost(activeTiles.lastIndex)
+                            if (isGrabbed) {
+                                onMoveActiveTile(cursorIndex, targetIdx)
+                            }
+                            cursorIndex = targetIdx
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val deckBackInterceptor = LocalDeckBackInterceptor.current
+    val handleBackStep: () -> Boolean = remember(isGridActive, isGrabbed) {
+        {
+            if (isGrabbed) {
+                isGrabbed = false
+                true
+            } else if (isGridActive) {
+                isGridActive = false
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    DisposableEffect(deckBackInterceptor, handleBackStep, isGridActive) {
+        if (isGridActive) {
+            deckBackInterceptor?.invoke(handleBackStep, true)
+        }
+        onDispose {
+            deckBackInterceptor?.invoke(handleBackStep, false)
+        }
+    }
+
+    BackHandler(enabled = isGridActive) {
+        handleBackStep()
+    }
+
+    val currentTile = activeTiles.getOrNull(cursorIndex)
+    val subtitle = when {
+        !isGridActive -> "Press A to enter the Quick Settings grid, or tap any two tiles to swap positions"
+        isGrabbed && currentTile != null -> "Moving \"${currentTile.title}\" — use D-pad to reposition, then press A or B to drop"
+        currentTile != null -> "Selected #${cursorIndex + 1} \"${currentTile.title}\" — press A to grab & move, or B to exit grid"
+        else -> "Use D-pad to select a toggle, press A to grab & move, or B to exit"
+    }
+    val pillText = when {
+        isGrabbed -> "Moving #${cursorIndex + 1}"
+        isGridActive -> "Slot #${cursorIndex + 1}"
+        else -> "Reorder"
+    }
+
+    GamepadFocusCard(
+        onClick = {
+            if (!isGridActive) {
+                isGridActive = true
+                isGrabbed = false
+            } else {
+                isGrabbed = !isGrabbed
+            }
+        },
+        modifier = modifier,
+        itemKey = "quick_toggles_visual_reorder",
+        isAdjusting = isGridActive,
+        onFocusChanged = { focused ->
+            if (!focused) {
+                isGridActive = false
+                isGrabbed = false
+            }
+        },
+        onCustomKeyEvent = { keyEvent ->
+            if (!isGridActive) return@GamepadFocusCard false
+            val keyCode = keyEvent.nativeKeyEvent.keyCode
+            if (keyEvent.type == KeyEventType.KeyDown) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (cursorIndex > 0) {
+                            val target = cursorIndex - 1
+                            if (isGrabbed) {
+                                onMoveActiveTile(cursorIndex, target)
+                            }
+                            cursorIndex = target
+                        }
+                        true
+                    }
+
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (cursorIndex < activeTiles.lastIndex) {
+                            val target = cursorIndex + 1
+                            if (isGrabbed) {
+                                onMoveActiveTile(cursorIndex, target)
+                            }
+                            cursorIndex = target
+                        }
+                        true
+                    }
+
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        val inPageIndex = cursorIndex % 8
+                        if (inPageIndex >= 4) {
+                            val target = (cursorIndex - 4).coerceAtLeast(0)
+                            if (isGrabbed) {
+                                onMoveActiveTile(cursorIndex, target)
+                            }
+                            cursorIndex = target
+                        }
+                        true
+                    }
+
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        val inPageIndex = cursorIndex % 8
+                        val pageStart = (cursorIndex / 8) * 8
+                        val pageEnd = (pageStart + 7).coerceAtMost(activeTiles.lastIndex)
+                        if (inPageIndex < 4 && pageStart + 4 <= pageEnd) {
+                            val target = (cursorIndex + 4).coerceAtMost(pageEnd)
+                            if (isGrabbed) {
+                                onMoveActiveTile(cursorIndex, target)
+                            }
+                            cursorIndex = target
+                        }
+                        true
+                    }
+
+                    KeyEvent.KEYCODE_BUTTON_A,
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        isGrabbed = !isGrabbed
+                        true
+                    }
+
+                    KeyEvent.KEYCODE_BUTTON_B,
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_ESCAPE -> {
+                        handleBackStep()
+                        true
+                    }
+
+                    else -> false
+                }
+            } else if (keyEvent.type == KeyEventType.KeyUp) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_BUTTON_A,
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER,
+                    KeyEvent.KEYCODE_BUTTON_B,
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_ESCAPE -> true
+                    else -> false
+                }
+            } else {
+                false
+            }
+        }
+    ) { isCardFocused ->
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            GamepadCardRow(
+                title = "Quick Settings Layout",
+                description = subtitle,
+                icon = Icons.Rounded.GridView,
+                isFocused = isCardFocused || isGridActive,
+                alwaysShowFullDescription = true,
+                trailingContent = {
+                    GamepadPill(
+                        text = pillText,
+                        isAccent = isGrabbed,
+                        isHighlighted = isGridActive && !isGrabbed
+                    )
+                }
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Authentic QuickSettingsPanel replica (2x4 paged grid + bottom page indicator)
+            Column(
+                modifier = Modifier
+                    .width(470.dp)
+                    .height(246.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(tccColors.panelBackground)
+                    .border(
+                        width = if (isGridActive) 1.5.dp else 1.dp,
+                        color = if (isGridActive) {
+                            appColors.accent.copy(alpha = 0.65f)
+                        } else {
+                            appColors.onSurface.copy(alpha = 0.10f)
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                    .padding(top = 6.dp, bottom = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.91f)
+                        .padding(horizontal = 10.dp)
+                ) { pageIndex ->
+                    val pageItems = pages.getOrNull(pageIndex).orEmpty()
+                    val pageOffset = pageIndex * 8
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        for (rowIndex in 0 until 2) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                for (colIndex in 0 until 4) {
+                                    val inPageIdx = rowIndex * 4 + colIndex
+                                    val tile = pageItems.getOrNull(inPageIdx)
+                                    val globalIdx = pageOffset + inPageIdx
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (tile != null) {
+                                            val isCursorHere = isGridActive && cursorIndex == globalIdx
+                                            val isTileGrabbed = isCursorHere && isGrabbed
+                                            ReorderableTccTile(
+                                                tile = tile,
+                                                positionIndex = globalIdx,
+                                                isCursorSelected = isCursorHere,
+                                                isGrabbed = isTileGrabbed,
+                                                onClick = {
+                                                    if (!isGridActive) {
+                                                        isGridActive = true
+                                                        cursorIndex = globalIdx
+                                                        isGrabbed = true
+                                                    } else if (!isGrabbed) {
+                                                        cursorIndex = globalIdx
+                                                        isGrabbed = true
+                                                    } else if (cursorIndex == globalIdx) {
+                                                        isGrabbed = false
+                                                    } else {
+                                                        onMoveActiveTile(cursorIndex, globalIdx)
+                                                        cursorIndex = globalIdx
+                                                        isGrabbed = false
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Bottom 9%: ViewPagerIndicator matching QuickSettingsPanel
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.09f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (pageCount > 1) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(pageCount) { index ->
+                                val isSelected = pagerState.currentPage == index
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) tccColors.accent else tccColors.secondary)
+                                        .clickable {
+                                            coroutineScope.launch {
+                                                pagerState.animateScrollToPage(index)
+                                            }
+                                        }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Interactive replica of `TccButton` used inside `QuickTogglesVisualReorderCard`,
+ * preserving exact 50.5dp circle + 26dp icon + 29dp title dimensions while adding
+ * a slot index badge and cursor/grabbed highlight states.
+ */
+@Composable
+private fun ReorderableTccTile(
+    tile: QuickSettingTileId,
+    positionIndex: Int,
+    isCursorSelected: Boolean,
+    isGrabbed: Boolean,
+    onClick: () -> Unit
+) {
+    val tccColors = LocalTccColors.current
+    val appColors = LocalAppColors.current
+    val interactionSource = remember { MutableInteractionSource() }
+
+    val scale by animateFloatAsState(
+        targetValue = if (isGrabbed) 1.07f else 1f,
+        animationSpec = tween(durationMillis = 150),
+        label = "tileGrabScale"
+    )
+
+    val iconTint = if (isGrabbed) {
+        if (tccColors.isMegingiardStyle) {
+            tccColors.onAccent
+        } else if (tccColors.isDark) {
+            Color.White
+        } else {
+            tccColors.primary
+        }
+    } else if (isCursorSelected) {
+        tccColors.primary
+    } else {
+        tccColors.secondary
+    }
+    val textColor = if (isCursorSelected || isGrabbed) tccColors.primary else tccColors.secondary
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                when {
+                    isGrabbed -> appColors.accent.copy(alpha = 0.18f)
+                    isCursorSelected -> tccColors.panelBackgroundSelected
+                    else -> Color.Transparent
+                }
+            )
+            .then(
+                if (isGrabbed) {
+                    Modifier.border(2.dp, appColors.accent, RoundedCornerShape(10.dp))
+                } else if (isCursorSelected) {
+                    Modifier.border(1.5.dp, appColors.accent.copy(alpha = 0.85f), RoundedCornerShape(10.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier.width(72.5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Box(
+                modifier = Modifier.size(50.5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(50.5.dp)
+                        .clip(CircleShape)
+                        .then(
+                            if (isGrabbed) {
+                                if (tccColors.isMegingiardStyle) {
+                                    Modifier.background(tccColors.accent)
+                                } else if (tccColors.isDark) {
+                                    Modifier
+                                        .background(Color(0xFF272727))
+                                        .background(
+                                            Brush.verticalGradient(
+                                                0.0f to Color.Transparent,
+                                                0.5f to Color(0x1A9E21BE),
+                                                1.0f to Color(0x66AB24CE)
+                                            )
+                                        )
+                                } else {
+                                    Modifier.background(Color(0xFFD0D0D0))
+                                }
+                            } else {
+                                Modifier.background(tccColors.fifth)
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = tccDrawable(tile.iconRes)),
+                        contentDescription = tile.title,
+                        colorFilter = ColorFilter.tint(iconTint),
+                        modifier = Modifier.size(26.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                // Compact slot position badge (#1..#N) at top-right of the circle
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (isGrabbed || isCursorSelected) {
+                                appColors.accent
+                            } else {
+                                appColors.surfaceVariant.copy(alpha = 0.92f)
+                            }
+                        )
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${positionIndex + 1}",
+                        color = if (isGrabbed || isCursorSelected) {
+                            appColors.onAccent
+                        } else {
+                            appColors.onSurfaceSecondary
+                        },
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(72.5.dp)
+                    .height(29.dp)
+                    .padding(horizontal = 2.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = tile.title,
+                    color = textColor,
+                    fontSize = 11.sp,
+                    lineHeight = 12.5.sp,
+                    fontWeight = if (isCursorSelected || isGrabbed) FontWeight.SemiBold else FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EnableDisableTogglesSubPageContent(
+    quickTileOrder: List<QuickSettingTileId>,
+    disabledQuickTiles: Set<QuickSettingTileId>,
+    onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit
+) {
+    val totalCount = QuickSettingTileId.entries.size
+    val enabledCount = totalCount - disabledQuickTiles.size
+
+    GamepadInfoBox(
+        text = "Toggle Visibility ($enabledCount of $totalCount Active)",
+        description = "Disabled toggles are hidden from the bottom-screen Quick Settings panel. At least 1 toggle must remain enabled."
+    )
+
+    quickTileOrder.forEachIndexed { index, tile ->
+        val isEnabled = tile !in disabledQuickTiles
+        val canToggle = !isEnabled || enabledCount > 1
+        GamepadToggleCard(
+            title = tile.title,
+            description = if (!canToggle) {
+                "${tile.description} (At least 1 toggle must stay enabled)"
+            } else {
+                tile.description
+            },
+            checked = isEnabled,
+            enabled = canToggle,
+            itemKey = "toggle_visibility_${tile.key}",
+            onCheckedChange = { nextEnabled ->
+                onSetTileEnabled(tile, nextEnabled)
+            },
+            modifier = if (index == 0) Modifier.firstDeckItem() else Modifier
+        )
+    }
 }
 
 @Composable

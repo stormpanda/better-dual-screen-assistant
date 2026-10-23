@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.HardwareTelemetryState
+import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareInfoComponentCard
@@ -112,6 +114,8 @@ fun AssistantOverlayScreen(
     val ambientLight by repository.ambientLightEnabled.collectAsState()
     val forceLandscape by repository.forceLandscape.collectAsState()
     val refreshRate by repository.refreshRate.collectAsState()
+    val quickTileOrder by repository.quickTileOrder.collectAsState()
+    val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
 
     val dualBrightness by repository.dualBrightness.collectAsState()
     val topBrightness by repository.topBrightness.collectAsState()
@@ -241,6 +245,8 @@ fun AssistantOverlayScreen(
                             ambientLight = ambientLight,
                             forceLandscape = forceLandscape,
                             themeMode = themeMode,
+                            quickTileOrder = quickTileOrder,
+                            disabledQuickTiles = disabledQuickTiles,
                             onToggleRefreshRate = { repository.toggleRefreshRate() },
                             onOpenDialog = { dialog -> activeDialog = dialog },
                             onToggleChargingSeparation = { repository.toggleChargingSeparation() },
@@ -721,6 +727,8 @@ private fun SystemSettingsTab(
     ambientLight: Boolean,
     forceLandscape: Boolean,
     themeMode: Int,
+    quickTileOrder: List<QuickSettingTileId>,
+    disabledQuickTiles: Set<QuickSettingTileId>,
     onToggleRefreshRate: () -> Unit,
     onOpenDialog: (ActiveDialog) -> Unit,
     onToggleChargingSeparation: () -> Unit,
@@ -730,134 +738,166 @@ private fun SystemSettingsTab(
     onToggleForceLandscape: () -> Unit
 ) {
     val colors = LocalTccColors.current
-    val pagerState = rememberPagerState(pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
 
-    // Build dynamic Quick Settings tile list matching QuickSettingsPanel.java line 79
+    // Build dynamic Quick Settings tile list matching user-configured order and visibility
     val tiles = buildList {
-        if (dualScreenMode == 0) {
-            val (focusLabel, focusSelected) = when (focusLock) {
-                1 -> stringResource(R.string.key_focus_mode_lock_on_upper_screen) to true
-                2 -> stringResource(R.string.key_focus_mode_lock_on_lower_screen) to true
-                else -> stringResource(R.string.key_focus_mode_touch_switchable) to false
+        for (tileId in quickTileOrder) {
+            if (tileId in disabledQuickTiles) continue
+            when (tileId) {
+                QuickSettingTileId.FOCUS_LOCK -> {
+                    if (dualScreenMode == 0) {
+                        val (focusLabel, focusSelected) = when (focusLock) {
+                            1 -> stringResource(R.string.key_focus_mode_lock_on_upper_screen) to true
+                            2 -> stringResource(R.string.key_focus_mode_lock_on_lower_screen) to true
+                            else -> stringResource(R.string.key_focus_mode_touch_switchable) to false
+                        }
+                        add(
+                            QuickSettingTileModel(
+                                label = focusLabel,
+                                iconRes = R.drawable.ic_screen_focus_lock_mode,
+                                selected = focusSelected,
+                                onClick = { onOpenDialog(ActiveDialog.FOCUS_LOCK) }
+                            )
+                        )
+                    }
+                }
+
+                QuickSettingTileId.PERFORMANCE_MODE -> {
+                    val (perfLabel, perfSelected) = when (performanceMode) {
+                        1 -> stringResource(R.string.text_performance_mode_performance) to true
+                        2 -> stringResource(R.string.text_performance_mode_height_performance) to true
+                        else -> stringResource(R.string.text_performance_mode_normal) to false
+                    }
+                    add(
+                        QuickSettingTileModel(
+                            label = perfLabel,
+                            iconRes = R.drawable.ic_qs_performance,
+                            selected = perfSelected,
+                            onClick = { onOpenDialog(ActiveDialog.PERFORMANCE_MODE) }
+                        )
+                    )
+                }
+
+                QuickSettingTileId.FAN_CONTROL -> {
+                    val (fanLabel, fanSelected) = when (fanMode) {
+                        1 -> stringResource(R.string.text_fan_control_low_speed) to true
+                        4 -> stringResource(R.string.text_fan_control_smart) to true
+                        5 -> stringResource(R.string.text_fan_control_medium_speed) to true
+                        6 -> stringResource(R.string.text_fan_control_custom) to true
+                        else -> stringResource(R.string.text_fan_control_off) to false
+                    }
+                    add(
+                        QuickSettingTileModel(
+                            label = fanLabel,
+                            iconRes = R.drawable.ic_qs_fan_control,
+                            selected = fanSelected,
+                            onClick = { onOpenDialog(ActiveDialog.FAN_CONTROL) }
+                        )
+                    )
+                }
+
+                QuickSettingTileId.CLEAR_MEMORY -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = stringResource(R.string.text_clear_memory_title),
+                            iconRes = R.drawable.ic_qs_clean,
+                            selected = false,
+                            onClick = onCleanMemory
+                        )
+                    )
+                }
+
+                QuickSettingTileId.CONTROLLER_STYLE -> {
+                    val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
+                        0 -> stringResource(R.string.fan_option_xbox_style) to true
+                        1 -> stringResource(R.string.fan_option_odin_style) to true
+                        else -> stringResource(R.string.fan_option_disable) to false
+                    }
+                    add(
+                        QuickSettingTileModel(
+                            label = ctrlLabel,
+                            iconRes = R.drawable.ic_qs_controller_style,
+                            selected = ctrlSelected,
+                            onClick = { onOpenDialog(ActiveDialog.CONTROLLER_STYLE) }
+                        )
+                    )
+                }
+
+                QuickSettingTileId.CHARGING_SEPARATION -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = stringResource(R.string.text_charging_separation_title),
+                            iconRes = R.drawable.ic_qs_charging_separation,
+                            selected = chargingSeparation,
+                            onClick = onToggleChargingSeparation
+                        )
+                    )
+                }
+
+                QuickSettingTileId.VIBRATION -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = stringResource(R.string.text_vibration_open_title),
+                            iconRes = R.drawable.ic_qs_vibrate,
+                            selected = vibrateOn,
+                            onClick = onToggleVibrate
+                        )
+                    )
+                }
+
+                QuickSettingTileId.AMBIENT_LIGHT -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = stringResource(R.string.text_led_lights_open_title),
+                            iconRes = R.drawable.ic_qs_ambient_light,
+                            selected = ambientLight,
+                            onClick = onToggleAmbientLight
+                        )
+                    )
+                }
+
+                QuickSettingTileId.FORCE_LANDSCAPE -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = stringResource(R.string.force_landscape_mode_text),
+                            iconRes = R.drawable.ic_landscape,
+                            selected = forceLandscape,
+                            onClick = onToggleForceLandscape
+                        )
+                    )
+                }
+
+                QuickSettingTileId.THEME_MODE -> {
+                    val currentThemeOpt = AppThemeOption.fromId(themeMode)
+                    val (themeLabel, themeSelected) = when (currentThemeOpt) {
+                        AppThemeOption.STOCK_SYSTEM -> stringResource(R.string.text_system_theme) to false
+                        AppThemeOption.STOCK_LIGHT -> stringResource(R.string.text_light_theme) to false
+                        AppThemeOption.STOCK_DARK -> stringResource(R.string.text_dark_theme) to true
+                        else -> currentThemeOpt.shortTileLabel to true
+                    }
+                    add(
+                        QuickSettingTileModel(
+                            label = themeLabel,
+                            iconRes = R.drawable.ic_qs_theme_mode,
+                            selected = themeSelected,
+                            onClick = { onOpenDialog(ActiveDialog.THEME_MODE) }
+                        )
+                    )
+                }
             }
-            add(
-                QuickSettingTileModel(
-                    label = focusLabel,
-                    iconRes = R.drawable.ic_screen_focus_lock_mode,
-                    selected = focusSelected,
-                    onClick = { onOpenDialog(ActiveDialog.FOCUS_LOCK) }
-                )
-            )
         }
-
-        val (perfLabel, perfSelected) = when (performanceMode) {
-            1 -> stringResource(R.string.text_performance_mode_performance) to true
-            2 -> stringResource(R.string.text_performance_mode_height_performance) to true
-            else -> stringResource(R.string.text_performance_mode_normal) to false
-        }
-        add(
-            QuickSettingTileModel(
-                label = perfLabel,
-                iconRes = R.drawable.ic_qs_performance,
-                selected = perfSelected,
-                onClick = { onOpenDialog(ActiveDialog.PERFORMANCE_MODE) }
-            )
-        )
-
-        val (fanLabel, fanSelected) = when (fanMode) {
-            1 -> stringResource(R.string.text_fan_control_low_speed) to true
-            4 -> stringResource(R.string.text_fan_control_smart) to true
-            5 -> stringResource(R.string.text_fan_control_medium_speed) to true
-            6 -> stringResource(R.string.text_fan_control_custom) to true
-            else -> stringResource(R.string.text_fan_control_off) to false
-        }
-        add(
-            QuickSettingTileModel(
-                label = fanLabel,
-                iconRes = R.drawable.ic_qs_fan_control,
-                selected = fanSelected,
-                onClick = { onOpenDialog(ActiveDialog.FAN_CONTROL) }
-            )
-        )
-
-        add(
-            QuickSettingTileModel(
-                label = stringResource(R.string.text_clear_memory_title),
-                iconRes = R.drawable.ic_qs_clean,
-                selected = false,
-                onClick = onCleanMemory
-            )
-        )
-
-        val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
-            0 -> stringResource(R.string.fan_option_xbox_style) to true
-            1 -> stringResource(R.string.fan_option_odin_style) to true
-            else -> stringResource(R.string.fan_option_disable) to false
-        }
-        add(
-            QuickSettingTileModel(
-                label = ctrlLabel,
-                iconRes = R.drawable.ic_qs_controller_style,
-                selected = ctrlSelected,
-                onClick = { onOpenDialog(ActiveDialog.CONTROLLER_STYLE) }
-            )
-        )
-
-        add(
-            QuickSettingTileModel(
-                label = stringResource(R.string.text_charging_separation_title),
-                iconRes = R.drawable.ic_qs_charging_separation,
-                selected = chargingSeparation,
-                onClick = onToggleChargingSeparation
-            )
-        )
-
-        add(
-            QuickSettingTileModel(
-                label = stringResource(R.string.text_vibration_open_title),
-                iconRes = R.drawable.ic_qs_vibrate,
-                selected = vibrateOn,
-                onClick = onToggleVibrate
-            )
-        )
-
-        add(
-            QuickSettingTileModel(
-                label = stringResource(R.string.text_led_lights_open_title),
-                iconRes = R.drawable.ic_qs_ambient_light,
-                selected = ambientLight,
-                onClick = onToggleAmbientLight
-            )
-        )
-
-        add(
-            QuickSettingTileModel(
-                label = stringResource(R.string.force_landscape_mode_text),
-                iconRes = R.drawable.ic_landscape,
-                selected = forceLandscape,
-                onClick = onToggleForceLandscape
-            )
-        )
-
-        val currentThemeOpt = AppThemeOption.fromId(themeMode)
-        val (themeLabel, themeSelected) = when (currentThemeOpt) {
-            AppThemeOption.STOCK_SYSTEM -> stringResource(R.string.text_system_theme) to false
-            AppThemeOption.STOCK_LIGHT -> stringResource(R.string.text_light_theme) to false
-            AppThemeOption.STOCK_DARK -> stringResource(R.string.text_dark_theme) to true
-            else -> currentThemeOpt.shortTileLabel to true
-        }
-        add(
-            QuickSettingTileModel(
-                label = themeLabel,
-                iconRes = R.drawable.ic_qs_theme_mode,
-                selected = themeSelected,
-                onClick = { onOpenDialog(ActiveDialog.THEME_MODE) }
-            )
-        )
     }
 
     val pages = remember(tiles) { tiles.chunked(8) }
+    val pageCount = pages.size.coerceAtLeast(1)
+    val pagerState = rememberPagerState(pageCount = { pageCount })
+
+    LaunchedEffect(pageCount) {
+        if (pagerState.currentPage >= pageCount) {
+            pagerState.scrollToPage((pageCount - 1).coerceAtLeast(0))
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -874,7 +914,7 @@ private fun SystemSettingsTab(
                             true
                         }
                         KeyEvent.KEYCODE_BUTTON_R1 -> {
-                            if (pagerState.currentPage < 1) {
+                            if (pagerState.currentPage < pageCount - 1) {
                                 coroutineScope.launch {
                                     pagerState.animateScrollToPage(pagerState.currentPage + 1)
                                 }
@@ -927,25 +967,27 @@ private fun SystemSettingsTab(
                     QuickSettingsGridPage(items = pageItems)
                 }
 
-                // Bottom 7%: ViewPagerIndicator (selected = accent #8E84FF, unselected = secondary #E0E0E0)
+                // Bottom 7%: ViewPagerIndicator (hidden when all active toggles fit on 1 page)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(0.07f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(2) { index ->
-                            val isSelected = pagerState.currentPage == index
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSelected) colors.accent else colors.secondary)
-                            )
+                    if (pageCount > 1) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(pageCount) { index ->
+                                val isSelected = pagerState.currentPage == index
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) colors.accent else colors.secondary)
+                                )
+                            }
                         }
                     }
                 }
