@@ -359,7 +359,7 @@ private enum class ThemeSourceOption(
 ) {
     STOCK("Stock AYN"),
     SYNC_MEGINGIARD("Sync with Megingiard"),
-    MEGINGIARD_PALETTE("Megingiard Palette")
+    CUSTOM_PALETTE("Custom Palette")
 }
 
 private val StockThemeOptions = listOf(
@@ -1435,16 +1435,37 @@ private fun AppearanceSettingsTabContent(
     onOpenCustomAccent: () -> Unit,
     onToggleInjectSystemTheme: (Boolean) -> Unit
 ) {
+    val availableSources = remember(isMegingiardAvailable) {
+        if (isMegingiardAvailable) {
+            listOf(
+                ThemeSourceOption.STOCK,
+                ThemeSourceOption.SYNC_MEGINGIARD,
+                ThemeSourceOption.CUSTOM_PALETTE
+            )
+        } else {
+            listOf(
+                ThemeSourceOption.STOCK,
+                ThemeSourceOption.CUSTOM_PALETTE
+            )
+        }
+    }
+
     val activeSource = when {
-        selectedTheme == AppThemeOption.SYNC_MEGINGIARD -> ThemeSourceOption.SYNC_MEGINGIARD
-        selectedTheme.isMegingiardStyle -> ThemeSourceOption.MEGINGIARD_PALETTE
+        selectedTheme == AppThemeOption.SYNC_MEGINGIARD && isMegingiardAvailable -> ThemeSourceOption.SYNC_MEGINGIARD
+        selectedTheme.isMegingiardStyle -> ThemeSourceOption.CUSTOM_PALETTE
         else -> ThemeSourceOption.STOCK
+    }
+
+    val effectiveSelectedTheme = if (selectedTheme == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
+        syncedMegingiardOption
+    } else {
+        selectedTheme
     }
 
     var lastStockOption by rememberSaveable {
         mutableStateOf(if (!selectedTheme.isMegingiardStyle) selectedTheme else AppThemeOption.STOCK_DARK)
     }
-    var lastMegingiardOption by rememberSaveable {
+    var lastCustomOption by rememberSaveable {
         mutableStateOf(
             if (selectedTheme.isMegingiardStyle && selectedTheme != AppThemeOption.SYNC_MEGINGIARD) {
                 selectedTheme
@@ -1458,7 +1479,7 @@ private fun AppearanceSettingsTabContent(
         if (!selectedTheme.isMegingiardStyle) {
             lastStockOption = selectedTheme
         } else if (selectedTheme != AppThemeOption.SYNC_MEGINGIARD) {
-            lastMegingiardOption = selectedTheme
+            lastCustomOption = selectedTheme
         }
     }
 
@@ -1466,20 +1487,24 @@ private fun AppearanceSettingsTabContent(
         when (source) {
             ThemeSourceOption.STOCK -> onSelectTheme(lastStockOption)
             ThemeSourceOption.SYNC_MEGINGIARD -> onSelectTheme(AppThemeOption.SYNC_MEGINGIARD)
-            ThemeSourceOption.MEGINGIARD_PALETTE -> onSelectTheme(lastMegingiardOption)
+            ThemeSourceOption.CUSTOM_PALETTE -> onSelectTheme(lastCustomOption)
         }
     }
 
     GamepadChoiceCard(
         title = "Theme Source",
-        description = "Choose between Stock AYN themes, live Megingiard sync, or standalone Megingiard palettes",
+        description = if (isMegingiardAvailable) {
+            "Choose between Stock AYN themes, live Megingiard sync, or standalone custom palettes"
+        } else {
+            "Choose between Stock AYN themes or standalone custom palettes"
+        },
         selectedText = activeSource.displayName,
         icon = Icons.Rounded.Palette,
         onPrevious = {
-            applyThemeSource(ThemeSourceOption.entries.cycle(activeSource, BumperDirection.PREV))
+            applyThemeSource(availableSources.cycle(activeSource, BumperDirection.PREV))
         },
         onNext = {
-            applyThemeSource(ThemeSourceOption.entries.cycle(activeSource, BumperDirection.NEXT))
+            applyThemeSource(availableSources.cycle(activeSource, BumperDirection.NEXT))
         },
         modifier = Modifier.firstDeckItem()
     )
@@ -1489,13 +1514,13 @@ private fun AppearanceSettingsTabContent(
             GamepadChoiceCard(
                 title = "Stock Theme Mode",
                 description = "Select the built-in AYN Dual Screen Assistant appearance",
-                selectedText = selectedTheme.displayName,
+                selectedText = effectiveSelectedTheme.displayName,
                 icon = Icons.Rounded.ColorLens,
                 onPrevious = {
-                    onSelectTheme(StockThemeOptions.cycle(selectedTheme, BumperDirection.PREV))
+                    onSelectTheme(StockThemeOptions.cycle(effectiveSelectedTheme, BumperDirection.PREV))
                 },
                 onNext = {
-                    onSelectTheme(StockThemeOptions.cycle(selectedTheme, BumperDirection.NEXT))
+                    onSelectTheme(StockThemeOptions.cycle(effectiveSelectedTheme, BumperDirection.NEXT))
                 }
             )
         }
@@ -1503,39 +1528,35 @@ private fun AppearanceSettingsTabContent(
         ThemeSourceOption.SYNC_MEGINGIARD -> {
             GamepadActionCard(
                 title = "Live Megingiard Theme Sync",
-                description = if (isMegingiardAvailable) {
-                    "Synchronized with Megingiard (${syncedMegingiardOption.displayName})"
-                } else {
-                    "Megingiard provider not detected; using ${syncedMegingiardOption.displayName} fallback"
-                },
+                description = "Synchronized with Megingiard (${syncedMegingiardOption.displayName})",
                 icon = Icons.Rounded.Sync,
                 trailingContent = {
                     GamepadPill(
-                        text = if (isMegingiardAvailable) "SYNCED" else "FALLBACK",
-                        isAccent = isMegingiardAvailable
+                        text = "SYNCED",
+                        isAccent = true
                     )
                 },
                 onClick = {}
             )
         }
 
-        ThemeSourceOption.MEGINGIARD_PALETTE -> {
+        ThemeSourceOption.CUSTOM_PALETTE -> {
             GamepadChoiceCard(
-                title = "Megingiard Palette",
+                title = "Custom Palette",
                 description = "Color scheme for launcher & assistant overlay surfaces",
-                selectedText = selectedTheme.displayName,
+                selectedText = effectiveSelectedTheme.displayName,
                 icon = Icons.Rounded.ColorLens,
                 onPrevious = {
-                    onSelectTheme(MegingiardThemeOptions.cycle(selectedTheme, BumperDirection.PREV))
+                    onSelectTheme(MegingiardThemeOptions.cycle(effectiveSelectedTheme, BumperDirection.PREV))
                 },
                 onNext = {
-                    onSelectTheme(MegingiardThemeOptions.cycle(selectedTheme, BumperDirection.NEXT))
+                    onSelectTheme(MegingiardThemeOptions.cycle(effectiveSelectedTheme, BumperDirection.NEXT))
                 }
             )
         }
     }
 
-    if (selectedTheme.supportsCustomAccent) {
+    if (effectiveSelectedTheme.supportsCustomAccent && activeSource != ThemeSourceOption.SYNC_MEGINGIARD) {
         val accentColor = Color(customAccentArgb)
         val customSwatchColor = Color(customSwatchColorArgb)
         val isCustomAccent =
@@ -1543,7 +1564,7 @@ private fun AppearanceSettingsTabContent(
 
         GamepadColorPaletteCard(
             title = "Accent Color",
-            description = "Choose a preset highlight color for ${selectedTheme.displayName}",
+            description = "Choose a preset highlight color for ${effectiveSelectedTheme.displayName}",
             icon = Icons.Rounded.FormatColorFill,
             paletteColors = AppPalettes.accentPresets,
             selectedColor = accentColor,
@@ -1757,22 +1778,20 @@ private fun DiagnosticsSettingsTabContent(
         onClick = onReconnectAndRefresh
     )
 
-    GamepadActionCard(
-        title = "Megingiard Theme Provider",
-        description = if (isMegingiardAvailable) {
-            "Connected to Megingiard theme provider (${syncedMegingiardOption.displayName})"
-        } else {
-            "Megingiard ContentProvider not detected on this device"
-        },
-        icon = Icons.Rounded.Hub,
-        trailingContent = {
-            GamepadPill(
-                text = if (isMegingiardAvailable) "DETECTED" else "NOT FOUND",
-                isAccent = isMegingiardAvailable
-            )
-        },
-        onClick = onReconnectAndRefresh
-    )
+    if (isMegingiardAvailable) {
+        GamepadActionCard(
+            title = "Megingiard Theme Provider",
+            description = "Connected to Megingiard theme provider (${syncedMegingiardOption.displayName})",
+            icon = Icons.Rounded.Hub,
+            trailingContent = {
+                GamepadPill(
+                    text = "DETECTED",
+                    isAccent = true
+                )
+            },
+            onClick = onReconnectAndRefresh
+        )
+    }
 
     GamepadActionCard(
         title = "Reconnect Privileged Bridge",

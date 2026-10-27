@@ -43,9 +43,9 @@ Full functional and technical documentation is available in [`docs/`](docs/):
 - **Gamepad-First Two-Pane UI**: Navigate with **D-Pad / Left Stick**, switch categories with **`L1` / `R1`**, adjust sliders with **`L2` fine-step modifier**, and preview every change live on the bottom screen (`displayId = 4`).
 - **Visual Quick Toggles Reordering**: Interactive `2 × 4` paged layout preview supporting both touch tap-to-swap and gamepad grab-and-move (`A` to grab, D-Pad/`L1`/`R1` to move in real time, `B` to drop), plus categorized toggle visibility management.
 - **Rich Theming & OS Monet Injection**:
-  - Choose between **Stock AYN** (`Follow System`, `Light`, `Dark`), **Sync with Megingiard** (live cross-app sync via `ContentProvider`), or **8 Built-in Megingiard Palettes** (`Megingiard Dark`, `Megingiard Dark (OLED)`, `Megingiard Light`, `Mjölnir`, `Valhalla`, `Aurora`, `Retro Phosphor`, `Royal Asgard`) with **10 Accent Presets** and a **Custom HSV Color Picker**.
+  - Choose between **Stock AYN** (`Follow System`, `Light`, `Dark`), **8 Built-in Custom Palettes** (`Dark`, `Dark OLED`, `Norse Forest`, `Mjölnir Steel`, `Valhalla Sunset`, `Aurora Borealis`, `Retro Phosphor`, `Royal Asgard`) with **11 Accent Presets** and a **Custom HSV Color Picker**, or **Sync with Megingiard** (silently revealed when Megingiard is installed on the device).
   - **Inject Theme Colors into OS**: Generates a 60-color Android 13 Monet `FabricatedOverlay` to theme Android SystemUI, Quick Settings, Notifications, and Material You apps system-wide.
-- **Live System Diagnostics**: Real-time status indicators and one-tap reconnection for `PrivilegedHelperMain (UID 0)`, `PServerBinder`, Stock `DualScreenAssistant` suppression state, and the Megingiard Theme Provider.
+- **Live System Diagnostics**: Real-time status indicators and one-tap reconnection for `PrivilegedHelperMain (UID 0)`, `PServerBinder`, Stock `DualScreenAssistant` suppression state, and (when installed) the Megingiard Theme Provider.
 
 ### 3. Safe Ephemeral Stock Suppression & Automatic Uninstall Recovery
 - Freezes the persistent stock `com.odin.dualscreen.assistant` in RAM (`SIGSTOP`) without leaving its package or `TccServices` disabled on disk.

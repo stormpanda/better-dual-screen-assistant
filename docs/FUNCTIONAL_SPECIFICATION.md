@@ -224,8 +224,8 @@ Tapping any modal Quick Setting tile opens a centered modal card over the bottom
 4. **Controller Style Dialog**:
    - Options: **Disconnect (`2`)**, **Xbox (`0`)**, **Odin (`1`)**.
 5. **Theme Mode Dialog (`ThemeSelectionDialog`)**:
-   - Displays a scrollable list of all 12 theme options (`Follow System (Stock)`, `Light Mode (Stock)`, `Dark Mode (Stock)`, `Sync with Megingiard`, `Megingiard Dark`, `Megingiard Dark (OLED)`, `Megingiard Light`, `Mjölnir`, `Valhalla`, `Aurora`, `Retro Phosphor`, `Royal Asgard`).
-   - When a customizable theme (`Megingiard Dark` or `Megingiard Dark (OLED)`) is active, displays a horizontal row of **10 Accent Color Swatches** (`Default Blue`, `Crimson`, `Emerald`, `Amber`, `Violet`, `Cyan`, `Rose`, `Orange`, `Teal`, `Lime`).
+   - Displays a scrollable list of all built-in theme options (`Follow System (Stock)`, `Light (Stock)`, `Dark (Stock)`, `Dark`, `Dark OLED`, `Norse Forest`, `Mjölnir Steel`, `Valhalla Sunset`, `Aurora Borealis`, `Retro Phosphor`, `Royal Asgard`), plus `Sync with Megingiard` when Megingiard is installed on the device.
+   - When a customizable theme (`Dark` or `Dark OLED`) is active, displays a horizontal row of **Accent Color Swatches**.
    - Includes an inline **Inject Theme Colors into OS** toggle switch at the bottom of the dialog.
 6. **Screenshot Dialog**:
    - Options: **Top Screen (`0`)**, **Bottom Screen (`1`)**, **Both Screens (`2`)**.
@@ -328,20 +328,20 @@ Allows complete customization of which Quick Setting tiles appear in the overlay
 Controls theming for both the Companion Settings App and the Bottom-Screen Overlay, plus system-wide Android 13 Monet color injection:
 
 1. **Theme Source**:
-   - Cycles across three modes:
-     - **`Stock AYN`**: Authentic stock AYN Thor visual styling (`Follow System (Stock)`, `Dark Mode (Stock)`, `Light Mode (Stock)`).
-     - **`Sync with Megingiard`**: Automatically mirrors the active theme mode and custom accent color from the standalone **Megingiard** app (`com.stormpanda.megingiard` or `.debug`) via its `ContentProvider` (`content://com.stormpanda.megingiard.provider/theme`). If Megingiard is not installed, falls back gracefully to `Megingiard Dark`.
-     - **`Megingiard Palette`**: Lets you independently choose any of the **8 built-in Megingiard palettes**:
-       - `Megingiard Dark` (Customizable accent)
-       - `Megingiard Dark (OLED)` (True `#000000` black canvas, customizable accent)
-       - `Megingiard Light`
-       - `Mjölnir` (Electric Hammer Blue)
-       - `Valhalla` (Warm Golden Mead)
-       - `Aurora` (Northern Lights Mint/Teal)
+   - Cycles across two modes by default (or three when Megingiard is installed on the device):
+     - **`Stock AYN`**: Authentic stock AYN Thor visual styling (`Follow System (Stock)`, `Dark (Stock)`, `Light (Stock)`).
+     - **`Sync with Megingiard`** *(Only shown when Megingiard is installed)*: Automatically mirrors the active theme mode and custom accent color from the standalone **Megingiard** app (`com.stormpanda.megingiard` or `.debug`) via its `ContentProvider` (`content://com.stormpanda.megingiard.provider/theme`).
+     - **`Custom Palette`**: Lets you independently choose any of the **8 built-in custom palettes**:
+       - `Dark` (Customizable accent)
+       - `Dark OLED` (True `#000000` black canvas, customizable accent)
+       - `Norse Forest`
+       - `Mjölnir Steel` (Electric Hammer Blue)
+       - `Valhalla Sunset` (Warm Golden Mead)
+       - `Aurora Borealis` (Northern Lights Mint/Teal)
        - `Retro Phosphor` (CRT Terminal Green)
        - `Royal Asgard` (Deep Amethyst & Gold)
 2. **Accent Color & Custom Color Sub-Page (`SubPage.CUSTOM_ACCENT`)**:
-   - Visible when the active Megingiard palette supports custom accents (`Megingiard Dark` or `Megingiard Dark (OLED)`).
+   - Visible when the active custom palette supports custom accents (`Dark` or `Dark OLED`).
    - Provides a horizontal selector of **10 Preset Accent Swatches** (`Default Blue`, `Crimson`, `Emerald`, `Amber`, `Violet`, `Cyan`, `Rose`, `Orange`, `Teal`, `Lime`) plus a **Custom** swatch button.
    - Selecting **Configure Custom Color** opens the `Custom Accent Color` sub-page with live **Hue (`0°..360°`)**, **Saturation (`0%..100%`)**, and **Brightness (`0%..100%`)** sliders (supporting `L2` fine-step adjustment) and **Undo** / **Save Custom Color** actions.
 3. **System Integration — Inject Theme Colors into OS (`inject_os_theme`)**:
@@ -359,7 +359,7 @@ Provides real-time visibility into the privileged execution layer, hardware topo
    - **Privileged Helper (`UID 0`)**: Shows `CONNECTED` (green) when the persistent root `app_process` Binder daemon (`PrivilegedHelperMain`, protocol `v9`) is bound in-memory, or `DISCONNECTED` (red) if running in fallback mode.
    - **PServerBinder Root Service**: Shows `AVAILABLE` (green) when the AYN Thor firmware's `PServerBinder` service responds in `ServiceManager`.
    - **Stock DualScreenAssistant Process**: Shows `SUPPRESSED` (green) when `com.odin.dualscreen.assistant` is frozen in RAM (`SIGSTOP`, state `T`) with no overlay windows, or `ACTIVE` (orange) when running normally.
-   - **Megingiard Theme Provider**: Shows `DETECTED` (green) if the standalone Megingiard app's theme `ContentProvider` is installed and reachable on the device, or `NOT FOUND` (neutral).
+   - **Megingiard Theme Provider** *(Only shown when Megingiard is installed)*: Shows `DETECTED` (green) when connected to the standalone Megingiard app's theme `ContentProvider`.
    - **Reconnect Privileged Bridge Button**: Re-runs `PrivilegedBridge.init()`, `PServerClient.ensurePermissionsGranted()`, and refreshes all live status indicators.
 2. **Device & Build Metadata**:
    - Displays **Top Display (`ID 0`)** (`1920×1080 • 369 dpi`), **Bottom Display (`ID 4`)** (`1240×1080 • 369 dpi`), **Package ID** (`com.stormpanda.betterdualscreenassistant`), and **Version** (`1.0.0 (1)`).

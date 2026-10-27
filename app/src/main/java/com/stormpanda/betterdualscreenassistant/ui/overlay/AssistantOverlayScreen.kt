@@ -109,6 +109,7 @@ fun AssistantOverlayScreen(
     val customAccentArgb by repository.customAccentArgb.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
+    val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
     val injectOsTheme by repository.injectOsTheme.collectAsState()
     val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
     val focusLock by repository.screenFocusLock.collectAsState()
@@ -276,6 +277,8 @@ fun AssistantOverlayScreen(
                             ambientLight = ambientLight,
                             forceLandscape = forceLandscape,
                             themeMode = themeMode,
+                            isMegingiardAvailable = isMegingiardAvailable,
+                            syncedMegingiardOption = syncedMegingiardOption,
                             wifiEnabled = wifiEnabled,
                             bluetoothEnabled = bluetoothEnabled,
                             dndEnabled = dndEnabled,
@@ -508,11 +511,19 @@ fun AssistantOverlayScreen(
                 }
 
                 ActiveDialog.THEME_MODE -> {
-                    val selectedThemeOption = AppThemeOption.fromId(themeMode)
+                    val rawSelectedThemeOption = AppThemeOption.fromId(themeMode)
+                    val selectedThemeOption = if (rawSelectedThemeOption == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
+                        syncedMegingiardOption
+                    } else {
+                        rawSelectedThemeOption
+                    }
                     val customAccentColor = Color(customAccentArgb)
                     val syncedAccentColor = syncedMegingiardAccentArgb?.let { Color(it) }
                         ?: syncedMegingiardOption.previewAccent
-                    val options = AppThemeOption.entries.map { opt ->
+                    val visibleThemeOptions = AppThemeOption.entries.filter { opt ->
+                        opt != AppThemeOption.SYNC_MEGINGIARD || isMegingiardAvailable
+                    }
+                    val options = visibleThemeOptions.map { opt ->
                         when (opt) {
                             AppThemeOption.STOCK_SYSTEM -> TccDialogOption(
                                 id = opt.id,
@@ -879,6 +890,8 @@ private fun SystemSettingsTab(
     ambientLight: Boolean,
     forceLandscape: Boolean,
     themeMode: Int,
+    isMegingiardAvailable: Boolean,
+    syncedMegingiardOption: AppThemeOption,
     wifiEnabled: Boolean,
     bluetoothEnabled: Boolean,
     dndEnabled: Boolean,
@@ -1042,7 +1055,12 @@ private fun SystemSettingsTab(
                 }
 
                 QuickSettingTileId.THEME_MODE -> {
-                    val currentThemeOpt = AppThemeOption.fromId(themeMode)
+                    val rawThemeOpt = AppThemeOption.fromId(themeMode)
+                    val currentThemeOpt = if (rawThemeOpt == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
+                        syncedMegingiardOption
+                    } else {
+                        rawThemeOpt
+                    }
                     val (themeLabel, themeSelected) = when (currentThemeOpt) {
                         AppThemeOption.STOCK_SYSTEM -> stringResource(R.string.text_system_theme) to false
                         AppThemeOption.STOCK_LIGHT -> stringResource(R.string.text_light_theme) to false

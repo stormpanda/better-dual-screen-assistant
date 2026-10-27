@@ -88,8 +88,8 @@ enum class AppThemeOption(
     ),
     MEGINGIARD_DARK(
         id = 101,
-        displayName = "Megingiard Dark",
-        shortTileLabel = "MG Dark",
+        displayName = "Dark",
+        shortTileLabel = "Dark",
         isMegingiardStyle = true,
         supportsCustomAccent = true,
         megingiardIpcName = "DARK",
@@ -99,8 +99,8 @@ enum class AppThemeOption(
     ),
     MEGINGIARD_DARK_OLED(
         id = 102,
-        displayName = "Megingiard Dark OLED",
-        shortTileLabel = "MG OLED",
+        displayName = "Dark OLED",
+        shortTileLabel = "Dark OLED",
         isMegingiardStyle = true,
         supportsCustomAccent = true,
         megingiardIpcName = "DARK_OLED",
@@ -110,8 +110,8 @@ enum class AppThemeOption(
     ),
     MEGINGIARD(
         id = 103,
-        displayName = "Megingiard (Norse Forest)",
-        shortTileLabel = "Megingiard",
+        displayName = "Norse Forest",
+        shortTileLabel = "Norse Forest",
         isMegingiardStyle = true,
         megingiardIpcName = "MEGINGIARD",
         previewBackground = Color(0xFF040C08),

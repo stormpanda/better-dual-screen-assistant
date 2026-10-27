@@ -200,7 +200,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(null)
     val syncedMegingiardAccentArgb: StateFlow<Int?> = _syncedMegingiardAccentArgb.asStateFlow()
 
-    private val _isMegingiardProviderAvailable = MutableStateFlow(false)
+    private val _isMegingiardProviderAvailable = MutableStateFlow(isAnyMegingiardInstalled())
     val isMegingiardProviderAvailable: StateFlow<Boolean> = _isMegingiardProviderAvailable.asStateFlow()
 
     private val _injectOsTheme = MutableStateFlow(
@@ -443,7 +443,44 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
+    private val megingiardPackageReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val pkg = intent?.data?.schemeSpecificPart ?: return
+            if (pkg == "com.stormpanda.megingiard" || pkg == "com.stormpanda.megingiard.debug") {
+                registerMegingiardContentObservers()
+                refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+            }
+        }
+    }
+
     private var isRegistered = false
+
+    private fun registerMegingiardContentObservers() {
+        try {
+            contentResolver.unregisterContentObserver(megingiardThemeObserver)
+        } catch (_: Throwable) {
+        }
+        if (isProviderAuthorityInstalled(MEGINGIARD_RELEASE_THEME_URI)) {
+            try {
+                contentResolver.registerContentObserver(
+                    MEGINGIARD_RELEASE_THEME_URI,
+                    true,
+                    megingiardThemeObserver
+                )
+            } catch (_: Throwable) {
+            }
+        }
+        if (isProviderAuthorityInstalled(MEGINGIARD_DEBUG_THEME_URI)) {
+            try {
+                contentResolver.registerContentObserver(
+                    MEGINGIARD_DEBUG_THEME_URI,
+                    true,
+                    megingiardThemeObserver
+                )
+            } catch (_: Throwable) {
+            }
+        }
+    }
 
     fun register() {
         if (isRegistered) return
@@ -494,22 +531,7 @@ class SystemSettingsRepository(private val context: Context) {
                 settingsObserver
             )
         }
-        try {
-            contentResolver.registerContentObserver(
-                MEGINGIARD_RELEASE_THEME_URI,
-                true,
-                megingiardThemeObserver
-            )
-        } catch (_: Throwable) {
-        }
-        try {
-            contentResolver.registerContentObserver(
-                MEGINGIARD_DEBUG_THEME_URI,
-                true,
-                megingiardThemeObserver
-            )
-        } catch (_: Throwable) {
-        }
+        registerMegingiardContentObservers()
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         val filter = IntentFilter().apply {
             addAction("android.media.VOLUME_CHANGED_ACTION")
@@ -519,6 +541,13 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
         }
         context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        val pkgFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        context.registerReceiver(megingiardPackageReceiver, pkgFilter, Context.RECEIVER_NOT_EXPORTED)
         registerDisplayBrightnessListener()
         refreshAll()
     }
@@ -544,6 +573,10 @@ class SystemSettingsRepository(private val context: Context) {
         }
         try {
             context.unregisterReceiver(volumeReceiver)
+        } catch (_: Throwable) {
+        }
+        try {
+            context.unregisterReceiver(megingiardPackageReceiver)
         } catch (_: Throwable) {
         }
     }
@@ -932,8 +965,10 @@ class SystemSettingsRepository(private val context: Context) {
     ) {
         themeSyncExecutor.execute {
             val candidates = buildMegingiardCandidateUris(changedUri)
+            var anyProviderInstalled = false
             for (uri in candidates) {
                 if (!isProviderAuthorityInstalled(uri)) continue
+                anyProviderInstalled = true
                 try {
                     contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                         if (cursor.moveToFirst()) {
@@ -964,7 +999,7 @@ class SystemSettingsRepository(private val context: Context) {
                 } catch (_: Throwable) {
                 }
             }
-            _isMegingiardProviderAvailable.value = false
+            _isMegingiardProviderAvailable.value = anyProviderInstalled || isAnyMegingiardInstalled()
             if (debounceOsSyncMs == 0L) {
                 scheduleOsThemeSync(0L)
             }
@@ -989,6 +1024,22 @@ class SystemSettingsRepository(private val context: Context) {
         ordered.add(MEGINGIARD_RELEASE_THEME_URI)
         ordered.add(MEGINGIARD_DEBUG_THEME_URI)
         return ordered.toList()
+    }
+
+    private fun isAnyMegingiardInstalled(): Boolean {
+        return isProviderAuthorityInstalled(MEGINGIARD_RELEASE_THEME_URI) ||
+            isProviderAuthorityInstalled(MEGINGIARD_DEBUG_THEME_URI) ||
+            isMegingiardPackageInstalled("com.stormpanda.megingiard") ||
+            isMegingiardPackageInstalled("com.stormpanda.megingiard.debug")
+    }
+
+    private fun isMegingiardPackageInstalled(pkg: String): Boolean {
+        return try {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(pkg, 0) != null
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun isProviderAuthorityInstalled(uri: Uri): Boolean {

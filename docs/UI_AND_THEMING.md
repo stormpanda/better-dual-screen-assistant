@@ -129,17 +129,17 @@ Defined in [`TccTheme.kt`](file:///Users/maikthomalla/Development/better-dual-sc
 | Enum Constant | Persisted `id` | Display Name | Supports Custom Accent | Category |
 | :--- | :---: | :--- | :---: | :--- |
 | `STOCK_SYSTEM` | `1` | `Follow System (Stock)` | No | Stock AYN |
-| `STOCK_LIGHT` | `3` | `Light Mode (Stock)` | No | Stock AYN |
-| `STOCK_DARK` | `4` | `Dark Mode (Stock)` | No | Stock AYN |
-| `SYNC_MEGINGIARD` | `100` | `Sync with Megingiard` | Via Megingiard | Megingiard Sync |
-| `MEGINGIARD_DARK` | `101` | `Megingiard Dark` | **Yes** | Megingiard Palette |
-| `MEGINGIARD_DARK_OLED` | `102` | `Megingiard Dark (OLED)` | **Yes** | Megingiard Palette |
-| `MEGINGIARD` | `103` | `Megingiard Light` | No | Megingiard Palette |
-| `MJOLNIR` | `104` | `Mjölnir` | No | Megingiard Palette |
-| `VALHALLA` | `105` | `Valhalla` | No | Megingiard Palette |
-| `AURORA` | `106` | `Aurora` | No | Megingiard Palette |
-| `RETRO_PHOSPHOR` | `107` | `Retro Phosphor` | No | Megingiard Palette |
-| `ROYAL_ASGARD` | `108` | `Royal Asgard` | No | Megingiard Palette |
+| `STOCK_LIGHT` | `3` | `Light (Stock)` | No | Stock AYN |
+| `STOCK_DARK` | `4` | `Dark (Stock)` | No | Stock AYN |
+| `SYNC_MEGINGIARD` | `100` | `Sync with Megingiard` | Via Megingiard | Megingiard Sync *(only when installed)* |
+| `MEGINGIARD_DARK` | `101` | `Dark` | **Yes** | Custom Palette |
+| `MEGINGIARD_DARK_OLED` | `102` | `Dark OLED` | **Yes** | Custom Palette |
+| `MEGINGIARD` | `103` | `Norse Forest` | No | Custom Palette |
+| `MJOLNIR` | `104` | `Mjölnir Steel` | No | Custom Palette |
+| `VALHALLA` | `105` | `Valhalla Sunset` | No | Custom Palette |
+| `AURORA` | `106` | `Aurora Borealis` | No | Custom Palette |
+| `RETRO_PHOSPHOR` | `107` | `Retro Phosphor` | No | Custom Palette |
+| `ROYAL_ASGARD` | `108` | `Royal Asgard` | No | Custom Palette |
 
 *(Note: Legacy stock ID `2` is automatically migrated to `1` (`STOCK_SYSTEM`) in `AppThemeOption.fromId()`).*
 
