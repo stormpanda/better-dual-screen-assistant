@@ -22,6 +22,8 @@ Full functional and technical documentation is available in [`docs/`](docs/):
 | **[System Integration & Hardware Reference](docs/SYSTEM_INTEGRATION_REFERENCE.md)** | Complete reference tables for all `Settings.System`/`Global`/`Secure` keys, `SharedPreferences` (`better_dsa_prefs`), system properties (`sys.temp.disabled.touch`, `sys.light.curr.is.show`), vendor Binder services (`IFanControlProvider`, `IOverviewProxy`, `IMappingService`), sysfs telemetry paths, and `FabricatedOverlay` Monet keys. |
 | **[UI Architecture, Custom Widgets & Theming](docs/UI_AND_THEMING.md)** | Specification of the `840dp × 732dp` bottom-screen overlay layout, custom non-Material canvas widgets (`VerticalProgressBar`, `TccSliderRow`, `HardwareRingGauge`, `CurrentFrameRateDisplay`, `BatteryIconCanvas`), all 12 `AppThemeOption` palettes, and the embedded `com.stormpanda.megingiard` gamepad design system. |
 | **[Build, Release & Developer Guide](docs/BUILD_AND_RELEASE.md)** | Developer instructions for keystore signing (`local.properties`), debug builds (`scripts/debug.sh`), release git-flow automation (`scripts/release.sh`), SHA-256 verification (`scripts/generate_checksum.sh`), and ADB inspection commands. |
+| **[Contributing Guidelines](CONTRIBUTING.md)** | Architectural rules, multi-display & privileged hardware invariants, coding conventions, and licensing compliance instructions for contributors. |
+| **[Agent Guidelines](AGENTS.md)** | Essential context, architectural invariants, hardware quirks, and workflow rules for AI coding agents working on this project. |
 
 ---
 
@@ -74,3 +76,15 @@ adb shell am start-foreground-service \
 ```
 
 See [`docs/BUILD_AND_RELEASE.md`](docs/BUILD_AND_RELEASE.md) for keystore setup, release branch automation, and troubleshooting commands.
+
+---
+
+## License
+
+Better Dual Screen Assistant is a proprietary, source-available project. It is licensed under the custom **Better Dual Screen Assistant Source-Available License (Version 1.0)**.
+
+- **Source Code & Binaries:** You are permitted to view the source code, compile it, and run the application solely for your own **personal, non-commercial use**.
+- **Prohibitions:** Any commercial exploitation, redistribution of modified source/binaries, and pre-installation or bundling on commercial hardware/devices without prior written consent are strictly prohibited.
+- **Open Source Transition Commitment:** The Copyright Holder commits to transitioning the entire codebase to a fully permissive, OSI-approved open-source license (such as MIT or Apache 2.0) with full redistribution rights in the event that active development is permanently discontinued without a successor.
+
+For the full terms and conditions, please refer to the [LICENSE](LICENSE) file at the root of the repository, and see [CONTRIBUTING.md](CONTRIBUTING.md) before submitting contributions.
