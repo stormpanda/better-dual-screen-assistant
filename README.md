@@ -1,91 +1,71 @@
 # Better Dual Screen Assistant
 
-An open-source, user-installable replacement for the built-in `DualScreenAssistant` (`com.odin.dualscreen.assistant`) on the **AYN Thor** dual-screen handheld.
+**Better Dual Screen Assistant** (`com.stormpanda.betterdualscreenassistant`) is a user-installable drop-in replacement and feature-packed upgrade for the built-in system app `DualScreenAssistant` (`com.odin.dualscreen.assistant`) on the **AYN Thor** (`kalama` / Snapdragon 8 Gen 2, Android 13) dual-screen handheld.
 
-Built with Kotlin and Jetpack Compose, **Better Dual Screen Assistant** (`com.stormpanda.betterdualscreenassistant`) provides 1:1 visual and functional parity with the stock system overlay on the bottom screen (`displayId = 4`, 1240×1080) while running as a standard user-installable APK.
-
----
-
-## Features
-
-### Hardware Button & Stock Takeover
-- **Seamless Stock Replacement**: Uses the device's built-in `PServerBinder` privileged bridge to disable and suspend the persistent stock `com.odin.dualscreen.assistant` process so only the custom overlay responds to the physical **AYN / TCC** key—with a one-tap toggle in the companion app to restore the stock assistant at any time.
-- **Physical Key Handling**:
-  - **Short Press**: Toggles the assistant overlay on the bottom display (`displayId = 4`), or wakes the bottom display if currently blanked.
-  - **Long Press**: Blanks the bottom display ("Only top screen" mode) and disables bottom-screen touch input.
-  - **HOME Button Interception**: Binds to `com.ro.mapping.action.MAPPING_SERVICE` (`InputId.HOME`) to automatically dismiss the overlay when open.
-
-### Mode Tab (Screen, Brightness & Volume Controls)
-- **Display Modes**:
-  - **Dual-screen display**: Both Top (`displayId = 0`, 1920×1080) and Bottom (`displayId = 4`, 1240×1080) displays active.
-  - **Only top screen**: Smoothly fades the bottom screen to black, disables bottom touch input (`sys.temp.disabled.touch=0,1`), and pins focus to the top screen.
-  - **Only bottom screen**: Smoothly fades the top screen to black, disables top touch input (`sys.temp.disabled.touch=1,0`), and pins focus to the bottom screen.
-- **Per-Display Brightness**:
-  - Linked **Dual Screen** brightness slider plus independent **Top Screen** (`displayId = 0`) and **Bottom Screen** (`displayId = 4`) sliders powered by Android 13's hidden per-display `DisplayManager.setBrightness` / `setTemporaryBrightness` APIs.
-- **Per-Display Volume**:
-  - Independent **Top Screen** (`AudioManager.STREAM_MUSIC`) and **Bottom Screen** (`secondary_screen_volume_level` / headphone split) volume sliders.
-
-### Settings Tab (Frame Rate, Quick Settings & Telemetry)
-- **Frame Rate Panel**:
-  - One-tap **60 FPS / 120 FPS Mode** pill toggle (`min_refresh_rate` / `peak_refresh_rate`).
-  - Real-time **Current FPS** readout calculated from SurfaceFlinger page-flip counters (`service call SurfaceFlinger 1013`).
-- **Quick Settings Grid** (paged 2×4 grid with touch & `L1`/`R1` shoulder button navigation):
-  1. **Focus Lock**: Auto-lock (touch switchable), Lock Top Screen, or Lock Bottom Screen (`screen_focus_lock`).
-  2. **Performance Mode**: Standard, High Performance, or Max Performance (`performance_mode`).
-  3. **Fan Control**: Off, Quiet, Smart, Sport, or Custom percentage slider via `SettingsController` (`IFanControlProvider`).
-  4. **Clean Memory**: Frees background app processes while respecting `app_whiteList` and displays freed memory in a bottom-screen toast.
-  5. **Controller Style**: Xbox Style, Normal (Odin) Style, or Disabled (`temp_abxy_layout_mode`, `flip_button_layout`, `no_create_gamepad_button_layout`).
-  6. **Direct Power Supply**: Toggles bypass charging (`is_charging_separation`).
-  7. **Vibration**: Toggles system haptics (`vibrate_on`).
-  8. **Ambient LED**: Toggles joystick RGB lighting (`com.ro.external.request.light.adj.action`).
-  9. **Force Landscape**: Forces landscape orientation (`force_landscape`).
-  10. **Theme Mode**: Follow System, Pure Black, Light, or Dark (`tcc_theme_mode`).
-- **Live Hardware Telemetry**:
-  - **CPU Temperature** (`thermal_zone48`) and **Fan Speed** (`IFanControlProvider`).
-  - **Ring Gauges**: Live **CPU** frequency (`cpu7` GHz), **GPU** frequency (`kgsl-3d0` MHz), **PWR** system power draw (Watts from battery current × voltage), and **RAM** usage (GB).
-
-### Task Switcher & Status Bar
-- **Bottom-Screen Recents**: Tapping **Task** binds to `android.intent.action.QUICKSTEP_SERVICE` (`IOverviewProxy`) and opens the secondary display Recents overview on `displayId = 4`.
-- **Status Bar**: Live clock (tapping triggers memory cleanup), real-time network throughput (`KB/S` / `MB/S`), Bluetooth indicator, Wi-Fi signal strength, and charging/battery indicator.
+It preserves 1:1 visual and functional parity with the stock assistant while adding a gamepad-first **Top-Screen Companion Settings App**, **22 customizable & reorderable Quick Setting tiles** across three categories, **Screen Task Swapping**, **Stick LED Brightness control**, **Megingiard Theme Palettes & Live Sync**, **Android 13 Monet OS Theme Injection**, and a **sub-millisecond `UID 0` Binder Helper Daemon** with automatic uninstall/force-stop recovery.
 
 ---
 
-## Architecture & Privileged Access
+## Documentation Index
 
-Although installed as a regular user APK without shared system UID keys, the app achieves full system-level integration on the AYN Thor by combining:
-1. **`PServerBinder` Root Bridge** ([`PServerClient.kt`](app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PServerClient.kt)): Communicates with AYN's system `PServerBinder` service (`IBinder.transact(1, ...)`) to automatically grant runtime/appops permissions (`SYSTEM_ALERT_WINDOW`, `WRITE_SETTINGS`, `WRITE_SECURE_SETTINGS`, `PACKAGE_USAGE_STATS`), query SurfaceFlinger, adjust sysfs node permissions, and manage the stock assistant lifecycle.
-2. **Hidden API Bypass** ([`PrivilegedBridge.kt`](app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedBridge.kt)): Uses `org.lsposed.hiddenapibypass` to invoke hidden `DisplayManager`, `WindowManager`, and `ServiceManager` APIs directly in-process with automatic fallback to `PServerBinder`.
+Full functional and technical documentation is available in [`docs/`](docs/):
+
+| Document | Scope |
+| :--- | :--- |
+| **[Functional Specification](docs/FUNCTIONAL_SPECIFICATION.md)** | Complete user-facing guide covering the physical AYN button state machine, bottom-screen overlay tabs (**Mode** & **Settings**), all **22 Quick Setting tiles**, modal dialogs, live hardware telemetry, and the top-screen **Companion Settings App** (`MainActivity`). |
+| **[Technical Architecture](docs/TECHNICAL_ARCHITECTURE.md)** | Deep dive into the 3-tier privileged execution model (`PrivilegedBridge` -> `PrivilegedHelperMain` `UID 0` daemon `v9` -> `PServerBinder`), ephemeral stock `DualScreenAssistant` suppression, the uninstall/force-stop recovery watchdog, and multi-display windowing invariants on `displayId = 0` & `displayId = 4`. |
+| **[System Integration & Hardware Reference](docs/SYSTEM_INTEGRATION_REFERENCE.md)** | Complete reference tables for all `Settings.System`/`Global`/`Secure` keys, `SharedPreferences` (`better_dsa_prefs`), system properties (`sys.temp.disabled.touch`, `sys.light.curr.is.show`), vendor Binder services (`IFanControlProvider`, `IOverviewProxy`, `IMappingService`), sysfs telemetry paths, and `FabricatedOverlay` Monet keys. |
+| **[UI Architecture, Custom Widgets & Theming](docs/UI_AND_THEMING.md)** | Specification of the `840dp × 732dp` bottom-screen overlay layout, custom non-Material canvas widgets (`VerticalProgressBar`, `TccSliderRow`, `HardwareRingGauge`, `CurrentFrameRateDisplay`, `BatteryIconCanvas`), all 12 `AppThemeOption` palettes, and the embedded `com.stormpanda.megingiard` gamepad design system. |
+| **[Build, Release & Developer Guide](docs/BUILD_AND_RELEASE.md)** | Developer instructions for keystore signing (`local.properties`), debug builds (`scripts/debug.sh`), release git-flow automation (`scripts/release.sh`), SHA-256 verification (`scripts/generate_checksum.sh`), and ADB inspection commands. |
 
 ---
 
-## Building & Installing
+## Key Features
 
-### Prerequisites
-- Android SDK (API 35) & JDK 17+
-- An **AYN Thor** connected via ADB
+### 1. Bottom-Screen Assistant Overlay (`displayId = 4`, `1240 × 1080`)
+- **Mode Tab (`Tab 0`)**:
+  - **Screen Mode Control**: Switch between **Dual-screen display** (`0`), **Only top screen** (`1`), and **Only bottom screen** (`2`), plus a one-tap **Swap Screens** button that swaps the top visible app tasks between Display `0` and Display `4`.
+  - **Brightness Sliders**: Linked **Dual Screen**, **Top Screen**, **Bottom Screen** (with zero-lag hardware `setTemporaryBrightness` during drag and external SystemUI slider tracking), plus an optional **Stick LED** brightness slider (`0%–100%`).
+  - **Volume Sliders**: Linked **Dual Screen**, **Top Screen** (`STREAM_MUSIC`), and **Bottom Screen** (`secondary_screen_volume_level`).
+- **Settings Tab (`Tab 1`)**:
+  - **Frame Rate Panel**: One-tap **`60 FPS MODE` / `120 FPS MODE`** toggle paired with a live native-canvas **`SurfaceFlinger` FPS readout**.
+  - **22 Customizable Quick Setting Tiles** in a paged `2 × 4` grid (swipeable by touch or **`L1` / `R1`** shoulder buttons):
+    - **Stock AYN Toggles (10 — Enabled by default)**: *Focus Lock*, *Performance Mode*, *Fan Control* (Off/Quiet/Smart/Sport/Custom `35%–100%`), *Clear Memory*, *Controller Style* (Disconnect/Xbox/Odin), *Charging Separation*, *Vibration*, *Ambient Light*, *Force Landscape*, and *Theme Mode*.
+    - **Android System Toggles (4 — Optional)**: *Wi-Fi*, *Bluetooth*, *Do Not Disturb*, and *Airplane Mode*.
+    - **Tools (8 — Optional)**: *Bottom Touch Lock*, *Screenshot* (Top / Bottom / Both screens saved to `/sdcard/Pictures/Screenshots`), *L2/R2 Trigger Mode* (Analog / Digital / Both), *80% Charge Limit*, *Virtual Mouse*, *Key Mapper Overlay*, *Keep Screen On*, and *Double-Tap HOME*.
+  - **Live Hardware Telemetry Panel**: Real-time **SoC Temperature** (`thermal_zone48` with dynamic thermal tinting), **Fan Speed %** (`IFanControlProvider`), and 4 animated `270°` circular ring gauges for **CPU Frequency** (`cpu7`), **GPU Frequency** (`kgsl-3d0`), **Battery Power Draw** (`-20W..+25W`), and **RAM Usage**.
+- **Top Status Bar & Bottom Navigation Bar**:
+  - Status bar with live clock (tap to clean memory), Bluetooth indicator, live network RX speed (`KB/S` / `MB/S`), Wi-Fi signal bars, and custom battery icon with charging bolt.
+  - Bottom navigation pill with **Mode**, **Task** (opens bottom-screen Recents via `IOverviewProxy`), **Settings**, and **Edit** (launches the Companion App on the Top Screen).
 
-### Debug Workflow (`scripts/debug.sh`)
+### 2. Top-Screen Companion Settings App (`MainActivity` on `displayId = 0`)
+- **Gamepad-First Two-Pane UI**: Navigate with **D-Pad / Left Stick**, switch categories with **`L1` / `R1`**, adjust sliders with **`L2` fine-step modifier**, and preview every change live on the bottom screen (`displayId = 4`).
+- **Visual Quick Toggles Reordering**: Interactive `2 × 4` paged layout preview supporting both touch tap-to-swap and gamepad grab-and-move (`A` to grab, D-Pad/`L1`/`R1` to move in real time, `B` to drop), plus categorized toggle visibility management.
+- **Rich Theming & OS Monet Injection**:
+  - Choose between **Stock AYN** (`Follow System`, `Light`, `Dark`), **Sync with Megingiard** (live cross-app sync via `ContentProvider`), or **8 Built-in Megingiard Palettes** (`Megingiard Dark`, `Megingiard Dark (OLED)`, `Megingiard Light`, `Mjölnir`, `Valhalla`, `Aurora`, `Retro Phosphor`, `Royal Asgard`) with **10 Accent Presets** and a **Custom HSV Color Picker**.
+  - **Inject Theme Colors into OS**: Generates a 60-color Android 13 Monet `FabricatedOverlay` to theme Android SystemUI, Quick Settings, Notifications, and Material You apps system-wide.
+- **Live System Diagnostics**: Real-time status indicators and one-tap reconnection for `PrivilegedHelperMain (UID 0)`, `PServerBinder`, Stock `DualScreenAssistant` suppression state, and the Megingiard Theme Provider.
+
+### 3. Safe Ephemeral Stock Suppression & Automatic Uninstall Recovery
+- Freezes the persistent stock `com.odin.dualscreen.assistant` in RAM (`SIGSTOP`) without leaving its package or `TccServices` disabled on disk.
+- If **Better Dual Screen Assistant** is ever **uninstalled** or **force-stopped**, the `UID 0` watchdog in `PrivilegedHelperMain` automatically unblanks both screens, restores display brightness and touch (`sys.temp.disabled.touch = "0,0"`), removes any injected OS theme overlay, and wakes/restarts the stock `DualScreenAssistant`.
+
+---
+
+## Quick Start (Build & Install)
+
+Ensure your AYN Thor is connected via USB debugging (`adb devices`):
+
 ```bash
-# Build debug APK (copied to app/debug/)
-./scripts/debug.sh build
-
-# Install built debug APK on connected AYN Thor via ADB
-./scripts/debug.sh install
-
-# Build and install in a single step
+# Build and install the Debug APK in one step:
 ./scripts/debug.sh build-install
-```
 
-### Release Workflow (`scripts/release.sh`)
-```bash
-# Build release APK and SHA-256 checksum (in app/release/)
-./scripts/release.sh build
-
-# Copy to /sdcard/Download and install on connected AYN Thor via ADB
-./scripts/release.sh install
-
-# Build and install in a single step
+# Or build and install the minified Release APK:
 ./scripts/release.sh build-install
+
+# Start the foreground service immediately via ADB:
+adb shell am start-foreground-service \
+  -n com.stormpanda.betterdualscreenassistant/.service.AssistantForegroundService
 ```
 
-Once launched (or upon device boot), the foreground service automatically grants its required overlay/settings permissions via `PServerBinder`, suppresses the stock `DualScreenAssistant`, and begins listening for the physical TCC button.
+See [`docs/BUILD_AND_RELEASE.md`](docs/BUILD_AND_RELEASE.md) for keystore setup, release branch automation, and troubleshooting commands.
