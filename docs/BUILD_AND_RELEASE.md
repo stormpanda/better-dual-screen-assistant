@@ -46,20 +46,20 @@ sdk.dir=/Users/<username>/Library/Android/sdk
 # Primary keystore properties for Better Dual Screen Assistant:
 bdsa.keystore.file=/absolute/path/to/your-release-key.jks
 bdsa.keystore.password=YOUR_STORE_PASSWORD
-bdsa.key.alias=YOUR_KEY_ALIAS
-bdsa.key.password=YOUR_KEY_PASSWORD
+bdsa.keystore.alias=YOUR_KEY_ALIAS
+bdsa.keystore.key.password=YOUR_KEY_PASSWORD
 ```
 
-*(Note: `app/build.gradle.kts` also supports `megingiard.keystore.file`, `megingiard.keystore.password`, `megingiard.key.alias`, and `megingiard.key.password` as fallback property names if you share the same signing certificate across Stormpanda apps).*
+*(Note: `app/build.gradle.kts` also supports `megingiard.keystore.file`, `megingiard.keystore.password`, `megingiard.keystore.alias`, and `megingiard.keystore.key.password` as fallback property names if you share the same signing certificate across Stormpanda apps).*
 
 ---
 
 ## 3. Debug Workflow (`scripts/debug.sh`)
 
-[`scripts/debug.sh`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/scripts/debug.sh) compiles the debug APK, copies it to `app/debug/BetterDualScreenAssistant-v<version>-debug.apk`, generates a matching `.sha256` file, and installs it onto a connected AYN Thor over ADB:
+[`scripts/debug.sh`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/scripts/debug.sh) compiles the debug APK, copies it to `app/debug/BetterDualScreenAssistant-v<version>-debug.apk`, and installs it onto a connected AYN Thor over ADB:
 
 ```bash
-# 1. Build debug APK + SHA-256 checksum in app/debug/
+# 1. Build debug APK in app/debug/
 ./scripts/debug.sh build
 
 # 2. Install existing debug APK from app/debug/ onto connected AYN Thor
@@ -69,23 +69,22 @@ bdsa.key.password=YOUR_KEY_PASSWORD
 ./scripts/debug.sh build-install
 ```
 
-**Output Artifacts (`app/debug/`)**:
+**Output Artifact (`app/debug/`)**:
 - `app/debug/BetterDualScreenAssistant-v<versionName>-debug.apk`
-- `app/debug/BetterDualScreenAssistant-v<versionName>-debug.apk.sha256`
 
 ---
 
 ## 4. Release Workflow & Git-Flow Automation (`scripts/release.sh`)
 
-[`scripts/release.sh`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/scripts/release.sh) manages release APK builds (`isMinifyEnabled = true`, `isShrinkResources = true`), GitHub Releases (`gh release`), and `main`/`develop` branch synchronization.
+[`scripts/release.sh`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/scripts/release.sh) manages release branches (`release/X.Y.Z`), signed release APK builds, SHA-256 checksums, GitHub Release drafts (`gh release`), and local merge-back/version bumping on `main`. This workflow is also automated via the agent skills [`bdsa-release`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/.agents/skills/bdsa-release/SKILL.md) and [`bdsa-release-changelog`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/.agents/skills/bdsa-release-changelog/SKILL.md).
 
 ### 4.1 Building & Installing Release APKs
 
 ```bash
-# Build release APK + SHA-256 checksum in app/release/
+# Build signed release APK + SHA-256 checksum in app/release/
 ./scripts/release.sh build
 
-# Install existing release APK onto connected AYN Thor
+# Copy to /sdcard/Download and install release APK onto connected AYN Thor
 ./scripts/release.sh install
 
 # Build and install release APK in one step
@@ -94,47 +93,52 @@ bdsa.key.password=YOUR_KEY_PASSWORD
 
 **Output Artifacts (`app/release/`)**:
 - `app/release/BetterDualScreenAssistant-v<versionName>.apk`
-- `app/release/BetterDualScreenAssistant-v<versionName>.apk.sha256`
+- `app/release/BetterDualScreenAssistant-v<versionName>-checksum-sha256.txt`
 
-### 4.2 Full Release Lifecycle (`prepare` -> `publish` -> `finish`)
+### 4.2 Full Release Lifecycle (`prepare` -> `build` -> `publish` -> `finish` -> `bump`)
 
 ```mermaid
 flowchart LR
-    Dev["develop branch"] -->|"./scripts/release.sh prepare 1.1.0"| Rel["release/v1.1.0 branch\n(Bumps version, builds APK + SHA256)"]
-    Rel -->|"./scripts/release.sh publish"| GH["GitHub Release v1.1.0\n(Pushes branch & uploads APK)"]
-    GH -->|"./scripts/release.sh finish"| Done["Merges into main (tags v1.1.0)\n& back-merges into develop"]
+    Main["main branch (or release/*)"] -->|"./scripts/release.sh prepare"| Rel["release/X.Y.Z branch\n(Sets versionName, tags X.Y.Z, pushes branch & tag)"]
+    Rel -->|"./scripts/release.sh build"| Build["Signed APK + SHA-256\nin app/release/"]
+    Build -->|"./scripts/release.sh publish .tmp/release_changelog.md"| GH["GitHub Release Draft\nBetterDualScreenAssistant-vX.Y.Z"]
+    GH -->|"./scripts/release.sh finish"| Merge["Merges release/X.Y.Z\ninto main locally"]
+    Merge -->|"./scripts/release.sh bump"| Bump["Increments versionCode &\nsets next -SNAPSHOT on main"]
 ```
 
 1. **Prepare a Release Branch (`prepare`)**:
    ```bash
-   ./scripts/release.sh prepare 1.1.0
+   ./scripts/release.sh prepare
    ```
-   - Verifies clean working tree on `develop`.
-   - Creates branch `release/v1.1.0`.
-   - Increments `versionCode` and sets `versionName = "1.1.0"` in `app/build.gradle.kts`.
-   - Builds the signed release APK (`app/release/BetterDualScreenAssistant-v1.1.0.apk`) and `.sha256` checksum.
-   - Commits the version bump and release artifacts (`chore(release): prepare release v1.1.0`).
-2. **Publish to GitHub Releases (`publish`)**:
+   - Verifies clean tracked working tree on `main` (standard release) or `release/*` (hotfix release).
+   - Determines target release version (strips `-SNAPSHOT` on `main`, or increments patch / strips `-SNAPSHOT` on `release/*`).
+   - Creates/switches to `release/<version>`, sets `versionName = "<version>"` in `app/build.gradle.kts`, commits (`chore(release): set version name to <version> for release`), creates git tag `<version>`, and pushes both branch and tag to `origin`.
+2. **Build Signed Release APK & Checksum (`build`)**:
    ```bash
-   ./scripts/release.sh publish
+   ./scripts/release.sh build
    ```
-   - Pushes `release/v1.1.0` to `origin` and creates/updates the GitHub release via `gh release create v1.1.0`, attaching the `.apk` and `.apk.sha256` files.
-3. **Finish Release (`finish`)**:
+   - Runs `./gradlew :app:assembleRelease`, copies the signed APK to `app/release/BetterDualScreenAssistant-v<version>.apk`, and runs `scripts/generate_checksum.sh` to create `app/release/BetterDualScreenAssistant-v<version>-checksum-sha256.txt`.
+3. **Publish Draft to GitHub Releases (`publish`)**:
+   ```bash
+   ./scripts/release.sh publish .tmp/release_changelog.md
+   ```
+   - Creates a **draft** GitHub release (`BetterDualScreenAssistant-v<version>`) using `gh release create <version> --draft --notes-file <changelog-file>`, attaching the `.apk` and `-checksum-sha256.txt` artifacts.
+4. **Finish Release (`finish`)**:
    ```bash
    ./scripts/release.sh finish
    ```
-   - Merges `release/v1.1.0` into `main` (`--no-ff`), tags `v1.1.0`, merges `release/v1.1.0` back into `develop`, pushes `main`, `develop`, and tags to `origin`, and deletes the temporary `release/v1.1.0` branch.
+   - Switches to `main` and merges `release/<version>` into `main` locally (`--no-ff`), automatically resolving `app/build.gradle.kts` conflicts in favor of `main`. Does **not** auto-push `main`.
+5. **Bump Development Version (`bump`)**:
+   ```bash
+   ./scripts/release.sh bump
+   ```
+   - Increments `versionCode` by `+1` and updates `versionName` to the next development snapshot (`X.(Y+1).0-SNAPSHOT` on `main`, or `X.Y.(Z+1)-SNAPSHOT` on `release/*`).
 
-### 4.3 Version Bumping (`bump`) & Checksum Generation
+### 4.3 Manual Checksum Generation
 
-- **Standalone Version Bump**:
+- **Generate SHA-256 Checksum for `app/release/*.apk`**:
   ```bash
-  ./scripts/release.sh bump 1.1.0        # Auto-increments versionCode by +1
-  ./scripts/release.sh bump 1.1.0 5      # Explicitly sets versionCode = 5
-  ```
-- **Manual Checksum Generation**:
-  ```bash
-  ./scripts/generate_checksum.sh app/release/BetterDualScreenAssistant-v1.0.0.apk
+  ./scripts/generate_checksum.sh
   ```
 
 ---
