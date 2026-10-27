@@ -12,6 +12,7 @@ Full functional and technical documentation is available in [`docs/`](docs/):
 
 | Document | Scope |
 | :--- | :--- |
+| **[Security & Privacy Overview](docs/SECURITY.md)** | Executive summary, side-by-side security & privacy comparison against the stock `DualScreenAssistant`, explanation of `PServerBinder` & `PrivilegedHelperMain`, permission breakdown, and automatic uninstall recovery guarantees. |
 | **[Functional Specification](docs/FUNCTIONAL_SPECIFICATION.md)** | Complete user-facing guide covering the physical AYN button state machine, bottom-screen overlay tabs (**Mode** & **Settings**), all **22 Quick Setting tiles**, modal dialogs, live hardware telemetry, and the top-screen **Companion Settings App** (`MainActivity`). |
 | **[Technical Architecture](docs/TECHNICAL_ARCHITECTURE.md)** | Deep dive into the 3-tier privileged execution model (`PrivilegedBridge` -> `PrivilegedHelperMain` `UID 0` daemon `v9` -> `PServerBinder`), ephemeral stock `DualScreenAssistant` suppression, the uninstall/force-stop recovery watchdog, and multi-display windowing invariants on `displayId = 0` & `displayId = 4`. |
 | **[System Integration & Hardware Reference](docs/SYSTEM_INTEGRATION_REFERENCE.md)** | Complete reference tables for all `Settings.System`/`Global`/`Secure` keys, `SharedPreferences` (`better_dsa_prefs`), system properties (`sys.temp.disabled.touch`, `sys.light.curr.is.show`), vendor Binder services (`IFanControlProvider`, `IOverviewProxy`, `IMappingService`), sysfs telemetry paths, and `FabricatedOverlay` Monet keys. |
