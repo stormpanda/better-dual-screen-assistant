@@ -22,7 +22,7 @@ class PrivilegedBinderProvider : ContentProvider() {
                 val binder = extras.getBinder(PrivilegedHelperMain.EXTRA_BINDER)
                 if (binder != null) {
                     Log.i("PrivilegedBinderProvider", "Received helper binder from uid=$callingUid")
-                    PrivilegedBridge.onHelperBinderReceived(binder)
+                    PrivilegedBridge.onHelperBinderReceived(binder, context)
                 }
             } else {
                 Log.w("PrivilegedBinderProvider", "Rejected binder from unauthorized uid=$callingUid")

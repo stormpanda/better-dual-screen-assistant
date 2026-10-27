@@ -410,11 +410,15 @@ class ScreenOverlayManager(
             if (!interactive) {
                 hideAssistantOverlay(immediate = true)
                 dismissCloseScreenTip()
-                savedTopBrightnessLinear?.let {
-                    PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, it, false)
+                if (isTopScreenBlanked) {
+                    savedTopBrightnessLinear?.let {
+                        PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, it, false)
+                    }
                 }
-                savedBottomBrightnessLinear?.let {
-                    PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, it, false)
+                if (isBottomScreenBlanked) {
+                    savedBottomBrightnessLinear?.let {
+                        PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, it, false)
+                    }
                 }
             } else {
                 repository.reapplyTouchDisableForCurrentMode()
@@ -623,7 +627,9 @@ class ScreenOverlayManager(
         } else {
             isTopScreenBlanked = false
             PrivilegedBridge.setTopScreenBlanked(context, blank = false, showCoverWindow = false)
-            val restore = savedTopBrightnessLinear ?: 0.4f
+            val restore = savedTopBrightnessLinear
+                ?: (repository.topBrightness.value / 100f).coerceIn(0.01f, 1f)
+            savedTopBrightnessLinear = null
             PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, restore, false)
             val view = topBlankView ?: return
             topBlankView = null
@@ -684,7 +690,9 @@ class ScreenOverlayManager(
             }
         } else {
             isBottomScreenBlanked = false
-            val restore = savedBottomBrightnessLinear ?: 0.4f
+            val restore = savedBottomBrightnessLinear
+                ?: (repository.bottomBrightness.value / 100f).coerceIn(0.01f, 1f)
+            savedBottomBrightnessLinear = null
             PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, restore, false)
             val view = bottomBlankView ?: return
             bottomBlankView = null

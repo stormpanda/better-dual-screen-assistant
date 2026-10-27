@@ -62,10 +62,13 @@ object PrivilegedBridge {
     private val _isHelperConnected = MutableStateFlow(false)
     val isHelperConnected: StateFlow<Boolean> = _isHelperConnected.asStateFlow()
 
-    fun onHelperBinderReceived(binder: IBinder) {
+    fun onHelperBinderReceived(binder: IBinder, context: Context? = null) {
         if (!pingBinder(binder)) {
             Log.w(TAG, "Received outdated PrivilegedHelperMain binder; shutting it down")
             shutdownHelperBinder(binder)
+            if (context != null) {
+                ensureStarted(context)
+            }
             return
         }
         val oldBinder = helperBinder
@@ -91,6 +94,17 @@ object PrivilegedBridge {
         pendingOsThemeRequest?.let { req ->
             scope.launch {
                 dispatchOsThemeRequestToBinder(binder, req)
+            }
+        }
+        if (context != null) {
+            val appCtx = context.applicationContext
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+                        .getInstance(appCtx)
+                        .refreshDisplayBrightness()
+                } catch (_: Throwable) {
+                }
             }
         }
     }
@@ -249,10 +263,9 @@ object PrivilegedBridge {
     }
 
     /**
-     * Returns floatArrayOf(brightness, min, max) for [displayId].
+     * Returns floatArrayOf(brightness, min, max, adjustedBrightness) for [displayId].
      */
     fun getDisplayBrightnessInfo(context: Context, displayId: Int): FloatArray {
-        // First try standard Display.getBrightnessInfo() via reflection (allowed for normal apps if readable, or via helper)
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
             val data = Parcel.obtain()
@@ -263,8 +276,8 @@ object PrivilegedBridge {
                 binder.transact(PrivilegedHelperMain.TRANSACTION_GET_BRIGHTNESS, data, reply, 0)
                 reply.readException()
                 val arr = reply.createFloatArray()
-                if (arr != null && arr.size == 3) {
-                    return arr
+                if (arr != null && arr.size >= 3) {
+                    return if (arr.size >= 4) arr else floatArrayOf(arr[0], arr[1], arr[2], arr[0])
                 }
             } catch (_: Throwable) {
             } finally {
@@ -272,7 +285,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        return try {
+        try {
             val dm = context.getSystemService(DisplayManager::class.java)
             val display = dm?.getDisplay(displayId)
             if (display != null) {
@@ -281,13 +294,28 @@ object PrivilegedBridge {
                     val b = info.javaClass.getField("brightness").getFloat(info)
                     val min = info.javaClass.getField("brightnessMinimum").getFloat(info)
                     val max = info.javaClass.getField("brightnessMaximum").getFloat(info)
-                    return floatArrayOf(b, min, max)
+                    val adj = try {
+                        info.javaClass.getField("adjustedBrightness").getFloat(info)
+                    } catch (_: Throwable) {
+                        b
+                    }
+                    return floatArrayOf(b, min, max, adj)
                 }
             }
-            floatArrayOf(0.5f, 0f, 1f)
         } catch (_: Throwable) {
-            floatArrayOf(0.5f, 0f, 1f)
         }
+        if (displayId == 0) {
+            try {
+                val sysB = android.provider.Settings.System.getInt(
+                    context.contentResolver,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                    128
+                ).coerceIn(0, 255) / 255f
+                return floatArrayOf(sysB, 0f, 1f, sysB)
+            } catch (_: Throwable) {
+            }
+        }
+        return floatArrayOf(0.5f, 0f, 1f, 0.5f)
     }
 
     fun setPinScreenMode(context: Context, mode: Int) {

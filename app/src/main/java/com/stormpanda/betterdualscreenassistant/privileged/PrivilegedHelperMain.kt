@@ -62,7 +62,7 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SWAP_DISPLAY_TASKS = IBinder.FIRST_CALL_TRANSACTION + 16
     const val TRANSACTION_SET_TOP_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 17
 
-    const val HELPER_PROTOCOL_VERSION = 8
+    const val HELPER_PROTOCOL_VERSION = 9
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -1132,25 +1132,32 @@ object PrivilegedHelperMain {
         }
 
         private fun getDisplayBrightnessInternal(displayId: Int): FloatArray {
-            val dm = displayManagerProxy ?: return floatArrayOf(0.5f, 0.0f, 1.0f)
+            val dm = displayManagerProxy ?: return floatArrayOf(0.5f, 0.0f, 1.0f, 0.5f)
             return try {
+                val getB = dm.javaClass.getMethod("getBrightness", Int::class.javaPrimitiveType)
+                val settingB = (getB.invoke(dm, displayId) as? Float) ?: Float.NaN
                 val getInfoMethod = dm.javaClass.getMethod(
                     "getBrightnessInfo",
                     Int::class.javaPrimitiveType
                 )
                 val info = getInfoMethod.invoke(dm, displayId)
                 if (info != null) {
-                    val b = info.javaClass.getField("brightness").getFloat(info)
+                    val infoB = info.javaClass.getField("brightness").getFloat(info)
                     val min = info.javaClass.getField("brightnessMinimum").getFloat(info)
                     val max = info.javaClass.getField("brightnessMaximum").getFloat(info)
-                    floatArrayOf(b, min, max)
+                    val adj = try {
+                        info.javaClass.getField("adjustedBrightness").getFloat(info)
+                    } catch (_: Throwable) {
+                        infoB
+                    }
+                    val committed = if (!settingB.isNaN()) settingB else infoB
+                    floatArrayOf(committed, min, max, adj)
                 } else {
-                    val getB = dm.javaClass.getMethod("getBrightness", Int::class.javaPrimitiveType)
-                    val b = getB.invoke(dm, displayId) as? Float ?: 0.5f
-                    floatArrayOf(b, 0.0f, 1.0f)
+                    val b = if (!settingB.isNaN()) settingB else 0.5f
+                    floatArrayOf(b, 0.0f, 1.0f, b)
                 }
             } catch (_: Throwable) {
-                floatArrayOf(0.5f, 0.0f, 1.0f)
+                floatArrayOf(0.5f, 0.0f, 1.0f, 0.5f)
             }
         }
 

@@ -17,6 +17,8 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import android.app.UiModeManager
 import android.content.SharedPreferences
 import android.provider.Settings
@@ -114,6 +116,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val contentResolver = context.contentResolver
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val displayManager = context.getSystemService(DisplayManager::class.java)
+    private val powerManager = context.getSystemService(PowerManager::class.java)
     private val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
@@ -125,6 +128,18 @@ class SystemSettingsRepository(private val context: Context) {
 
     @Volatile
     private var preferredMegingiardThemeUri: Uri? = null
+
+    @Volatile
+    private var isSelfDraggingBrightness: Boolean = false
+
+    @Volatile
+    private var lastSelfBrightnessChangeElapsedMs: Long = 0L
+
+    private fun isInSelfBrightnessGraceWindow(): Boolean {
+        if (isSelfDraggingBrightness) return true
+        val elapsed = SystemClock.elapsedRealtime() - lastSelfBrightnessChangeElapsedMs
+        return elapsed in 0L..250L
+    }
 
     private val debouncedOsThemeSyncRunnable = Runnable {
         syncOsThemeIfNeeded()
@@ -305,11 +320,28 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val settingsObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            val refreshBrightness = uri == null || uri.lastPathSegment == "screen_brightness"
+            val lastSegment = uri?.lastPathSegment
+            if (lastSegment == "screen_brightness") {
+                if (!isInSelfBrightnessGraceWindow()) {
+                    onExternalDisplayBrightnessChanged(0, fromDisplayListener = false)
+                }
+                return
+            }
+            val refreshBrightness = uri == null || lastSegment == KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL
             refreshAll(
-                refreshDisplayBrightness = refreshBrightness,
+                refreshDisplayBrightness = refreshBrightness && !isInSelfBrightnessGraceWindow(),
                 refreshMegingiardTheme = false
             )
+        }
+    }
+
+    private val displayBrightnessListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != 0 && displayId != 4) return
+            if (isInSelfBrightnessGraceWindow()) return
+            onExternalDisplayBrightnessChanged(displayId, fromDisplayListener = true)
         }
     }
 
@@ -487,12 +519,17 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
         }
         context.registerReceiver(volumeReceiver, filter)
+        registerDisplayBrightnessListener()
         refreshAll()
     }
 
     fun unregister() {
         if (!isRegistered) return
         isRegistered = false
+        try {
+            displayManager?.unregisterDisplayListener(displayBrightnessListener)
+        } catch (_: Throwable) {
+        }
         try {
             contentResolver.unregisterContentObserver(settingsObserver)
         } catch (_: Throwable) {
@@ -508,6 +545,26 @@ class SystemSettingsRepository(private val context: Context) {
         try {
             context.unregisterReceiver(volumeReceiver)
         } catch (_: Throwable) {
+        }
+    }
+
+    private fun registerDisplayBrightnessListener() {
+        val dm = displayManager ?: return
+        try {
+            // Register with EVENT_FLAG_DISPLAY_BRIGHTNESS (1L << 3 = 8L), matching SystemUI
+            // DisplayTrackerImpl and stock DualScreenAssistant Z0.a.b
+            val method = DisplayManager::class.java.getMethod(
+                "registerDisplayListener",
+                DisplayManager.DisplayListener::class.java,
+                Handler::class.java,
+                Long::class.javaPrimitiveType
+            )
+            method.invoke(dm, displayBrightnessListener, mainHandler, 8L)
+        } catch (_: Throwable) {
+            try {
+                dm.registerDisplayListener(displayBrightnessListener, mainHandler)
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -571,6 +628,9 @@ class SystemSettingsRepository(private val context: Context) {
         if (refreshDisplayBrightness) {
             _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
             _bottomBrightness.value = readDisplayBrightnessPercent(4, _bottomBrightness.value)
+            if (!isInSelfBrightnessGraceWindow()) {
+                syncDualBrightnessActiveState(persistToPrefs = true)
+            }
         }
         _dualVolumePercent.value = readDualVolumePercent()
         _primaryVolumePercent.value = readPrimaryVolumePercent(_primaryVolumePercent.value)
@@ -581,6 +641,86 @@ class SystemSettingsRepository(private val context: Context) {
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, _dualBrightness.value)
         _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
         _bottomBrightness.value = readDisplayBrightnessPercent(4, _bottomBrightness.value)
+        if (!isInSelfBrightnessGraceWindow()) {
+            syncDualBrightnessActiveState(persistToPrefs = true)
+        }
+    }
+
+    private fun isDisplayBlanked(displayId: Int): Boolean {
+        val mode = _dualScreenDisplayMode.value
+        return (displayId == 0 && mode == 2) || (displayId == 4 && mode == 1)
+    }
+
+    private fun isDeviceInteractive(): Boolean {
+        return try {
+            powerManager?.isInteractive != false
+        } catch (_: Throwable) {
+            true
+        }
+    }
+
+    private fun onExternalDisplayBrightnessChanged(
+        displayId: Int,
+        fromDisplayListener: Boolean
+    ) {
+        if (!isDeviceInteractive() || isDisplayBlanked(displayId)) return
+        val info = PrivilegedBridge.getDisplayBrightnessInfo(context, displayId)
+        val committed = info.getOrElse(0) { 0.5f }
+        val min = info.getOrElse(1) { 0f }
+        val max = info.getOrElse(2) { 1f }
+        val adjusted = info.getOrElse(3) { committed }
+        if (max <= min) return
+        if (committed < 0f || committed.isNaN()) return
+
+        // While the user drags the Android SystemUI Quick Settings brightness slider on Display 0,
+        // SystemUI calls setTemporaryBrightness(0, val), which updates adjustedBrightness in real time
+        // while committed brightness stays at the pre-drag value until finger release.
+        val isLiveTemporaryDrag = fromDisplayListener &&
+            displayId == 0 &&
+            !adjusted.isNaN() &&
+            adjusted >= 0f &&
+            kotlin.math.abs(adjusted - committed) > 0.005f
+
+        val effectiveLinear = if (isLiveTemporaryDrag) adjusted else committed
+        val percent = (((effectiveLinear - min) / (max - min)) * 100f)
+            .roundToInt()
+            .coerceIn(0, 100)
+
+        if (displayId == 0) {
+            if (_topBrightness.value != percent) {
+                _topBrightness.value = percent
+            }
+            if (!isLiveTemporaryDrag && committed > 0f) {
+                PrivilegedBridge.updateSavedBrightness(top = committed)
+            }
+        } else if (displayId == 4) {
+            if (_bottomBrightness.value != percent) {
+                _bottomBrightness.value = percent
+            }
+            if (!isLiveTemporaryDrag && committed > 0f) {
+                PrivilegedBridge.updateSavedBrightness(bottom = committed)
+            }
+        }
+
+        syncDualBrightnessActiveState(persistToPrefs = !isLiveTemporaryDrag)
+    }
+
+    private fun syncDualBrightnessActiveState(persistToPrefs: Boolean) {
+        val allMatch = _topBrightness.value == _bottomBrightness.value &&
+            _topBrightness.value == _dualBrightness.value
+        if (!allMatch) {
+            if (_isDualBrightnessActive.value) {
+                _isDualBrightnessActive.value = false
+            }
+            if (persistToPrefs && prefs.getBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, false)) {
+                prefs.edit().putBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, false).apply()
+            }
+        } else {
+            val savedPref = prefs.getBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, true)
+            if (_isDualBrightnessActive.value != savedPref) {
+                _isDualBrightnessActive.value = savedPref
+            }
+        }
     }
 
     fun setDualScreenDisplayMode(mode: Int) {
@@ -1029,6 +1169,8 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setDisplayBrightnessPercent(displayId: Int, percent: Int, temporary: Boolean) {
+        isSelfDraggingBrightness = temporary
+        lastSelfBrightnessChangeElapsedMs = SystemClock.elapsedRealtime()
         _isDualBrightnessActive.value = false
         if (!temporary) {
             prefs.edit().putBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, false).apply()
@@ -1047,10 +1189,19 @@ class SystemSettingsRepository(private val context: Context) {
         val min = info.getOrElse(1) { 0f }
         val max = info.getOrElse(2) { 1f }
         val linear = min + (p / 100f) * (max - min)
+        if (!temporary && linear > 0f) {
+            if (displayId == 0) {
+                PrivilegedBridge.updateSavedBrightness(top = linear)
+            } else if (displayId == 4) {
+                PrivilegedBridge.updateSavedBrightness(bottom = linear)
+            }
+        }
         PrivilegedBridge.setDisplayBrightness(context, displayId, linear, temporary)
     }
 
     fun setDualScreenBrightnessPercent(percent: Int, temporary: Boolean) {
+        isSelfDraggingBrightness = temporary
+        lastSelfBrightnessChangeElapsedMs = SystemClock.elapsedRealtime()
         val p = percent.coerceIn(0, 100)
         _isDualBrightnessActive.value = true
         _dualBrightness.value = p
@@ -1538,16 +1689,18 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     private fun readDisplayBrightnessPercent(displayId: Int, currentPercent: Int = -1): Int {
+        if (!isDeviceInteractive() || isDisplayBlanked(displayId)) {
+            return if (currentPercent in 0..100) currentPercent else 50
+        }
         val info = PrivilegedBridge.getDisplayBrightnessInfo(context, displayId)
         val b = info.getOrElse(0) { 0.5f }
         val min = info.getOrElse(1) { 0f }
         val max = info.getOrElse(2) { 1f }
-        if (max <= min) return 50
-        val computed = (((b - min) / (max - min)) * 100f).roundToInt().coerceIn(0, 100)
-        if (currentPercent in 0..100 && kotlin.math.abs(computed - currentPercent) <= 1) {
-            return currentPercent
+        if (max <= min) return if (currentPercent in 0..100) currentPercent else 50
+        if (b < 0f || b.isNaN()) {
+            return if (currentPercent in 0..100) currentPercent else 50
         }
-        return computed
+        return (((b - min) / (max - min)) * 100f).roundToInt().coerceIn(0, 100)
     }
 
     private fun readDualVolumePercent(): Int {
