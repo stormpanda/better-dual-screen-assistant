@@ -439,7 +439,14 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val categoryList = remember { LauncherCategory.entries }
+    val categoryList = remember {
+        LauncherCategory.entries.filter { it != LauncherCategory.DIAGNOSTICS || BuildConfig.DEBUG }
+    }
+    LaunchedEffect(categoryList) {
+        if (selectedCategory !in categoryList) {
+            selectedCategory = LauncherCategory.GENERAL
+        }
+    }
     LaunchedEffect(Unit) {
         PrimaryOverlayInputBridge.bumperEvents.collect { direction ->
             if (!isVisualReorderGridActive) {
@@ -537,7 +544,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                 },
                 navigationKey = subPageStack,
                 sidebarContent = {
-                    LauncherCategory.entries.forEach { category ->
+                    categoryList.forEach { category ->
                         GamepadCategoryTile(
                             title = category.title,
                             icon = category.icon,
@@ -635,27 +642,29 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                         }
 
                                         LauncherCategory.DIAGNOSTICS -> {
-                                            DiagnosticsSettingsTabContent(
-                                                helperConnected = helperConnected,
-                                                pServerAvailable = pServerAvailable,
-                                                stockDisabled = stockDisabled,
-                                                isMegingiardAvailable = isMegingiardAvailable,
-                                                syncedMegingiardOption = syncedMegingiardOption,
-                                                isRefreshing = isRefreshingStatus,
-                                                onReconnectAndRefresh = {
-                                                    if (isRefreshingStatus) return@DiagnosticsSettingsTabContent
-                                                    isRefreshingStatus = true
-                                                    scope.launch(Dispatchers.IO) {
-                                                        PrivilegedBridge.ensureInitialized(context)
-                                                        PServerClient.ensurePermissionsGranted(context)
-                                                        repo.refreshAll()
-                                                        refreshStatus()
-                                                        withContext(Dispatchers.Main) {
-                                                            isRefreshingStatus = false
+                                            if (BuildConfig.DEBUG) {
+                                                DiagnosticsSettingsTabContent(
+                                                    helperConnected = helperConnected,
+                                                    pServerAvailable = pServerAvailable,
+                                                    stockDisabled = stockDisabled,
+                                                    isMegingiardAvailable = isMegingiardAvailable,
+                                                    syncedMegingiardOption = syncedMegingiardOption,
+                                                    isRefreshing = isRefreshingStatus,
+                                                    onReconnectAndRefresh = {
+                                                        if (isRefreshingStatus) return@DiagnosticsSettingsTabContent
+                                                        isRefreshingStatus = true
+                                                        scope.launch(Dispatchers.IO) {
+                                                            PrivilegedBridge.ensureInitialized(context)
+                                                            PServerClient.ensurePermissionsGranted(context)
+                                                            repo.refreshAll()
+                                                            refreshStatus()
+                                                            withContext(Dispatchers.Main) {
+                                                                isRefreshingStatus = false
+                                                            }
                                                         }
                                                     }
-                                                }
-                                            )
+                                                )
+                                            }
                                         }
                                     }
                                 }
