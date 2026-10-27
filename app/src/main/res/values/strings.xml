@@ -134,4 +134,22 @@
     <string name="gamepad_category_all">All</string>
     <string name="gamepad_slider_fine_adjustment_toast">Use L2/R2 for fine adjustment</string>
     <string name="gamepad_reorder_empty">No items to reorder</string>
+
+    <!-- Updates Settings (Megingiard parity) -->
+    <string name="settings_jump_updates">Updates</string>
+    <string name="settings_update_available_short">Update Available</string>
+    <string name="settings_up_to_date">You are up-to-date!</string>
+    <string name="settings_check_failed">Check Failed</string>
+    <string name="settings_auto_update_check">Automatic Update Checks</string>
+    <string name="settings_check_for_updates">Check for Updates</string>
+    <string name="settings_update_available_banner">Update Available: %1$s</string>
+    <string name="settings_update_available_banner_desc">A new version is available on GitHub Releases</string>
+    <string name="settings_update_now_btn">Update</string>
+    <string name="settings_update_available_tag">Version %1$s is available on GitHub</string>
+    <string name="settings_app_version">Current version: %1$s</string>
+    <string name="settings_add_to_obtainium">Add to Obtainium</string>
+    <string name="help_settings_auto_update_desc">Check GitHub Releases once per session for newer app versions</string>
+    <string name="help_settings_add_to_obtainium_desc">Open Obtainium to track and install Better Dual Screen Assistant updates automatically from GitHub</string>
+    <string name="gamepad_action_check">Check</string>
+    <string name="gamepad_action_checking">Checking</string>
 </resources>

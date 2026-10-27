@@ -47,6 +47,7 @@ import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.overlay.AssistantOverlayScreen
 import com.stormpanda.betterdualscreenassistant.ui.overlay.CloseScreenTipOverlay
+import com.stormpanda.megingiard.update.UpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -217,6 +218,8 @@ class ScreenOverlayManager(
             cleanupExitingAssistant()
 
             repository.refreshAll()
+            UpdateManager.init(context)
+            UpdateManager.checkForUpdates(force = false)
             if (repository.dualScreenDisplayMode.value == 0 && repository.touchLockEnabled.value) {
                 // Temporarily allow bottom-screen touch while the Assistant Overlay is open
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")

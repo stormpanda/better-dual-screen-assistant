@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.DeveloperBoard
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.GridView
@@ -62,8 +63,10 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsSuggest
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -150,6 +153,9 @@ import com.stormpanda.megingiard.ui.firstDeckItem
 import com.stormpanda.megingiard.ui.launchUrlOnPrimaryDisplay
 import com.stormpanda.megingiard.ui.megingiardTypography
 import com.stormpanda.megingiard.ui.paletteFor
+import com.stormpanda.megingiard.AppLog
+import com.stormpanda.megingiard.update.AppReleaseInfo
+import com.stormpanda.megingiard.update.UpdateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -163,6 +169,8 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         window.isNavigationBarContrastEnforced = false
+        UpdateManager.init(this)
+        UpdateManager.checkForUpdates(force = false)
         ensureOverlayStateForDisplay()
 
         setContent {
@@ -344,6 +352,7 @@ private enum class LauncherCategory(
     GENERAL("General", Icons.Rounded.Tune),
     QUICK_TOGGLES("Quick Toggles", Icons.Rounded.GridView),
     APPEARANCE("Appearance", Icons.Rounded.Palette),
+    UPDATES("Updates", Icons.Rounded.SystemUpdate),
     DIAGNOSTICS("Diagnostics", Icons.Rounded.HealthAndSafety)
 }
 
@@ -399,6 +408,13 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
+
+    val autoUpdateCheckEnabled by UpdateManager.autoUpdateCheckEnabled.collectAsStateWithLifecycle()
+    val updateAvailable by UpdateManager.updateAvailable.collectAsStateWithLifecycle()
+    val latestReleaseInfo by UpdateManager.latestReleaseInfo.collectAsStateWithLifecycle()
+    val isCheckingUpdates by UpdateManager.isChecking.collectAsStateWithLifecycle()
+    val updateCheckError by UpdateManager.checkError.collectAsStateWithLifecycle()
+    var hasTriggeredManualCheck by remember { mutableStateOf(false) }
 
     var selectedCategory by rememberSaveable { mutableStateOf(LauncherCategory.GENERAL) }
     var subPageStack by rememberSaveable { mutableStateOf<List<LauncherSubPage>>(emptyList()) }
@@ -574,6 +590,8 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                     when (selectedCategory) {
                                         LauncherCategory.GENERAL -> {
                                             GeneralSettingsTabContent(
+                                                updateAvailable = updateAvailable,
+                                                latestReleaseInfo = latestReleaseInfo,
                                                 stockDisabled = stockDisabled,
                                                 showCloseBottomScreenTip = showCloseBottomScreenTip,
                                                 rememberLastTab = rememberLastTab,
@@ -638,6 +656,24 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                     subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
                                                 },
                                                 onToggleInjectSystemTheme = { repo.setInjectOsTheme(it) }
+                                            )
+                                        }
+
+                                        LauncherCategory.UPDATES -> {
+                                            UpdatesSettingsTabContent(
+                                                autoUpdateCheckEnabled = autoUpdateCheckEnabled,
+                                                updateAvailable = updateAvailable,
+                                                latestReleaseInfo = latestReleaseInfo,
+                                                isCheckingUpdates = isCheckingUpdates,
+                                                updateCheckError = updateCheckError,
+                                                hasTriggeredManualCheck = hasTriggeredManualCheck,
+                                                onTriggerManualCheck = {
+                                                    hasTriggeredManualCheck = true
+                                                    UpdateManager.checkForUpdates(
+                                                        force = true,
+                                                        currentVersion = BuildConfig.VERSION_NAME
+                                                    )
+                                                }
                                             )
                                         }
 
@@ -715,6 +751,8 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 
 @Composable
 private fun GeneralSettingsTabContent(
+    updateAvailable: Boolean,
+    latestReleaseInfo: AppReleaseInfo?,
     stockDisabled: Boolean,
     showCloseBottomScreenTip: Boolean,
     rememberLastTab: Boolean,
@@ -728,6 +766,20 @@ private fun GeneralSettingsTabContent(
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+
+    if (updateAvailable && latestReleaseInfo != null) {
+        GamepadActionCard(
+            title = stringResource(R.string.settings_update_available_banner, latestReleaseInfo.tagName),
+            description = stringResource(R.string.settings_update_available_banner_desc),
+            icon = Icons.Rounded.SystemUpdate,
+            onClick = {
+                launchUrlOnPrimaryDisplay(context, latestReleaseInfo.htmlUrl)
+            },
+            modifier = Modifier.firstDeckItem()
+        )
+    }
+
     GamepadToggleCard(
         title = "Replace Stock Assistant",
         description = if (stockDisabled) {
@@ -738,7 +790,7 @@ private fun GeneralSettingsTabContent(
         checked = stockDisabled,
         icon = Icons.Rounded.Layers,
         onCheckedChange = onToggleReplaceStock,
-        modifier = Modifier.firstDeckItem()
+        modifier = Modifier.firstDeckItem(isFirst = !updateAvailable || latestReleaseInfo == null)
     )
 
     GamepadToggleCard(
@@ -1725,6 +1777,87 @@ private fun CustomAccentSubPageContent(
         icon = Icons.Rounded.Save,
         actionText = "Save",
         onClick = { onSaveColor(workingColor) }
+    )
+}
+
+@Composable
+private fun UpdatesSettingsTabContent(
+    autoUpdateCheckEnabled: Boolean,
+    updateAvailable: Boolean,
+    latestReleaseInfo: AppReleaseInfo?,
+    isCheckingUpdates: Boolean,
+    updateCheckError: String?,
+    hasTriggeredManualCheck: Boolean,
+    onTriggerManualCheck: () -> Unit
+) {
+    val context = LocalContext.current
+
+    // 1. Automatic Update Check Toggle
+    GamepadToggleCard(
+        title = stringResource(R.string.settings_auto_update_check),
+        description = stringResource(R.string.help_settings_auto_update_desc),
+        checked = autoUpdateCheckEnabled,
+        icon = Icons.Rounded.Update,
+        onCheckedChange = { UpdateManager.setAutoUpdateCheckEnabled(it) },
+        modifier = Modifier.firstDeckItem()
+    )
+
+    // 2. Manual Check for Updates Button
+    val releaseUrl =
+        latestReleaseInfo?.htmlUrl?.takeIf { it.isNotBlank() }
+            ?: UpdateManager.BDSA_GITHUB_RELEASES_FALLBACK_URL
+
+    val checkActionText =
+        when {
+            isCheckingUpdates -> stringResource(R.string.gamepad_action_checking)
+            updateAvailable -> stringResource(R.string.settings_update_now_btn)
+            !hasTriggeredManualCheck -> null
+            updateCheckError != null -> stringResource(R.string.settings_check_failed)
+            else -> stringResource(R.string.settings_up_to_date)
+        }
+
+    GamepadActionCard(
+        title = stringResource(R.string.settings_check_for_updates),
+        description =
+            if (updateAvailable) {
+                stringResource(R.string.settings_update_available_tag, latestReleaseInfo?.tagName ?: "")
+            } else {
+                stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME)
+            },
+        icon = Icons.Rounded.Refresh,
+        actionLeadingContent =
+            if (checkActionText != null) {
+                {
+                    GamepadPill(
+                        text = checkActionText,
+                        isHighlighted = isCheckingUpdates,
+                        isAccent = updateAvailable && !isCheckingUpdates,
+                        isDestructive = !isCheckingUpdates && !updateAvailable && updateCheckError != null
+                    )
+                }
+            } else {
+                null
+            },
+        onClick = {
+            when {
+                isCheckingUpdates -> return@GamepadActionCard
+                updateAvailable -> launchUrlOnPrimaryDisplay(context, releaseUrl)
+                else -> onTriggerManualCheck()
+            }
+        }
+    )
+
+    // 3. Add to Obtainium Button
+    GamepadActionCard(
+        title = stringResource(R.string.settings_add_to_obtainium),
+        description = stringResource(R.string.help_settings_add_to_obtainium_desc),
+        icon = Icons.Rounded.Download,
+        onClick = {
+            if (!launchUrlOnPrimaryDisplay(context, "obtainium://add/${UpdateManager.BDSA_OBTAINIUM_REPO_URL}")) {
+                AppLog.w("MainActivity", "Obtainium deep link failed, falling back to browser")
+                launchUrlOnPrimaryDisplay(context, UpdateManager.BDSA_OBTAINIUM_FALLBACK_URL)
+            }
+        }
     )
 }
 
