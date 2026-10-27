@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/showcase.png" alt="Better Dual Screen Assistant Showcase" />
+</p>
+
 # Better Dual Screen Assistant
 
 **Better Dual Screen Assistant** (`com.stormpanda.betterdualscreenassistant`) is a user-installable drop-in replacement and feature-packed upgrade for the built-in system app `DualScreenAssistant` (`com.odin.dualscreen.assistant`) on the **AYN Thor** (`kalama` / Snapdragon 8 Gen 2, Android 13) dual-screen handheld.
