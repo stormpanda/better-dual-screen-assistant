@@ -143,7 +143,13 @@ class AssistantForegroundService : Service() {
             @Suppress("DEPRECATION")
             addAction(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
         }
-        registerReceiver(systemEventsReceiver, filter, Context.RECEIVER_EXPORTED)
+        registerReceiver(
+            systemEventsReceiver,
+            filter,
+            android.Manifest.permission.DUMP,
+            null,
+            Context.RECEIVER_EXPORTED
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

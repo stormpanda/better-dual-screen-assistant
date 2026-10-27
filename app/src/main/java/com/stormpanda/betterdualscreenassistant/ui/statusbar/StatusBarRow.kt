@@ -132,7 +132,7 @@ fun StatusBarRow(
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
             addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
         }
-        val stickyBattery = context.registerReceiver(receiver, filter)
+        val stickyBattery = context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         if (stickyBattery != null) {
             val level = stickyBattery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = stickyBattery.getIntExtra(BatteryManager.EXTRA_SCALE, 100)

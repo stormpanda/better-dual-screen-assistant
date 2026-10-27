@@ -50,11 +50,20 @@ android {
     }
 
     buildTypes {
+        val releaseSigningConfig = signingConfigs.findByName("release")
+        val hasValidReleaseKeystore =
+            releaseSigningConfig != null && releaseSigningConfig.storeFile?.exists() == true
+
+        debug {
+            if (hasValidReleaseKeystore) {
+                signingConfig = releaseSigningConfig
+            }
+        }
         release {
-            val releaseSigningConfig = signingConfigs.findByName("release")
-            signingConfig = if (releaseSigningConfig != null && releaseSigningConfig.storeFile?.exists() == true) {
+            signingConfig = if (hasValidReleaseKeystore) {
                 releaseSigningConfig
             } else {
+                logger.warn("WARNING: Release keystore not configured or missing; falling back to debug signing config.")
                 signingConfigs.getByName("debug")
             }
             isMinifyEnabled = false

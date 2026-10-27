@@ -518,7 +518,7 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
         }
-        context.registerReceiver(volumeReceiver, filter)
+        context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         registerDisplayBrightnessListener()
         refreshAll()
     }
@@ -993,11 +993,18 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun isProviderAuthorityInstalled(uri: Uri): Boolean {
         val authority = uri.authority ?: return false
+        val expectedPkg = when (authority) {
+            MEGINGIARD_RELEASE_THEME_URI.authority -> "com.stormpanda.megingiard"
+            MEGINGIARD_DEBUG_THEME_URI.authority -> "com.stormpanda.megingiard.debug"
+            else -> return false
+        }
         return try {
             @Suppress("DEPRECATION")
-            context.packageManager.resolveContentProvider(authority, 0) != null
+            val providerInfo = context.packageManager.resolveContentProvider(authority, 0)
+                ?: return false
+            providerInfo.packageName == expectedPkg
         } catch (_: Throwable) {
-            true
+            false
         }
     }
 

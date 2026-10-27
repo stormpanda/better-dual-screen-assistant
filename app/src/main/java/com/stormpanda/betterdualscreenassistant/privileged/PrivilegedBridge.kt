@@ -188,7 +188,7 @@ object PrivilegedBridge {
         scope.launch {
             try {
                 PServerClient.ensurePermissionsGranted(appContext)
-                val apkPath = appContext.applicationInfo.sourceDir
+                val apkPath = PServerClient.shellQuote(appContext.applicationInfo.sourceDir)
                 val cmd = "CLASSPATH=$apkPath /system/bin/app_process /system/bin " +
                     "com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain >/dev/null 2>&1 &"
                 PServerClient.exec(cmd, wait = false)
@@ -396,7 +396,10 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("setprop $key $value", wait = true)
+        PServerClient.exec(
+            "setprop ${PServerClient.shellQuote(key)} ${PServerClient.shellQuote(value)}",
+            wait = true
+        )
     }
 
     fun getSystemProperty(key: String, defaultValue: String = ""): String {
@@ -428,6 +431,7 @@ object PrivilegedBridge {
     }
 
     fun forceStopPackage(packageName: String) {
+        if (!PServerClient.isValidPackageName(packageName)) return
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
             val data = Parcel.obtain()
@@ -444,7 +448,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("am force-stop $packageName", wait = true)
+        PServerClient.exec("am force-stop ${PServerClient.shellQuote(packageName)}", wait = true)
     }
 
     fun lockScreen() {
@@ -494,6 +498,9 @@ object PrivilegedBridge {
     }
 
     fun readSysfsFile(path: String): String {
+        if (path.contains("..") || (!path.startsWith("/sys/") && path != "/proc/stat")) {
+            return ""
+        }
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
             val data = Parcel.obtain()
@@ -518,7 +525,7 @@ object PrivilegedBridge {
             }
         } catch (_: Throwable) {
         }
-        return PServerClient.exec("cat $path", wait = true).getOrDefault("").trim()
+        return PServerClient.exec("cat ${PServerClient.shellQuote(path)}", wait = true).getOrDefault("").trim()
     }
 
     fun readSysfsLong(path: String): Long {
@@ -551,7 +558,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("settings put system $key $value", wait = true)
+        PServerClient.exec("settings put system ${PServerClient.shellQuote(key)} $value", wait = true)
     }
 
     fun putSystemSettingFloat(context: Context, key: String, value: Float) {
@@ -579,7 +586,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("settings put system $key $value", wait = true)
+        PServerClient.exec("settings put system ${PServerClient.shellQuote(key)} $value", wait = true)
     }
 
     fun putSystemSettingString(context: Context, key: String, value: String) {
@@ -607,7 +614,10 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("settings put system $key \"$value\"", wait = true)
+        PServerClient.exec(
+            "settings put system ${PServerClient.shellQuote(key)} ${PServerClient.shellQuote(value)}",
+            wait = true
+        )
     }
 
     fun putGlobalSettingInt(context: Context, key: String, value: Int) {
@@ -635,7 +645,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("settings put global $key $value", wait = true)
+        PServerClient.exec("settings put global ${PServerClient.shellQuote(key)} $value", wait = true)
     }
 
     fun putSecureSettingInt(context: Context, key: String, value: Int) {
@@ -663,7 +673,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.exec("settings put secure $key $value", wait = true)
+        PServerClient.exec("settings put secure ${PServerClient.shellQuote(key)} $value", wait = true)
     }
 
     fun swapDisplayTasks(context: Context): Boolean {

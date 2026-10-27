@@ -23,6 +23,19 @@ object PServerClient {
     const val STOCK_PACKAGE_NAME = "com.odin.dualscreen.assistant"
     private const val PREFS_NAME = "better_dsa_prefs"
     private const val KEY_REPLACE_STOCK = "replace_stock_assistant"
+    private val PACKAGE_NAME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$")
+    private val stockAssistantLock = Any()
+
+    /**
+     * Safely quotes a single argument for POSIX `/system/bin/sh` by wrapping in single quotes
+     * and escaping any embedded single quotes as `'\''`.
+     */
+    fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
+
+    fun isValidPackageName(pkg: String): Boolean = PACKAGE_NAME_REGEX.matches(pkg)
+
+    private fun parseNumericPids(raw: String): List<String> =
+        raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() && it.all(Char::isDigit) }
 
     @Volatile
     private var cachedBinder: IBinder? = null
@@ -73,18 +86,18 @@ object PServerClient {
 
     fun ensurePermissionsGranted(context: Context) {
         val pkg = context.packageName
+        if (!isValidPackageName(pkg)) return
+        val qPkg = shellQuote(pkg)
         val commands = listOf(
-            "appops set $pkg SYSTEM_ALERT_WINDOW allow",
-            "appops set $pkg WRITE_SETTINGS allow",
-            "appops set $pkg GET_USAGE_STATS allow",
-            "appops set --uid $pkg SYSTEM_ALERT_WINDOW allow",
-            "appops set --uid $pkg WRITE_SETTINGS allow",
-            "pm grant $pkg android.permission.WRITE_SECURE_SETTINGS",
-            "pm grant $pkg android.permission.READ_LOGS",
-            "pm grant $pkg android.permission.DUMP",
-            "pm grant $pkg android.permission.PACKAGE_USAGE_STATS",
-            "pm grant $pkg android.permission.POST_NOTIFICATIONS",
-            "pm grant $pkg android.permission.BLUETOOTH_CONNECT",
+            "appops set $qPkg SYSTEM_ALERT_WINDOW allow",
+            "appops set $qPkg WRITE_SETTINGS allow",
+            "appops set $qPkg GET_USAGE_STATS allow",
+            "appops set --uid $qPkg SYSTEM_ALERT_WINDOW allow",
+            "appops set --uid $qPkg WRITE_SETTINGS allow",
+            "pm grant $qPkg android.permission.WRITE_SECURE_SETTINGS",
+            "pm grant $qPkg android.permission.PACKAGE_USAGE_STATS",
+            "pm grant $qPkg android.permission.POST_NOTIFICATIONS",
+            "pm grant $qPkg android.permission.BLUETOOTH_CONNECT",
             "dumpsys deviceidle whitelist +$pkg"
         )
         for (cmd in commands) {
@@ -104,7 +117,7 @@ object PServerClient {
             .apply()
     }
 
-    fun isStockAssistantEnabled(context: Context): Boolean {
+    fun isStockAssistantEnabled(context: Context): Boolean = synchronized(stockAssistantLock) {
         val pkgEnabled = try {
             val state = context.packageManager.getApplicationEnabledSetting(STOCK_PACKAGE_NAME)
             state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
@@ -114,8 +127,8 @@ object PServerClient {
             val out = exec("pm list packages -e $STOCK_PACKAGE_NAME", wait = true).getOrDefault("")
             out.contains(STOCK_PACKAGE_NAME)
         }
-        val pidOut = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
-        val firstPid = pidOut.split(Regex("\\s+")).firstOrNull().orEmpty()
+        val pidOut = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("")
+        val firstPid = parseNumericPids(pidOut).firstOrNull().orEmpty()
         if (firstPid.isNotEmpty()) {
             val statOut = exec("cat /proc/$firstPid/stat", wait = true).getOrDefault("")
             // Format: pid (comm) state ... -> if state is NOT 'T', the persistent process is still running!
@@ -146,7 +159,7 @@ object PServerClient {
      * 5. Immediately re-enable `TccServices` (and the package) in `PackageManager` so the
      *    stock app is never left disabled on disk.
      */
-    fun setStockAssistantEnabled(enabled: Boolean, context: Context? = null): Boolean {
+    fun setStockAssistantEnabled(enabled: Boolean, context: Context? = null): Boolean = synchronized(stockAssistantLock) {
         context?.let {
             setReplaceStockPreferred(it, !enabled)
             PrivilegedBridge.setReplaceStockPreferred(!enabled)
@@ -156,9 +169,9 @@ object PServerClient {
             exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
-            val pidOut = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
-            if (pidOut.isNotEmpty()) {
-                exec("kill -9 $pidOut", wait = true)
+            val pids = parseNumericPids(exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault(""))
+            if (pids.isNotEmpty()) {
+                exec("kill -9 ${pids.joinToString(" ")}", wait = true)
             }
             val r = exec("am startservice -n $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             r.isSuccess
@@ -166,25 +179,25 @@ object PServerClient {
             exec("am stopservice -n $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm disable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
-            val oldPid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
-            if (oldPid.isNotEmpty()) {
-                exec("kill -9 $oldPid", wait = true)
+            val oldPids = parseNumericPids(exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault(""))
+            if (oldPids.isNotEmpty()) {
+                exec("kill -9 ${oldPids.joinToString(" ")}", wait = true)
                 try {
                     Thread.sleep(350L)
                 } catch (_: InterruptedException) {
                 }
             }
-            val newPid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
-            if (newPid.isNotEmpty()) {
-                exec("kill -STOP $newPid", wait = true)
+            val newPids = parseNumericPids(exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault(""))
+            if (newPids.isNotEmpty()) {
+                exec("kill -STOP ${newPids.joinToString(" ")}", wait = true)
             }
             // Immediately re-enable in PackageManager so the stock app is never left disabled on disk
             exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
             val rEnable = exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
-            val verifyPid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
-            if (verifyPid.isNotEmpty()) {
-                exec("kill -STOP $verifyPid", wait = true)
+            val verifyPids = parseNumericPids(exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault(""))
+            if (verifyPids.isNotEmpty()) {
+                exec("kill -STOP ${verifyPids.joinToString(" ")}", wait = true)
             }
             rEnable.isSuccess
         }
@@ -194,7 +207,7 @@ object PServerClient {
      * Ensures that if a previous version left the stock package or service disabled in
      * `PackageManager` on disk while the process is already frozen, it is re-enabled on disk.
      */
-    fun ensureStockPackageEnabledOnDisk(context: Context) {
+    fun ensureStockPackageEnabledOnDisk(context: Context) = synchronized(stockAssistantLock) {
         try {
             val appState = context.packageManager.getApplicationEnabledSetting(STOCK_PACKAGE_NAME)
             if (appState == PackageManager.COMPONENT_ENABLED_STATE_DISABLED ||
@@ -204,9 +217,9 @@ object PServerClient {
                 exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
                 exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
                 exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
-                val pid = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("").trim()
-                if (pid.isNotEmpty()) {
-                    exec("kill -STOP $pid", wait = true)
+                val pids = parseNumericPids(exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault(""))
+                if (pids.isNotEmpty()) {
+                    exec("kill -STOP ${pids.joinToString(" ")}", wait = true)
                 }
             }
         } catch (_: Throwable) {

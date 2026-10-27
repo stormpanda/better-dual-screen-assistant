@@ -409,6 +409,28 @@ object PrivilegedHelperMain {
             }
         }
 
+        @Volatile
+        private var cachedAppUid: Int = -1
+
+        private val allowedPackageRegex =
+            Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$")
+
+        private val allowedWritableSystemProps = setOf(
+            "sys.temp.disabled.touch"
+        )
+
+        private fun isAuthorizedCaller(callingUid: Int): Boolean {
+            if (callingUid == 0 || callingUid == Process.SYSTEM_UID) return true
+            val cached = cachedAppUid
+            if (cached > 0 && callingUid == cached) return true
+            val resolvedUid = getApplicationInfoInternal(APP_PACKAGE_NAME)?.uid ?: -1
+            if (resolvedUid > 0) {
+                cachedAppUid = resolvedUid
+                return callingUid == resolvedUid
+            }
+            return false
+        }
+
         private val shutdownRunnable = Runnable {
             System.exit(0)
         }
@@ -416,6 +438,12 @@ object PrivilegedHelperMain {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code == INTERFACE_TRANSACTION) {
                 reply?.writeString(DESCRIPTOR)
+                return true
+            }
+            val callingUid = getCallingUid()
+            if (!isAuthorizedCaller(callingUid)) {
+                Log.w(TAG, "Rejected unauthorized HelperBinder transaction $code from UID $callingUid")
+                reply?.writeException(SecurityException("Unauthorized caller UID $callingUid"))
                 return true
             }
             return try {
@@ -450,7 +478,11 @@ object PrivilegedHelperMain {
                     TRANSACTION_SET_SYSTEM_PROP -> {
                         val key = data.readString() ?: ""
                         val value = data.readString() ?: ""
-                        sysPropsSet.invoke(null, key, value)
+                        if (key in allowedWritableSystemProps) {
+                            sysPropsSet.invoke(null, key, value)
+                        } else {
+                            Log.w(TAG, "Blocked write to non-allowlisted system property: $key")
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -464,7 +496,11 @@ object PrivilegedHelperMain {
                     }
                     TRANSACTION_FORCE_STOP_PACKAGE -> {
                         val pkg = data.readString() ?: ""
-                        forceStopPackageInternal(pkg)
+                        if (allowedPackageRegex.matches(pkg)) {
+                            forceStopPackageInternal(pkg)
+                        } else {
+                            Log.w(TAG, "Blocked force-stop of invalid package name: $pkg")
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -481,9 +517,16 @@ object PrivilegedHelperMain {
                     }
                     TRANSACTION_READ_FILE -> {
                         val path = data.readString() ?: ""
-                        val content = try {
-                            File(path).readText().trim()
-                        } catch (_: Throwable) {
+                        val content = if (!path.contains("..") &&
+                            (path.startsWith("/sys/") || path == "/proc/stat")
+                        ) {
+                            try {
+                                File(path).readText().trim()
+                            } catch (_: Throwable) {
+                                ""
+                            }
+                        } else {
+                            Log.w(TAG, "Blocked read of non-sysfs file path: $path")
                             ""
                         }
                         reply?.writeNoException()
@@ -506,7 +549,8 @@ object PrivilegedHelperMain {
                     }
                     TRANSACTION_REGISTER_CLIENT -> {
                         val newClient = data.readStrongBinder()
-                        val pkg = data.readString() ?: APP_PACKAGE_NAME
+                        val rawPkg = data.readString() ?: APP_PACKAGE_NAME
+                        val pkg = if (rawPkg == APP_PACKAGE_NAME) rawPkg else APP_PACKAGE_NAME
                         val replaceStock = data.readInt() != 0
                         val topBright = data.readFloat()
                         val bottomBright = data.readFloat()
@@ -735,6 +779,7 @@ object PrivilegedHelperMain {
         }
 
         private fun isPackageInstalledInternal(pkg: String): Boolean {
+            if (!allowedPackageRegex.matches(pkg)) return false
             if (!File("/data/data/$pkg").exists()) {
                 return false
             }
@@ -743,11 +788,13 @@ object PrivilegedHelperMain {
         }
 
         private fun isPackageForceStoppedInternal(pkg: String): Boolean {
+            if (!allowedPackageRegex.matches(pkg)) return false
             val appInfo = getApplicationInfoInternal(pkg) ?: return false
             return (appInfo.flags and ApplicationInfo.FLAG_STOPPED) != 0
         }
 
         private fun getApplicationInfoInternal(pkg: String): ApplicationInfo? {
+            if (!allowedPackageRegex.matches(pkg)) return null
             val pm = packageManagerProxy ?: return null
             return try {
                 val method = pm.javaClass.methods.firstOrNull { m ->
@@ -765,6 +812,7 @@ object PrivilegedHelperMain {
         }
 
         private fun isAppProcessRunningInternal(pkg: String): Boolean {
+            if (!allowedPackageRegex.matches(pkg)) return false
             val am = activityManagerProxy
             if (am != null) {
                 try {
@@ -777,7 +825,7 @@ object PrivilegedHelperMain {
                 } catch (_: Throwable) {
                 }
             }
-            return execRootCommand("pidof $pkg").trim().isNotEmpty()
+            return execRootCommand("pidof '${pkg.replace("'", "'\\''")}'").trim().isNotEmpty()
         }
 
         private fun execRootCommand(command: String): String {
@@ -847,16 +895,19 @@ object PrivilegedHelperMain {
                 execRootCommand("pm enable $STOCK_PACKAGE_NAME")
                 execRootCommand("pm enable $STOCK_PACKAGE_NAME/.services.TccServices")
                 execRootCommand("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver")
-                val pidOut = execRootCommand("pidof $STOCK_PACKAGE_NAME").trim()
-                if (pidOut.isNotEmpty()) {
-                    val firstPid = pidOut.split(Regex("\\s+")).firstOrNull().orEmpty()
+                val pids = execRootCommand("pidof $STOCK_PACKAGE_NAME")
+                    .trim()
+                    .split(Regex("\\s+"))
+                    .filter { it.isNotEmpty() && it.all(Char::isDigit) }
+                if (pids.isNotEmpty()) {
+                    val firstPid = pids.first()
                     val statOut = try {
-                        if (firstPid.isNotEmpty()) File("/proc/$firstPid/stat").readText() else ""
+                        File("/proc/$firstPid/stat").readText()
                     } catch (_: Throwable) {
                         ""
                     }
                     if (replaceStockPreferred || statOut.contains(") T ")) {
-                        execRootCommand("kill -9 $pidOut")
+                        execRootCommand("kill -9 ${pids.joinToString(" ")}")
                     }
                 }
                 execRootCommand("am startservice -n $STOCK_PACKAGE_NAME/.services.TccServices")
@@ -878,7 +929,10 @@ object PrivilegedHelperMain {
                 savedStockNightMode = savedNightMode
             }
             if (savedThemeJson.isNotBlank() && !savedThemeJson.contains("\"999\"")) {
-                savedStockThemeJson = savedThemeJson
+                try {
+                    savedStockThemeJson = org.json.JSONObject(savedThemeJson).toString()
+                } catch (_: Throwable) {
+                }
             }
             val nightChanged = if (targetNightMode == 1 || targetNightMode == 2) {
                 setNightModeInternal(targetNightMode)
