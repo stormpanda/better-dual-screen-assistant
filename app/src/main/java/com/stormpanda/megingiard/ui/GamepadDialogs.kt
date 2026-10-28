@@ -123,6 +123,8 @@ fun GamepadConfirmModal(
                     } else {
                         false
                     }
+                }.focusProperties {
+                    canFocus = false
                 }.clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -146,6 +148,7 @@ fun GamepadConfirmModal(
                         shape = GCM_DIALOG_SHAPE,
                     ).focusGroup()
                     .focusProperties {
+                        canFocus = false
                         exit = { FocusRequester.Cancel }
                     }.clickable(
                         interactionSource = remember { MutableInteractionSource() },

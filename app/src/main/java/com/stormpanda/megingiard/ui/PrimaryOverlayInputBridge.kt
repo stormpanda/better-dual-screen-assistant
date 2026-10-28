@@ -10,12 +10,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -78,7 +80,20 @@ object PrimaryOverlayInputBridge {
     private var lastL2Pressed = false
     private var lastR2Pressed = false
 
+    @Volatile
+    var isGamepadInputActive: Boolean = true
+        private set
+
+    fun notifyKeyInput() {
+        isGamepadInputActive = true
+    }
+
+    fun notifyTouchInput() {
+        isGamepadInputActive = false
+    }
+
     fun sendBumper(direction: BumperDirection) {
+        notifyKeyInput()
         AppLog.d(TAG, "sendBumper: direction=$direction")
         _bumperEvents.tryEmit(direction)
     }
@@ -88,6 +103,7 @@ object PrimaryOverlayInputBridge {
      * (e.g. after touch/mouse pointer interaction cleared Compose focus).
      */
     fun sendFocusRecovery(keyCode: Int) {
+        notifyKeyInput()
         AppLog.d(TAG, "sendFocusRecovery: keyCode=$keyCode")
         _focusRecoveryEvents.tryEmit(keyCode)
     }
@@ -117,6 +133,7 @@ object PrimaryOverlayInputBridge {
 
         if (isL2Pressed != lastL2Pressed) {
             lastL2Pressed = isL2Pressed
+            notifyKeyInput()
             onDpadKey(if (isL2Pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_L2)
         }
 
@@ -126,6 +143,7 @@ object PrimaryOverlayInputBridge {
 
         if (isR2Pressed != lastR2Pressed) {
             lastR2Pressed = isR2Pressed
+            notifyKeyInput()
             onDpadKey(if (isR2Pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_R2)
         }
 
@@ -161,6 +179,7 @@ object PrimaryOverlayInputBridge {
 
         if (targetKeyCode != 0) {
             lastJoystickKeyCode = targetKeyCode
+            notifyKeyInput()
             onDpadKey(KeyEvent.ACTION_DOWN, targetKeyCode)
             repeatJob =
                 scope.launchDirectionalRepeat(
@@ -170,6 +189,7 @@ object PrimaryOverlayInputBridge {
                     minDelayMs = REPEAT_MIN_DELAY_MS,
                     accelFactor = REPEAT_ACCEL_FACTOR,
                 ) {
+                    notifyKeyInput()
                     onDpadKey(KeyEvent.ACTION_DOWN, targetKeyCode)
                 }
         }
@@ -180,13 +200,16 @@ object PrimaryOverlayInputBridge {
     /**
      * Resets the joystick state tracker.
      */
-    fun resetJoystickState() {
-        AppLog.d(TAG, "resetJoystickState")
+    fun resetJoystickState(preserveInputMode: Boolean = false) {
+        AppLog.d(TAG, "resetJoystickState(preserveInputMode=$preserveInputMode)")
         repeatJob?.cancel()
         repeatJob = null
         lastJoystickKeyCode = 0
         lastL2Pressed = false
         lastR2Pressed = false
+        if (!preserveInputMode) {
+            isGamepadInputActive = true
+        }
     }
 }
 
@@ -198,6 +221,7 @@ object PrimaryOverlayInputBridge {
  */
 fun Modifier.primaryOverlayFocusable(
     onClick: (() -> Unit)? = null,
+    onTouchClick: (() -> Unit)? = null,
     shape: Shape = DEFAULT_FOCUS_SHAPE,
     borderWidth: Dp = FOCUS_BORDER_WIDTH,
     interactionSource: MutableInteractionSource? = null,
@@ -215,17 +239,32 @@ fun Modifier.primaryOverlayFocusable(
                 Modifier
             }
 
+        var lastActionDownKeyCode by remember { mutableIntStateOf(0) }
+
         val keyHandlerModifier =
             if (onClick != null) {
-                Modifier.onKeyEvent { keyEvent ->
-                    if (keyEvent.type == KeyEventType.KeyUp &&
-                        (
-                            keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
-                                keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                                keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER
-                        )
-                    ) {
-                        onClick()
+                Modifier.onPreviewKeyEvent { keyEvent ->
+                    val keyCode = keyEvent.nativeKeyEvent.keyCode
+                    val isActivationKey =
+                        keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                            keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER ||
+                            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                    if (!isActivationKey) {
+                        lastActionDownKeyCode = 0
+                        false
+                    } else if (keyEvent.type == KeyEventType.KeyDown) {
+                        if (keyEvent.nativeKeyEvent.repeatCount == 0) {
+                            lastActionDownKeyCode = keyCode
+                        }
+                        true
+                    } else if (keyEvent.type == KeyEventType.KeyUp) {
+                        val wasDown = lastActionDownKeyCode == keyCode
+                        lastActionDownKeyCode = 0
+                        if (wasDown && enabled) {
+                            PrimaryOverlayInputBridge.notifyKeyInput()
+                            onClick()
+                        }
                         true
                     } else {
                         false
@@ -235,13 +274,14 @@ fun Modifier.primaryOverlayFocusable(
                 Modifier
             }
 
+        val effectiveTouchClick = onTouchClick ?: onClick
         val focusableOrClickModifier =
-            if (onClick != null) {
+            if (effectiveTouchClick != null) {
                 Modifier.clickable(
                     enabled = enabled,
                     interactionSource = effectiveInteractionSource,
                     indication = null,
-                    onClick = onClick,
+                    onClick = effectiveTouchClick,
                 )
             } else {
                 Modifier.focusable(
@@ -251,7 +291,7 @@ fun Modifier.primaryOverlayFocusable(
             }
 
         this
-            .then(focusableOrClickModifier)
             .then(focusBorderModifier)
             .then(keyHandlerModifier)
+            .then(focusableOrClickModifier)
     }

@@ -85,6 +85,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -148,7 +149,11 @@ import com.stormpanda.megingiard.ui.GamepadToggleCard
 import com.stormpanda.megingiard.ui.GamepadTwoPaneScaffold
 import com.stormpanda.megingiard.ui.GamepadTwoStepConfirmCard
 import com.stormpanda.megingiard.ui.LocalAppColors
+import com.stormpanda.megingiard.ui.LocalBreadcrumbConsumer
 import com.stormpanda.megingiard.ui.LocalDeckBackInterceptor
+import com.stormpanda.megingiard.ui.LocalDeckCardRegistry
+import com.stormpanda.megingiard.ui.LocalFirstContentRequester
+import com.stormpanda.megingiard.ui.LocalLastFocusedDeckTracker
 import com.stormpanda.megingiard.ui.PrimaryOverlayInputBridge
 import com.stormpanda.megingiard.ui.colorSchemeFor
 import com.stormpanda.megingiard.ui.cycle
@@ -247,7 +252,34 @@ class MainActivity : ComponentActivity() {
         ensureOverlayStateForDisplay()
     }
 
+    override fun onResume() {
+        super.onResume()
+        SystemSettingsRepository.getInstance(applicationContext)
+            .setSettingsUiActive(System.identityHashCode(this), active = true)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                SystemSettingsRepository.getInstance(applicationContext)
+                    .setSettingsUiActive(System.identityHashCode(this), active = true)
+            }
+        } else {
+            SystemSettingsRepository.getInstance(applicationContext).setSettingsUiActive(
+                activityToken = System.identityHashCode(this),
+                active = false,
+                flushIfInactive = !isChangingConfigurations
+            )
+        }
+    }
+
     override fun onStop() {
+        SystemSettingsRepository.getInstance(applicationContext).setSettingsUiActive(
+            activityToken = System.identityHashCode(this),
+            active = false,
+            flushIfInactive = !isChangingConfigurations
+        )
         super.onStop()
         if (!isChangingConfigurations && !isFinishing && isDeviceInteractive()) {
             finishAndRemoveTask()
@@ -280,6 +312,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var pendingUnhandledButtonBDown = false
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            PrimaryOverlayInputBridge.notifyTouchInput()
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         val handled = PrimaryOverlayInputBridge.processGenericMotionEvent(ev) { action, keyCode ->
             dispatchKeyEvent(KeyEvent(action, keyCode))
@@ -288,6 +329,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            PrimaryOverlayInputBridge.notifyKeyInput()
+        }
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_BUTTON_L1 -> {
@@ -302,23 +346,44 @@ class MainActivity : ComponentActivity() {
         }
 
         val handled = super.dispatchKeyEvent(event)
-        if (!handled) {
-            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B) {
-                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
-                    onBackPressedDispatcher.onBackPressed()
+        if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+            if (handled) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    pendingUnhandledButtonBDown = false
                 }
                 return true
             }
-            if (event.action == KeyEvent.ACTION_DOWN && isNavigationOrActionKey(event.keyCode)) {
-                PrimaryOverlayInputBridge.sendFocusRecovery(event.keyCode)
-                return true
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        pendingUnhandledButtonBDown = true
+                    }
+                }
+                KeyEvent.ACTION_UP -> {
+                    val shouldTriggerBack = pendingUnhandledButtonBDown && !event.isCanceled
+                    pendingUnhandledButtonBDown = false
+                    if (shouldTriggerBack) {
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
             }
+            return true
+        }
+        if (!handled && event.action == KeyEvent.ACTION_DOWN && isNavigationOrActionKey(event.keyCode)) {
+            PrimaryOverlayInputBridge.sendFocusRecovery(event.keyCode)
+            return true
         }
         return handled
     }
 
     override fun onDestroy() {
-        PrimaryOverlayInputBridge.resetJoystickState()
+        SystemSettingsRepository.getInstance(applicationContext).setSettingsUiActive(
+            activityToken = System.identityHashCode(this),
+            active = false,
+            flushIfInactive = !isChangingConfigurations
+        )
+        pendingUnhandledButtonBDown = false
+        PrimaryOverlayInputBridge.resetJoystickState(preserveInputMode = isChangingConfigurations)
         super.onDestroy()
     }
 
@@ -446,6 +511,24 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 
     var selectedCategory by rememberSaveable { mutableStateOf(LauncherCategory.GENERAL) }
     var subPageStack by rememberSaveable { mutableStateOf<List<LauncherSubPage>>(emptyList()) }
+    var savedDeckFocusKeys by rememberSaveable(
+        stateSaver = listSaver<Map<Int, String>, Any>(
+            save = { map -> map.entries.flatMap { (depth, key) -> listOf(depth, key) } },
+            restore = { flat ->
+                buildMap {
+                    var i = 0
+                    while (i + 1 < flat.size) {
+                        val depth = flat[i] as? Int
+                        val key = flat[i + 1] as? String
+                        if (depth != null && key != null) {
+                            put(depth, key)
+                        }
+                        i += 2
+                    }
+                }
+            }
+        )
+    ) { mutableStateOf(emptyMap()) }
     val currentSubPage = subPageStack.lastOrNull()
     var isVisualReorderGridActive by remember { mutableStateOf(false) }
 
@@ -566,10 +649,10 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                 modifier = Modifier
                     .height(32.dp)
                     .clip(RoundedCornerShape(8.dp))
+                    .focusProperties { canFocus = false }
                     .clickable {
                         launchUrlOnPrimaryDisplay(context, "https://ko-fi.com/stormpanda")
                     }
-                    .focusProperties { canFocus = false }
             )
         }
 
@@ -587,6 +670,18 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                     subPageStack = subPageStack.dropLast(1)
                 },
                 navigationKey = subPageStack,
+                categoryKey = selectedCategory,
+                savedFocusKeys = savedDeckFocusKeys,
+                onRecordFocusedKey = { depth, key ->
+                    if (key is String && savedDeckFocusKeys[depth] != key) {
+                        savedDeckFocusKeys = savedDeckFocusKeys + (depth to key)
+                    }
+                },
+                onRemoveFocusedKey = { depth ->
+                    if (depth in savedDeckFocusKeys) {
+                        savedDeckFocusKeys = savedDeckFocusKeys - depth
+                    }
+                },
                 sidebarContent = {
                     categoryList.forEach { category ->
                         GamepadCategoryTile(
@@ -611,9 +706,12 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                         },
                         label = "LauncherSubPageAnimation"
                     ) { stack ->
-                        val subPage = stack.lastOrNull()
-                        when (subPage) {
-                            null -> {
+                        val isTargetPage = stack == subPageStack
+                        val exitingFirstRequester = remember { FocusRequester() }
+                        val pageContent: @Composable () -> Unit = {
+                            val subPage = stack.lastOrNull()
+                            when (subPage) {
+                                null -> {
                                 GamepadDeck(title = selectedCategory.title) {
                                     when (selectedCategory) {
                                         LauncherCategory.GENERAL -> {
@@ -771,6 +869,30 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                             repo.setQuickTileEnabled(tile, enabled)
                                         }
                                     )
+                                }
+                            }
+                        }
+                        }
+
+                        if (isTargetPage) {
+                            pageContent()
+                        } else {
+                            CompositionLocalProvider(
+                                LocalFirstContentRequester provides exitingFirstRequester,
+                                LocalDeckCardRegistry provides null,
+                                LocalLastFocusedDeckTracker provides null,
+                                LocalBreadcrumbConsumer provides null
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .focusProperties {
+                                            canFocus = false
+                                            enter = { FocusRequester.Cancel }
+                                        }
+                                        .focusGroup()
+                                ) {
+                                    pageContent()
                                 }
                             }
                         }
@@ -947,6 +1069,7 @@ private fun QuickTogglesVisualReorderCard(
     var isGridActive by remember { mutableStateOf(false) }
     var cursorIndex by remember { mutableIntStateOf(0) }
     var isGrabbed by remember { mutableStateOf(false) }
+    var hasCardFocus by remember { mutableStateOf(false) }
 
     val pages = remember(activeTiles) { activeTiles.chunked(8) }
     val pageCount = pages.size.coerceAtLeast(1)
@@ -1062,10 +1185,17 @@ private fun QuickTogglesVisualReorderCard(
                 isGrabbed = !isGrabbed
             }
         },
+        onTouchClick = {
+            if (isGridActive) {
+                isGridActive = false
+                isGrabbed = false
+            }
+        },
         modifier = modifier,
         itemKey = "quick_toggles_visual_reorder",
         isAdjusting = isGridActive,
         onFocusChanged = { focused ->
+            hasCardFocus = focused
             if (!focused) {
                 isGridActive = false
                 isGrabbed = false
@@ -1160,7 +1290,7 @@ private fun QuickTogglesVisualReorderCard(
                 false
             }
         }
-    ) { isCardFocused ->
+    ) { isEffectivelyFocused ->
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -1169,7 +1299,7 @@ private fun QuickTogglesVisualReorderCard(
                 title = "Quick Settings Layout",
                 description = subtitle,
                 icon = Icons.Rounded.GridView,
-                isFocused = isCardFocused || isGridActive,
+                isFocused = isEffectivelyFocused || isGridActive,
                 alwaysShowFullDescription = true,
                 trailingContent = {
                     GamepadPill(
@@ -1207,6 +1337,7 @@ private fun QuickTogglesVisualReorderCard(
                         .fillMaxWidth()
                         .weight(0.91f)
                         .padding(horizontal = 10.dp)
+                        .focusProperties { canFocus = false }
                 ) { pageIndex ->
                     val pageItems = pages.getOrNull(pageIndex).orEmpty()
                     val pageOffset = pageIndex * 8
@@ -1249,10 +1380,16 @@ private fun QuickTogglesVisualReorderCard(
                                                         isGrabbed = true
                                                     } else if (cursorIndex == globalIdx) {
                                                         isGrabbed = false
+                                                        if (!hasCardFocus || !PrimaryOverlayInputBridge.isGamepadInputActive) {
+                                                            isGridActive = false
+                                                        }
                                                     } else {
                                                         onMoveActiveTile(cursorIndex, globalIdx)
                                                         cursorIndex = globalIdx
                                                         isGrabbed = false
+                                                        if (!hasCardFocus || !PrimaryOverlayInputBridge.isGamepadInputActive) {
+                                                            isGridActive = false
+                                                        }
                                                     }
                                                 }
                                             )
@@ -1283,6 +1420,7 @@ private fun QuickTogglesVisualReorderCard(
                                         .size(6.dp)
                                         .clip(CircleShape)
                                         .background(if (isSelected) tccColors.accent else tccColors.secondary)
+                                        .focusProperties { canFocus = false }
                                         .clickable {
                                             coroutineScope.launch {
                                                 pagerState.animateScrollToPage(index)
@@ -1359,6 +1497,7 @@ private fun ReorderableTccTile(
                     Modifier
                 }
             )
+            .focusProperties { canFocus = false }
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

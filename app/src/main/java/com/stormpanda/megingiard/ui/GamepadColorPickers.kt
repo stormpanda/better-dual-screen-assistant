@@ -1,5 +1,6 @@
 package com.stormpanda.megingiard.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,18 +20,24 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -40,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stormpanda.megingiard.AppLog
 import com.stormpanda.megingiard.shared.ui.R
+import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -80,7 +88,10 @@ fun GamepadColorSwatch(
 
     val clickModifier =
         if (onClick != null) {
-            Modifier.clickable(enabled = enabled, onClick = onClick)
+            Modifier
+                .focusProperties {
+                    canFocus = false
+                }.clickable(enabled = enabled, onClick = onClick)
         } else {
             Modifier
         }
@@ -131,7 +142,42 @@ fun GamepadColorPaletteCard(
     itemKey: Any? = title,
 ) {
     val colors = LocalAppColors.current
-    var isAdjusting by remember { mutableStateOf(false) }
+    val deckBackInterceptor = LocalDeckBackInterceptor.current
+    var isAdjusting by rememberSaveable { mutableStateOf(false) }
+    var wasEverFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isAdjusting, wasEverFocused) {
+        if (isAdjusting && !wasEverFocused) {
+            delay(250L)
+            if (!wasEverFocused) {
+                isAdjusting = false
+            }
+        }
+    }
+
+    val backInterceptor: () -> Boolean = remember {
+        {
+            if (isAdjusting) {
+                isAdjusting = false
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    DisposableEffect(deckBackInterceptor, isAdjusting) {
+        if (isAdjusting) {
+            deckBackInterceptor?.invoke(backInterceptor, true)
+        }
+        onDispose {
+            deckBackInterceptor?.invoke(backInterceptor, false)
+        }
+    }
+
+    BackHandler(enabled = isAdjusting) {
+        isAdjusting = false
+    }
 
     val onPreviousColor = {
         if (paletteColors.isNotEmpty()) {
@@ -167,6 +213,7 @@ fun GamepadColorPaletteCard(
                 isAdjusting = nextState
             }
         },
+        onTouchClick = {},
         enabled = enabled,
         modifier = modifier,
         itemKey = itemKey,
@@ -181,7 +228,9 @@ fun GamepadColorPaletteCard(
             )
         },
         onFocusChanged = { focused ->
-            if (!focused) {
+            if (focused) {
+                wasEverFocused = true
+            } else if (wasEverFocused) {
                 isAdjusting = false
             }
         },

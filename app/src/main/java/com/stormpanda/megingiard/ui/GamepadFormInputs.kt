@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,9 +46,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.megingiard.shared.ui.R
+import kotlinx.coroutines.delay
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
 private val GC_STEPPER_BTN_SIZE = 32.dp
@@ -86,7 +90,9 @@ fun CapsuleArrowButton(
             modifier
                 .size(size)
                 .clip(CircleShape)
-                .clickable(enabled = enabled, onClick = onClick),
+                .focusProperties {
+                    canFocus = false
+                }.clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -357,7 +363,11 @@ fun GamepadTextFieldCard(
                             GamepadPill(
                                 text = stringResource(R.string.gamepad_action_save),
                                 isAccent = true,
-                                modifier = Modifier.clickable(onClick = commitAndExitEditing),
+                                modifier =
+                                    Modifier
+                                        .focusProperties {
+                                            canFocus = false
+                                        }.clickable(onClick = commitAndExitEditing),
                             )
                         }
                     }
@@ -409,10 +419,49 @@ fun GamepadSliderCard(
     trackBrush: Brush? = null,
     thumbColor: Color? = null,
     enabled: Boolean = true,
+    itemKey: Any? = title,
 ) {
     val colors = LocalAppColors.current
-    var isAdjusting by remember { mutableStateOf(false) }
+    val deckBackInterceptor = LocalDeckBackInterceptor.current
+    var isAdjusting by rememberSaveable { mutableStateOf(false) }
+    var wasEverFocused by remember { mutableStateOf(false) }
     var isL2Held by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isAdjusting, wasEverFocused) {
+        if (isAdjusting && !wasEverFocused) {
+            delay(250L)
+            if (!wasEverFocused) {
+                isAdjusting = false
+                isL2Held = false
+            }
+        }
+    }
+
+    val backInterceptor: () -> Boolean = remember {
+        {
+            if (isAdjusting) {
+                isAdjusting = false
+                isL2Held = false
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    DisposableEffect(deckBackInterceptor, isAdjusting) {
+        if (isAdjusting) {
+            deckBackInterceptor?.invoke(backInterceptor, true)
+        }
+        onDispose {
+            deckBackInterceptor?.invoke(backInterceptor, false)
+        }
+    }
+
+    BackHandler(enabled = isAdjusting) {
+        isAdjusting = false
+        isL2Held = false
+    }
 
     val hasFineStep = fineStep != null && fineStep < step
     val toastMessage = stringResource(R.string.gamepad_slider_fine_adjustment_toast)
@@ -438,7 +487,9 @@ fun GamepadSliderCard(
                 isL2Held = false
             }
         },
+        onTouchClick = {},
         modifier = modifier,
+        itemKey = itemKey,
         enabled = enabled,
         isAdjusting = isAdjusting,
         onCustomKeyEvent = { keyEvent ->
@@ -474,7 +525,9 @@ fun GamepadSliderCard(
             }
         },
         onFocusChanged = { focused ->
-            if (!focused) {
+            if (focused) {
+                wasEverFocused = true
+            } else if (wasEverFocused) {
                 isAdjusting = false
                 isL2Held = false
             }
@@ -531,7 +584,12 @@ fun GamepadSliderCard(
                                 activeTrackColor = Color.Transparent,
                                 inactiveTrackColor = Color.Transparent,
                             ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .focusProperties {
+                                    canFocus = false
+                                },
                     )
                 }
             } else {
@@ -550,7 +608,10 @@ fun GamepadSliderCard(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(GC_SLIDER_HEIGHT),
+                            .height(GC_SLIDER_HEIGHT)
+                            .focusProperties {
+                                canFocus = false
+                            },
                 )
             }
         }

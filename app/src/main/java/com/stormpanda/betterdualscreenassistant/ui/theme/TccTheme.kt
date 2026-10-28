@@ -5,7 +5,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
@@ -364,7 +364,7 @@ private val RoyalAsgardPalette = buildMegingiardPalette(
     error = Color(0xFFD32F2F)
 )
 
-val LocalTccColors = staticCompositionLocalOf { PureBlackTccPalette }
+val LocalTccColors = compositionLocalOf { PureBlackTccPalette }
 
 fun resolveTccPalette(
     option: AppThemeOption,

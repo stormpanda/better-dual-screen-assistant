@@ -1,6 +1,7 @@
 package com.stormpanda.megingiard.ui
 
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -40,6 +41,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,9 +60,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.megingiard.AppLog
 import com.stormpanda.megingiard.shared.ui.R
+import kotlinx.coroutines.delay
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
 private const val TAG = "GamepadCards"
@@ -96,6 +102,7 @@ private val GC_CORNER_8_SHAPE = RoundedCornerShape(GC_CORNER_8)
 fun GamepadFocusCard(
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onTouchClick: (() -> Unit)? = null,
     cardFocusRequester: FocusRequester = remember { FocusRequester() },
     itemKey: Any? = null,
     enabled: Boolean = true,
@@ -168,15 +175,19 @@ fun GamepadFocusCard(
 
     var lastCustomConsumedDownKeyCode by remember { mutableIntStateOf(0) }
     var lastActionDownKeyCode by remember { mutableIntStateOf(0) }
+    val currentOnCustomKeyEvent by rememberUpdatedState(onCustomKeyEvent)
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentEnabled by rememberUpdatedState(enabled)
 
     val keyModifier =
-        Modifier.onKeyEvent { keyEvent ->
+        Modifier.onPreviewKeyEvent { keyEvent ->
             val keyCode = keyEvent.nativeKeyEvent.keyCode
+            val customHandler = currentOnCustomKeyEvent
             if (keyEvent.type == KeyEventType.KeyDown) {
-                if (onCustomKeyEvent != null && onCustomKeyEvent(keyEvent)) {
+                if (customHandler != null && customHandler(keyEvent)) {
                     lastCustomConsumedDownKeyCode = keyCode
                     lastActionDownKeyCode = 0
-                    return@onKeyEvent true
+                    return@onPreviewKeyEvent true
                 }
                 lastCustomConsumedDownKeyCode = 0
                 when (keyCode) {
@@ -185,25 +196,27 @@ fun GamepadFocusCard(
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_NUMPAD_ENTER,
                     -> {
-                        lastActionDownKeyCode = keyCode
-                        return@onKeyEvent true
+                        if (keyEvent.nativeKeyEvent.repeatCount == 0) {
+                            lastActionDownKeyCode = keyCode
+                        }
+                        return@onPreviewKeyEvent true
                     }
 
                     else -> {
                         lastActionDownKeyCode = 0
-                        return@onKeyEvent false
+                        return@onPreviewKeyEvent false
                     }
                 }
             } else if (keyEvent.type == KeyEventType.KeyUp) {
                 if (lastCustomConsumedDownKeyCode == keyCode && keyCode != 0) {
                     lastCustomConsumedDownKeyCode = 0
                     lastActionDownKeyCode = 0
-                    onCustomKeyEvent?.invoke(keyEvent)
-                    return@onKeyEvent true
+                    customHandler?.invoke(keyEvent)
+                    return@onPreviewKeyEvent true
                 }
-                if (onCustomKeyEvent != null && onCustomKeyEvent(keyEvent)) {
+                if (customHandler != null && customHandler(keyEvent)) {
                     lastActionDownKeyCode = 0
-                    return@onKeyEvent true
+                    return@onPreviewKeyEvent true
                 }
 
                 when (keyCode) {
@@ -214,8 +227,10 @@ fun GamepadFocusCard(
                     -> {
                         val wasDownOnCard = lastActionDownKeyCode == keyCode
                         lastActionDownKeyCode = 0
-                        if (wasDownOnCard && enabled && onClick != null) {
-                            onClick()
+                        val clickHandler = currentOnClick
+                        if (wasDownOnCard && currentEnabled && clickHandler != null) {
+                            PrimaryOverlayInputBridge.notifyKeyInput()
+                            clickHandler()
                         }
                         // Consume both KeyDown and KeyUp so clickable does not double-fire
                         true
@@ -231,18 +246,20 @@ fun GamepadFocusCard(
             }
         }
 
+    val effectiveTouchClick = onTouchClick ?: onClick
     val focusableOrClickModifier =
-        if (onClick != null) {
-            Modifier
-                .focusable(interactionSource = interactionSource)
-                .clickable(
-                    enabled = enabled,
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                )
+        if (effectiveTouchClick != null) {
+            Modifier.clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = effectiveTouchClick,
+            )
         } else {
-            Modifier.focusable(interactionSource = interactionSource)
+            Modifier.focusable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+            )
         }
 
     val baseCardModifier =
@@ -590,15 +607,54 @@ private fun GamepadAdjustableCard(
     icon: ImageVector? = null,
     enabled: Boolean = true,
     itemKey: Any? = title,
+    onTouchClick: (() -> Unit)? = null,
     onFocusChanged: ((Boolean) -> Unit)? = null,
 ) {
-    var isAdjusting by remember { mutableStateOf(false) }
+    val deckBackInterceptor = LocalDeckBackInterceptor.current
+    var isAdjusting by rememberSaveable { mutableStateOf(false) }
+    var wasEverFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isAdjusting, wasEverFocused) {
+        if (isAdjusting && !wasEverFocused) {
+            delay(250L)
+            if (!wasEverFocused) {
+                isAdjusting = false
+            }
+        }
+    }
+
+    val backInterceptor: () -> Boolean = remember {
+        {
+            if (isAdjusting) {
+                isAdjusting = false
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    DisposableEffect(deckBackInterceptor, isAdjusting) {
+        if (isAdjusting) {
+            deckBackInterceptor?.invoke(backInterceptor, true)
+        }
+        onDispose {
+            deckBackInterceptor?.invoke(backInterceptor, false)
+        }
+    }
+
+    BackHandler(enabled = isAdjusting) {
+        isAdjusting = false
+    }
 
     GamepadFocusCard(
         onClick = {
             val nextState = !isAdjusting
             AppLog.d(TAG, "GamepadAdjustableCard: '$title' adjustment mode=$nextState")
             isAdjusting = nextState
+        },
+        onTouchClick = {
+            onTouchClick?.invoke()
         },
         enabled = enabled,
         modifier = modifier,
@@ -614,7 +670,9 @@ private fun GamepadAdjustableCard(
             )
         },
         onFocusChanged = { focused ->
-            if (!focused) {
+            if (focused) {
+                wasEverFocused = true
+            } else if (wasEverFocused) {
                 isAdjusting = false
             }
             onFocusChanged?.invoke(focused)
@@ -695,6 +753,7 @@ fun GamepadChoiceCard(
         icon = icon,
         enabled = enabled,
         itemKey = itemKey,
+        onTouchClick = onNext,
         onFocusChanged = onFocusChanged,
     )
 }

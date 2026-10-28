@@ -106,9 +106,10 @@ fun rememberSaveExitPromptState(
     val refocusSaveAction: () -> Unit = {
         coroutineScope.launch {
             try {
-                inputModeManager.requestInputMode(InputMode.Keyboard)
                 bringIntoViewRequester.bringIntoView()
-                focusRequester.requestFocus()
+                if (PrimaryOverlayInputBridge.isGamepadInputActive) {
+                    focusRequester.requestFocus()
+                }
             } catch (_: IllegalStateException) {
             }
         }
@@ -141,16 +142,17 @@ fun rememberSaveExitPromptState(
     val activeCategoryRequester = LocalActiveCategoryRequester.current
 
     val transferFocusToSidebar: () -> Unit = {
-        inputModeManager.requestInputMode(InputMode.Keyboard)
-        val targetRequester = activeCategoryRequester ?: focusRequester
-        try {
-            targetRequester.requestFocus()
-        } catch (_: IllegalStateException) {
-            coroutineScope.launch {
-                delay(GC_SIDEBAR_FOCUS_RETRY_MS)
-                try {
-                    targetRequester.requestFocus()
-                } catch (_: IllegalStateException) {
+        if (PrimaryOverlayInputBridge.isGamepadInputActive) {
+            val targetRequester = activeCategoryRequester ?: focusRequester
+            try {
+                targetRequester.requestFocus()
+            } catch (_: IllegalStateException) {
+                coroutineScope.launch {
+                    delay(GC_SIDEBAR_FOCUS_RETRY_MS)
+                    try {
+                        targetRequester.requestFocus()
+                    } catch (_: IllegalStateException) {
+                    }
                 }
             }
         }
@@ -342,12 +344,45 @@ fun GamepadTwoStepConfirmCard(
 ) {
     var isConfirming by remember { mutableStateOf(false) }
 
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            isConfirming = false
+        }
+    }
+
+    val deckBackInterceptor = LocalDeckBackInterceptor.current
+    val cancelConfirm: () -> Boolean =
+        remember(isConfirming) {
+            {
+                if (isConfirming) {
+                    isConfirming = false
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+    DisposableEffect(deckBackInterceptor, cancelConfirm, isConfirming) {
+        if (isConfirming) {
+            deckBackInterceptor?.invoke(cancelConfirm, true)
+        }
+        onDispose {
+            deckBackInterceptor?.invoke(cancelConfirm, false)
+        }
+    }
+
+    BackHandler(enabled = isConfirming) {
+        isConfirming = false
+    }
+
     GamepadFocusCard(
         onClick = {
             if (enabled) {
                 if (!isConfirming) {
                     isConfirming = true
                 } else {
+                    isConfirming = false
                     onConfirm()
                 }
             }

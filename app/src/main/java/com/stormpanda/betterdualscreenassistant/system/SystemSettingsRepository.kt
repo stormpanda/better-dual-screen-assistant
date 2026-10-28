@@ -147,8 +147,20 @@ class SystemSettingsRepository(private val context: Context) {
         return elapsed in 0L..250L
     }
 
+    private val osThemeDeferLock = Any()
+    private val activeSettingsUiTokens = LinkedHashSet<Int>()
+    private var pendingDeferredOsThemeSync = false
+    private var pendingDeferredOsThemeForce = false
+
     private val debouncedOsThemeSyncRunnable = Runnable {
-        syncOsThemeIfNeeded()
+        val force = synchronized(osThemeDeferLock) {
+            val f = pendingDeferredOsThemeForce
+            if (activeSettingsUiTokens.isEmpty()) {
+                pendingDeferredOsThemeForce = false
+            }
+            f
+        }
+        dispatchOrDeferOsThemeSync(force = force)
     }
 
     private val debouncedRefreshRateWriteRunnable = Runnable {
@@ -976,8 +988,44 @@ class SystemSettingsRepository(private val context: Context) {
         } else {
             prefs.edit().putBoolean(PREF_INJECT_OS_THEME, false).apply()
         }
-        mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
-        syncOsThemeIfNeeded(force = true)
+        scheduleOsThemeSync(delayMs = 0L, force = true)
+    }
+
+    /**
+     * Marks a [MainActivity] window as actively focused/resumed so OS-wide `FabricatedOverlay`
+     * transactions (`CONFIG_ASSETS_PATHS` / `0x80000000`) are deferred while the user is actively
+     * navigating or cycling theme carousels in Settings, then flushed immediately once the window
+     * loses focus (e.g. SystemUI notification shade pull-down) or exits.
+     */
+    fun setSettingsUiActive(
+        activityToken: Int,
+        active: Boolean,
+        flushIfInactive: Boolean = true
+    ) {
+        var shouldFlush = false
+        var flushForce = false
+        synchronized(osThemeDeferLock) {
+            if (active) {
+                activeSettingsUiTokens.add(activityToken)
+            } else {
+                activeSettingsUiTokens.remove(activityToken)
+                if (flushIfInactive && activeSettingsUiTokens.isEmpty() && pendingDeferredOsThemeSync) {
+                    pendingDeferredOsThemeSync = false
+                    flushForce = pendingDeferredOsThemeForce
+                    pendingDeferredOsThemeForce = false
+                    shouldFlush = true
+                }
+            }
+        }
+        if (shouldFlush) {
+            mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                syncOsThemeIfNeeded(force = flushForce)
+            } else {
+                val forceSnapshot = flushForce
+                mainHandler.post { syncOsThemeIfNeeded(force = forceSnapshot) }
+            }
+        }
     }
 
     fun refreshMegingiardSyncedTheme() {
@@ -1084,15 +1132,53 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
-    private fun scheduleOsThemeSync(delayMs: Long) {
+    private fun dispatchOrDeferOsThemeSync(force: Boolean = false) {
+        val deferred = synchronized(osThemeDeferLock) {
+            if (activeSettingsUiTokens.isNotEmpty()) {
+                pendingDeferredOsThemeSync = true
+                if (force) {
+                    pendingDeferredOsThemeForce = true
+                }
+                true
+            } else {
+                pendingDeferredOsThemeSync = false
+                pendingDeferredOsThemeForce = false
+                false
+            }
+        }
+        if (!deferred) {
+            syncOsThemeIfNeeded(force = force)
+        }
+    }
+
+    private fun scheduleOsThemeSync(delayMs: Long, force: Boolean = false) {
         mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
         if (delayMs <= 0L) {
             if (Looper.myLooper() == Looper.getMainLooper()) {
-                syncOsThemeIfNeeded()
+                dispatchOrDeferOsThemeSync(force = force)
             } else {
-                mainHandler.post(debouncedOsThemeSyncRunnable)
+                if (force) {
+                    synchronized(osThemeDeferLock) {
+                        pendingDeferredOsThemeForce = true
+                    }
+                }
+                mainHandler.post {
+                    val effectiveForce = synchronized(osThemeDeferLock) {
+                        val f = pendingDeferredOsThemeForce || force
+                        if (activeSettingsUiTokens.isEmpty()) {
+                            pendingDeferredOsThemeForce = false
+                        }
+                        f
+                    }
+                    dispatchOrDeferOsThemeSync(force = effectiveForce)
+                }
             }
         } else {
+            if (force) {
+                synchronized(osThemeDeferLock) {
+                    pendingDeferredOsThemeForce = true
+                }
+            }
             mainHandler.postDelayed(debouncedOsThemeSyncRunnable, delayMs)
         }
     }
