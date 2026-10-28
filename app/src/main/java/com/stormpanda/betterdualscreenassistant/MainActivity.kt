@@ -62,6 +62,7 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsSuggest
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tab
@@ -405,6 +406,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val showLedBrightnessSlider by repo.showLedBrightnessSlider.collectAsState()
     val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
     val showEditButton by repo.showEditButton.collectAsState()
+    val accurateGameFps by repo.accurateGameFps.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
@@ -598,6 +600,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 showEditButton = showEditButton,
                                                 showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
+                                                accurateGameFps = accurateGameFps,
                                                 onToggleReplaceStock = { replaceStock ->
                                                     stockDisabled = replaceStock
                                                     scope.launch(Dispatchers.IO) {
@@ -619,6 +622,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleShowLedBrightnessSlider = { enabled ->
                                                     repo.setShowLedBrightnessSlider(enabled)
+                                                },
+                                                onToggleAccurateGameFps = { enabled ->
+                                                    repo.setAccurateGameFps(enabled)
                                                 }
                                             )
                                         }
@@ -759,12 +765,14 @@ private fun GeneralSettingsTabContent(
     showEditButton: Boolean,
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
+    accurateGameFps: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
     onToggleShowEditButton: (Boolean) -> Unit,
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
-    onToggleShowLedBrightnessSlider: (Boolean) -> Unit
+    onToggleShowLedBrightnessSlider: (Boolean) -> Unit,
+    onToggleAccurateGameFps: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
 
@@ -791,6 +799,14 @@ private fun GeneralSettingsTabContent(
         icon = Icons.Rounded.Layers,
         onCheckedChange = onToggleReplaceStock,
         modifier = Modifier.firstDeckItem(isFirst = !updateAvailable || latestReleaseInfo == null)
+    )
+
+    GamepadToggleCard(
+        title = "Accurate Game FPS Counter",
+        description = "Measure real foreground game/app frame rate on the active display instead of the stock global SurfaceFlinger page-flip counter",
+        checked = accurateGameFps,
+        icon = Icons.Rounded.Speed,
+        onCheckedChange = onToggleAccurateGameFps
     )
 
     GamepadToggleCard(

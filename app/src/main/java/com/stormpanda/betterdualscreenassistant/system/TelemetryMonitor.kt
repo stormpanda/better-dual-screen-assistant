@@ -3,6 +3,7 @@ package com.stormpanda.betterdualscreenassistant.system
 import android.app.ActivityManager
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.os.SystemClock
 import android.provider.Settings
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +51,51 @@ class TelemetryMonitor(private val context: Context) {
         private const val THERMAL_CPU_PATH = "/sys/devices/virtual/thermal/thermal_zone48/temp"
         private const val BATTERY_CURRENT_NOW_PATH = "/sys/class/power_supply/battery/current_now"
         private const val BATTERY_VOLTAGE_NOW_PATH = "/sys/class/power_supply/battery/voltage_now"
+        internal const val ACCURATE_FPS_POLL_INTERVAL_MS = 500L
+        internal const val LEGACY_FPS_POLL_INTERVAL_MS = 1500L
+
+        /**
+         * The AYN Thor top AMOLED panel (`1080x1920`, MIPI-DSI Command Mode, `port=131`) generates
+         * hardware VSYNC from its on-panel DDIC TE oscillator at ~8.4451 ms (118.412 Hz) in 120 Hz
+         * mode and ~16.890 ms (59.206 Hz) in 60 Hz mode (~1.323% slower than the nominal 120.00 Hz
+         * / 60.00 Hz DisplayMode). Because SurfaceFlinger's `FrameTimeline::computeFps` divides
+         * presented frame intervals by wall-clock nanoseconds, 100% VSYNC lock (0 missed VSYNCs)
+         * produces ~118.41f in 120 Hz mode and ~59.21f at 60 Hz / half-rate VSYNC.
+         */
+        internal const val TOP_PANEL_TE_CLOCK_RATIO = 118.412f / 120f
+        private const val VSYNC_CEILING_RAMP_FRACTION = 110f / 120f
+
+        internal fun normalizeGameFpsForPanel(rawFps: Float, nominalPeakRate: Float): Int {
+            if (!rawFps.isFinite() || rawFps <= 0f) return 0
+            val peakInt = nominalPeakRate.roundToInt().coerceAtLeast(1)
+            val nominalPeak = peakInt.toFloat()
+
+            // Top VSYNC-ceiling ramp ([110..118.412] -> [110..120] in 120Hz mode, or
+            // [55..59.206] -> [55..60] in 60Hz mode) so 0 missed VSYNCs reports full peak FPS
+            // while 1, 2, 3... missed VSYNCs step down smoothly without dead numbers.
+            val physicalPeak = nominalPeak * TOP_PANEL_TE_CLOCK_RATIO
+            val ceilingRampStart = nominalPeak * VSYNC_CEILING_RAMP_FRACTION
+            if (rawFps > ceilingRampStart && physicalPeak > ceilingRampStart) {
+                val progress = ((rawFps - ceilingRampStart) / (physicalPeak - ceilingRampStart))
+                    .coerceIn(0f, 1f)
+                val calibrated = ceilingRampStart + progress * (nominalPeak - ceilingRampStart)
+                return calibrated.roundToInt().coerceIn(0, peakInt)
+            }
+
+            // In 120Hz+ mode, a 60 FPS game paced via every-2nd-VSYNC (Choreographer / Swappy
+            // swapInterval=2) hits 118.412 / 2 = 59.206f at 0 missed frames, whereas a wall-clock
+            // 60.00 Hz CPU limiter (e.g. Genshin Impact) reports ~60.0f. Smoothly ramp
+            // [55..59.206] -> [55..60] and clamp [59.206..60.0] to 60 so both report 60 without
+            // pushing a 60.0f wall-clock game up to 61.
+            if (nominalPeak >= 115f && rawFps > 55f && rawFps <= 60f) {
+                val halfPhysical = 60f * TOP_PANEL_TE_CLOCK_RATIO
+                val progress = ((rawFps - 55f) / (halfPhysical - 55f)).coerceIn(0f, 1f)
+                val calibrated = 55f + progress * 5f
+                return calibrated.roundToInt().coerceIn(0, peakInt)
+            }
+
+            return rawFps.roundToInt().coerceIn(0, peakInt)
+        }
 
         private fun roundDiv(numerator: Long, denominator: Long, scale: Int = 2): Float {
             if (denominator == 0L) return 0f
@@ -61,17 +107,25 @@ class TelemetryMonitor(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollingJob: Job? = null
+    private val prefs = context.getSharedPreferences(
+        SystemSettingsRepository.PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
 
     private val _state = MutableStateFlow(HardwareTelemetryState())
     val state: StateFlow<HardwareTelemetryState> = _state.asStateFlow()
 
     private var lastFlips: Int = -1
     private var lastFlipTimestampMs: Long = 0L
+    private var lastAccurateFallbackFlips: Int = -1
+    private var lastAccurateFallbackElapsedMs: Long = 0L
 
     fun start() {
         if (pollingJob?.isActive == true) return
         lastFlips = -1
         lastFlipTimestampMs = 0L
+        lastAccurateFallbackFlips = -1
+        lastAccurateFallbackElapsedMs = 0L
         // Reset ring gauges to 0f on attach, matching app:hirv_progress="0" in stock layout
         _state.value = _state.value.copy(
             cpuCurFreqGhz = 0f,
@@ -80,6 +134,28 @@ class TelemetryMonitor(private val context: Context) {
             ramUsedGb = 0f
         )
         pollingJob = scope.launch {
+            launch {
+                if (!isAccurateGameFpsEnabled()) {
+                    delay(500L)
+                }
+                while (isActive) {
+                    val accurateMode = isAccurateGameFpsEnabled()
+                    val fps = if (accurateMode) {
+                        sampleAccurateGameFps()
+                    } else {
+                        sampleFps()
+                    }
+                    _state.value = _state.value.copy(currentFps = fps)
+                    delay(
+                        if (accurateMode) {
+                            ACCURATE_FPS_POLL_INTERVAL_MS
+                        } else {
+                            LEGACY_FPS_POLL_INTERVAL_MS
+                        }
+                    )
+                }
+            }
+
             val maxCpuRaw = PrivilegedBridge.readSysfsLong(CPU_MAX_FREQ_PATH)
             val (cpuMaxVal, cpuUnitStr) = if (maxCpuRaw >= 1_000_000L) {
                 roundDiv(maxCpuRaw, 1_000_000L) to "GHz"
@@ -120,7 +196,6 @@ class TelemetryMonitor(private val context: Context) {
             delay(500L)
 
             while (isActive) {
-                val fps = sampleFps()
                 val tempRaw = PrivilegedBridge.readSysfsLong(THERMAL_CPU_PATH)
                 val cpuTemp = if (tempRaw > 1000L) tempRaw / 1000f else tempRaw.toFloat()
 
@@ -148,8 +223,7 @@ class TelemetryMonitor(private val context: Context) {
                 am?.getMemoryInfo(memInfo)
                 val usedRamGb = ((memInfo.totalMem - memInfo.availMem).coerceAtLeast(0L)) / 1_000_000_000f
 
-                _state.value = HardwareTelemetryState(
-                    currentFps = fps,
+                _state.value = _state.value.copy(
                     cpuTempCelsius = cpuTemp,
                     fanSpeedPercent = fanPercent,
                     cpuCurFreqGhz = cpuCurVal,
@@ -179,16 +253,46 @@ class TelemetryMonitor(private val context: Context) {
         )
     }
 
-    private fun sampleFps(): Int {
-        val flips = PrivilegedBridge.getSurfaceFlingerFlips()
-        val now = System.currentTimeMillis()
+    internal fun isAccurateGameFpsEnabled(): Boolean {
+        return prefs.getBoolean(SystemSettingsRepository.PREF_ACCURATE_GAME_FPS, true)
+    }
+
+    private fun readPeakRefreshRate(): Float {
         val dm = context.getSystemService(DisplayManager::class.java)
         val displayRate = dm?.getDisplay(0)?.refreshRate ?: 60f
-        val peakRate = try {
+        return try {
             Settings.System.getFloat(context.contentResolver, "peak_refresh_rate", displayRate)
         } catch (_: Throwable) {
             displayRate
         }
+    }
+
+    internal fun sampleAccurateGameFps(): Int {
+        val peakRate = readPeakRefreshRate()
+        val helperFps = PrivilegedBridge.getGameFps()
+        if (helperFps.isFinite() && helperFps >= 0f) {
+            return normalizeGameFpsForPanel(helperFps, peakRate)
+        }
+        val flips = PrivilegedBridge.getSurfaceFlingerFlips()
+        val now = SystemClock.elapsedRealtime()
+        if (flips < 0) {
+            return 0
+        }
+        val prevFlips = lastAccurateFallbackFlips
+        val prevTime = lastAccurateFallbackElapsedMs
+        lastAccurateFallbackFlips = flips
+        lastAccurateFallbackElapsedMs = now
+        if (prevFlips < 0 || now <= prevTime || flips < prevFlips) {
+            return 0
+        }
+        val rawFps = ((flips - prevFlips) * 1000f) / (now - prevTime).toFloat()
+        return normalizeGameFpsForPanel(rawFps, peakRate)
+    }
+
+    internal fun sampleFps(): Int {
+        val flips = PrivilegedBridge.getSurfaceFlingerFlips()
+        val now = System.currentTimeMillis()
+        val peakRate = readPeakRefreshRate()
         if (flips < 0) {
             return peakRate.roundToInt()
         }

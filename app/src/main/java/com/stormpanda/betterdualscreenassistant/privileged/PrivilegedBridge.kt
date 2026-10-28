@@ -470,6 +470,28 @@ object PrivilegedBridge {
         PServerClient.exec("input keyevent 26", wait = false)
     }
 
+    private val sfParcelHexRegex = Regex("""Parcel\(\s*([0-9a-fA-F]{1,8})\b""")
+
+    fun getGameFps(): Float {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_GET_GAME_FPS, data, reply, 0)
+                reply.readException()
+                val fps = reply.readFloat()
+                if (fps.isFinite() && fps >= 0f) return fps
+            } catch (_: Throwable) {
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        return -1f
+    }
+
     fun getSurfaceFlingerFlips(): Int {
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
@@ -489,10 +511,9 @@ object PrivilegedBridge {
         }
         // Fallback to parsing `service call SurfaceFlinger 1013` via PServerClient (just like S0.j in stock app)
         val out = PServerClient.exec("service call SurfaceFlinger 1013", wait = true).getOrDefault("")
-        val start = out.indexOf("(")
-        val end = out.indexOf(" ")
-        if (start != -1 && end > start + 1) {
-            return out.substring(start + 1, end).toIntOrNull(16) ?: -1
+        val hexMatch = sfParcelHexRegex.find(out)?.groupValues?.getOrNull(1)
+        if (!hexMatch.isNullOrEmpty()) {
+            return hexMatch.toUIntOrNull(16)?.toInt() ?: -1
         }
         return -1
     }

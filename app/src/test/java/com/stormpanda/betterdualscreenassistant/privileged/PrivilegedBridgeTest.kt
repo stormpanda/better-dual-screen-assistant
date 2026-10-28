@@ -220,16 +220,31 @@ class PrivilegedBridgeTest {
         setHelperBinder(helper)
         assertEquals(123456, PrivilegedBridge.getSurfaceFlingerFlips())
 
-        // Fallback to PServerClient hex output parsing: Parcel(000003e8 ...) -> 1000
+        // Fallback to PServerClient hex output parsing: Result: Parcel(000003e8 ...) -> 1000
         setHelperBinder(null)
         pServerResponder = { cmd ->
             if (cmd.contains("SurfaceFlinger 1013")) {
-                "Parcel(000003e8 00000000 '........')"
+                "Result: Parcel(000003e8 00000000 '........')"
             } else {
                 ""
             }
         }
         assertEquals(1000, PrivilegedBridge.getSurfaceFlingerFlips())
+    }
+
+    @Test
+    fun `getGameFps queries helper binder and returns -1f when disconnected`() {
+        assertEquals(-1f, PrivilegedBridge.getGameFps(), 0.001f)
+
+        val helper = createMockHelperBinder { code, data, reply ->
+            if (code == PrivilegedHelperMain.TRANSACTION_GET_GAME_FPS) {
+                data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                reply.writeNoException()
+                reply.writeFloat(58.6f)
+            }
+        }
+        setHelperBinder(helper)
+        assertEquals(58.6f, PrivilegedBridge.getGameFps(), 0.001f)
     }
 
     @Test

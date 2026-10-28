@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -1467,6 +1469,7 @@ private fun FrameRatePanelCard(
 ) {
     val colors = LocalTccColors.current
     val isHighRate = refreshRate >= 90
+    var isFocused by remember { mutableStateOf(false) }
 
     val pillGradient = if (isHighRate) {
         if (colors.isDark) {
@@ -1499,7 +1502,21 @@ private fun FrameRatePanelCard(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(colors.panelBackground),
+            .background(if (isFocused) colors.panelBackgroundSelected else colors.panelBackground)
+            .onFocusChanged { isFocused = it.isFocused }
+            .onKeyEvent { event ->
+                if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                    (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
+                ) {
+                    onToggleRefreshRate()
+                    true
+                } else {
+                    false
+                }
+            }
+            .focusable(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // 0%..30%: FrameRateModeView pill
@@ -1542,6 +1559,18 @@ private fun FrameRatePanelCard(
         // 30%..70%: CurrentFrameRateView (exact Canvas drawing from CurrentFrameRateView.java)
         val primaryArgb = colors.primary.toArgb()
         val padPx = with(LocalDensity.current) { 5.dp.toPx() }
+        val numberPaint = remember {
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL_AND_STROKE
+                typeface = Typeface.DEFAULT_BOLD
+            }
+        }
+        val unitPaint = remember {
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                typeface = Typeface.DEFAULT
+            }
+        }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1551,22 +1580,14 @@ private fun FrameRatePanelCard(
             val numberStr = currentFps.coerceIn(0, refreshRate).toString()
             val unitStr = "FPS"
 
-            val numberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = h * 0.75f
-                style = Paint.Style.FILL_AND_STROKE
-                typeface = Typeface.DEFAULT_BOLD
-                color = primaryArgb
-            }
+            numberPaint.textSize = h * 0.75f
+            numberPaint.color = primaryArgb
             val fm = numberPaint.fontMetrics
             val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) + padPx
             val numberWidth = numberPaint.measureText(numberStr)
 
-            val unitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = h * 0.20f
-                style = Paint.Style.FILL
-                typeface = Typeface.DEFAULT
-                color = primaryArgb
-            }
+            unitPaint.textSize = h * 0.20f
+            unitPaint.color = primaryArgb
             val unitWidth = unitPaint.measureText(unitStr)
             val totalWidth = numberWidth + padPx * 2f + unitWidth
             val startX = (size.width - totalWidth) * 0.5f

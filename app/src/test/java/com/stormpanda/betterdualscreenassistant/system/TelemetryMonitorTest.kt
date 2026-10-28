@@ -1,8 +1,18 @@
 package com.stormpanda.betterdualscreenassistant.system
 
 import android.content.Context
+import android.os.IBinder
+import android.os.Parcel
+import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,6 +26,23 @@ class TelemetryMonitorTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+        setHelperBinder(null)
+    }
+
+    @After
+    fun tearDown() {
+        setHelperBinder(null)
+    }
+
+    private fun setHelperBinder(binder: IBinder?) {
+        val field = PrivilegedBridge::class.java.getDeclaredField("helperBinder").apply {
+            isAccessible = true
+        }
+        field.set(PrivilegedBridge, binder)
     }
 
     @Test
@@ -66,5 +93,70 @@ class TelemetryMonitorTest {
         monitor.start()
         assertEquals(0f, monitor.state.value.cpuCurFreqGhz, 0.001f)
         monitor.stop()
+    }
+
+    @Test
+    fun `isAccurateGameFpsEnabled defaults to true and respects preference toggle`() {
+        val monitor = TelemetryMonitor(context)
+        assertTrue(monitor.isAccurateGameFpsEnabled())
+
+        val repo = SystemSettingsRepository(context)
+        assertTrue(repo.accurateGameFps.value)
+
+        repo.setAccurateGameFps(false)
+        assertFalse(repo.accurateGameFps.value)
+        assertFalse(monitor.isAccurateGameFpsEnabled())
+
+        repo.setAccurateGameFps(true)
+        assertTrue(repo.accurateGameFps.value)
+        assertTrue(monitor.isAccurateGameFpsEnabled())
+    }
+
+    @Test
+    fun `sampleAccurateGameFps uses helper per-task FPS and clamps to peak refresh rate`() {
+        Settings.System.putFloat(context.contentResolver, "peak_refresh_rate", 60f)
+        var reportedFps = 47.6f
+        val binder = mockk<IBinder>(relaxed = true)
+        every { binder.isBinderAlive } returns true
+        every { binder.transact(PrivilegedHelperMain.TRANSACTION_GET_GAME_FPS, any(), any(), any()) } answers {
+            val reply = thirdArg<Parcel?>()
+            reply?.writeNoException()
+            reply?.writeFloat(reportedFps)
+            reply?.setDataPosition(0)
+            true
+        }
+        setHelperBinder(binder)
+
+        val monitor = TelemetryMonitor(context)
+        assertEquals(48, monitor.sampleAccurateGameFps())
+
+        reportedFps = 119.8f
+        assertEquals(60, monitor.sampleAccurateGameFps())
+
+        Settings.System.putFloat(context.contentResolver, "peak_refresh_rate", 120f)
+        assertEquals(120, monitor.sampleAccurateGameFps())
+
+        reportedFps = 0f
+        assertEquals(0, monitor.sampleAccurateGameFps())
+    }
+
+    @Test
+    fun `normalizeGameFpsForPanel compensates for top AMOLED 118_41Hz DDIC TE clock without inflating software caps`() {
+        // 120Hz mode: full VSYNC lock (118.41f = 0 missed VSYNCs) reports 120, while missed VSYNCs step down cleanly
+        assertEquals(120, TelemetryMonitor.normalizeGameFpsForPanel(118.41f, 120f))
+        assertEquals(119, TelemetryMonitor.normalizeGameFpsForPanel(117.48f, 120f))
+        assertEquals(118, TelemetryMonitor.normalizeGameFpsForPanel(116.55f, 120f))
+        assertEquals(117, TelemetryMonitor.normalizeGameFpsForPanel(115.62f, 120f))
+
+        // Mid-high software caps (e.g. 90 FPS) and wall-clock 60 FPS caps (e.g. Genshin Impact) are never inflated
+        assertEquals(90, TelemetryMonitor.normalizeGameFpsForPanel(90.0f, 120f))
+        assertEquals(60, TelemetryMonitor.normalizeGameFpsForPanel(60.0f, 120f))
+        assertEquals(60, TelemetryMonitor.normalizeGameFpsForPanel(60.2f, 120f))
+
+        // Half-rate VSYNC (118.412 / 2 = 59.21f) in 120Hz mode and full VSYNC in 60Hz mode both report 60
+        assertEquals(60, TelemetryMonitor.normalizeGameFpsForPanel(59.21f, 120f))
+        assertEquals(60, TelemetryMonitor.normalizeGameFpsForPanel(59.21f, 60f))
+        assertEquals(59, TelemetryMonitor.normalizeGameFpsForPanel(58.27f, 60f))
+        assertEquals(30, TelemetryMonitor.normalizeGameFpsForPanel(29.60f, 60f))
     }
 }

@@ -106,6 +106,91 @@ class PrivilegedBinderProviderAndHelperTest {
         readReply.recycle()
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_GET_GAME_FPS returns reported task FPS and decays to 0f when stale`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val trackedTaskField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("trackedFpsTaskId").apply { isAccessible = true }
+        val lastCheckField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("lastFpsTaskCheckElapsedMs").apply { isAccessible = true }
+        val listenerBinderField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("fpsListenerBinder").apply { isAccessible = true }
+
+        trackedTaskField.setInt(helperBinder, 42)
+        lastCheckField.setLong(helperBinder, android.os.SystemClock.elapsedRealtime())
+
+        val fpsListenerBinder = listenerBinderField.get(helperBinder) as IBinder
+        val callbackData = Parcel.obtain().apply {
+            writeInterfaceToken("android.gui.IFpsListener")
+            writeFloat(59.4f)
+        }
+        val callbackReply = Parcel.obtain()
+        assertTrue(fpsListenerBinder.transact(IBinder.FIRST_CALL_TRANSACTION, callbackData, callbackReply, IBinder.FLAG_ONEWAY))
+        callbackData.recycle()
+        callbackReply.recycle()
+
+        val fpsData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val fpsReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_GET_GAME_FPS, fpsData, fpsReply, 0))
+        fpsReply.setDataPosition(0)
+        fpsReply.readException()
+        assertEquals(59.4f, fpsReply.readFloat(), 0.001f)
+        fpsData.recycle()
+        fpsReply.recycle()
+    }
+
+    @Test
+    fun `HelperBinder ignores FPS callbacks from outdated task listener binder after task switch`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val trackedTaskField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("trackedFpsTaskId").apply { isAccessible = true }
+        val lastCheckField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("lastFpsTaskCheckElapsedMs").apply { isAccessible = true }
+        val createBinderMethod = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredMethod("createFpsListenerBinder", Int::class.javaPrimitiveType).apply {
+                isAccessible = true
+            }
+
+        val oldTaskBinder = createBinderMethod.invoke(helperBinder, 3829) as IBinder
+        val newTaskBinder = createBinderMethod.invoke(helperBinder, 3877) as IBinder
+
+        trackedTaskField.setInt(helperBinder, 3877)
+        lastCheckField.setLong(helperBinder, android.os.SystemClock.elapsedRealtime())
+
+        // Callback from active task (3877) updates FPS
+        val newData = Parcel.obtain().apply {
+            writeInterfaceToken("android.gui.IFpsListener")
+            writeFloat(53.2f)
+        }
+        val newReply = Parcel.obtain()
+        assertTrue(newTaskBinder.transact(IBinder.FIRST_CALL_TRANSACTION, newData, newReply, IBinder.FLAG_ONEWAY))
+        newData.recycle()
+        newReply.recycle()
+
+        // Stale callback from previous task (3829) must be ignored
+        val staleData = Parcel.obtain().apply {
+            writeInterfaceToken("android.gui.IFpsListener")
+            writeFloat(88.9f)
+        }
+        val staleReply = Parcel.obtain()
+        assertTrue(oldTaskBinder.transact(IBinder.FIRST_CALL_TRANSACTION, staleData, staleReply, IBinder.FLAG_ONEWAY))
+        staleData.recycle()
+        staleReply.recycle()
+
+        val fpsData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val fpsReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_GET_GAME_FPS, fpsData, fpsReply, 0))
+        fpsReply.setDataPosition(0)
+        fpsReply.readException()
+        assertEquals(53.2f, fpsReply.readFloat(), 0.001f)
+        fpsData.recycle()
+        fpsReply.recycle()
+    }
+
     private fun createAuthorizedHelperBinder(): PrivilegedHelperMain.HelperBinder {
         val binder = PrivilegedHelperMain.HelperBinder(null, Handler(Looper.getMainLooper()))
         val uidField = PrivilegedHelperMain.HelperBinder::class.java.getDeclaredField("cachedAppUid").apply {

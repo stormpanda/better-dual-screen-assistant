@@ -77,6 +77,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
+        const val PREF_ACCURATE_GAME_FPS = "accurate_game_fps"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -106,6 +107,7 @@ class SystemSettingsRepository(private val context: Context) {
         }
 
         private const val OS_THEME_SYNC_DEBOUNCE_MS = 650L
+        internal const val REFRESH_RATE_WRITE_SETTLE_DELAY_MS = 220L
 
         private val MEGINGIARD_RELEASE_THEME_URI: Uri =
             Uri.parse("content://com.stormpanda.megingiard.provider/theme")
@@ -125,6 +127,10 @@ class SystemSettingsRepository(private val context: Context) {
     private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "BDSA-ThemeSync").apply { isDaemon = true }
     }
+    private val refreshRateWriteLock = Any()
+
+    @Volatile
+    private var pendingRefreshRateTarget: Float? = null
 
     @Volatile
     private var preferredMegingiardThemeUri: Uri? = null
@@ -143,6 +149,10 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val debouncedOsThemeSyncRunnable = Runnable {
         syncOsThemeIfNeeded()
+    }
+
+    private val debouncedRefreshRateWriteRunnable = Runnable {
+        commitPendingRefreshRate()
     }
 
     // Display Mode: 0 = Dual, 1 = Top Only, 2 = Bottom Only
@@ -232,6 +242,11 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
     )
     val showEditButton: StateFlow<Boolean> = _showEditButton.asStateFlow()
+
+    private val _accurateGameFps = MutableStateFlow(
+        prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+    )
+    val accurateGameFps: StateFlow<Boolean> = _accurateGameFps.asStateFlow()
 
     private val _ledBrightnessPercent = MutableStateFlow(readLedBrightnessPercent())
     val ledBrightnessPercent: StateFlow<Int> = _ledBrightnessPercent.asStateFlow()
@@ -407,6 +422,10 @@ class SystemSettingsRepository(private val context: Context) {
                 _showEditButton.value =
                     prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
             }
+            PREF_ACCURATE_GAME_FPS -> {
+                _accurateGameFps.value =
+                    prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+            }
             PREF_QUICK_TILE_ORDER -> {
                 _quickTileOrder.value = readSavedQuickTileOrder()
             }
@@ -553,6 +572,10 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun unregister() {
+        mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
+        if (pendingRefreshRateTarget != null) {
+            commitPendingRefreshRate()
+        }
         if (!isRegistered) return
         isRegistered = false
         try {
@@ -638,6 +661,7 @@ class SystemSettingsRepository(private val context: Context) {
         _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
+        _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
         _bluetoothEnabled.value = readBluetoothEnabled()
@@ -656,7 +680,8 @@ class SystemSettingsRepository(private val context: Context) {
         } else {
             syncOsThemeIfNeeded()
         }
-        _refreshRate.value = readRefreshRate()
+        val pendingRefreshRate = synchronized(refreshRateWriteLock) { pendingRefreshRateTarget }
+        _refreshRate.value = pendingRefreshRate?.roundToInt() ?: readRefreshRate()
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
         if (refreshDisplayBrightness) {
             _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
@@ -1217,13 +1242,56 @@ class SystemSettingsRepository(private val context: Context) {
         return if (sysMode == 2) AppThemeOption.STOCK_DARK.id else sysMode
     }
 
+    /**
+     * Updates the UI pill state immediately while deferring/coalescing the underlying
+     * `min_refresh_rate` / `peak_refresh_rate` Settings.System writes by
+     * [REFRESH_RATE_WRITE_SETTLE_DELAY_MS].
+     *
+     * On AYN Thor firmware, `DisplayModeDirector$SettingsObserver.onChange` holds
+     * `DisplayModeDirector.mLock` while calling `updateRefreshRateSettingLockedForX6()` ->
+     * `DisplayManagerService.getBrightnessInfo()` (`DisplayManagerService$SyncRoot`), which can
+     * AB-BA deadlock with `WindowSurfacePlacer` (`DisplayManagerService$SyncRoot` ->
+     * `DisplayModeDirector.mLock`) if fired concurrently with the Display 4 tap / focus-bounce
+     * window traversal burst.
+     */
     fun toggleRefreshRate() {
         val current = _refreshRate.value
         val maxSupported = getMaxSupportedRefreshRate()
         val next = if (current >= 90) 60f else maxSupported
-        PrivilegedBridge.putSystemSettingFloat(context, KEY_MIN_REFRESH_RATE, next)
-        PrivilegedBridge.putSystemSettingFloat(context, KEY_PEAK_REFRESH_RATE, next)
+        synchronized(refreshRateWriteLock) {
+            pendingRefreshRateTarget = next
+        }
         _refreshRate.value = next.roundToInt()
+        mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
+        mainHandler.postDelayed(
+            debouncedRefreshRateWriteRunnable,
+            REFRESH_RATE_WRITE_SETTLE_DELAY_MS
+        )
+    }
+
+    internal fun commitPendingRefreshRate() {
+        val target = synchronized(refreshRateWriteLock) { pendingRefreshRateTarget } ?: return
+        val currentMin = try {
+            Settings.System.getFloat(contentResolver, KEY_MIN_REFRESH_RATE, -1f)
+        } catch (_: Throwable) {
+            -1f
+        }
+        val currentPeak = try {
+            Settings.System.getFloat(contentResolver, KEY_PEAK_REFRESH_RATE, -1f)
+        } catch (_: Throwable) {
+            -1f
+        }
+        val alreadyMatches = kotlin.math.abs(currentMin - target) < 0.5f &&
+            kotlin.math.abs(currentPeak - target) < 0.5f
+        if (!alreadyMatches) {
+            PrivilegedBridge.putSystemSettingFloat(context, KEY_MIN_REFRESH_RATE, target)
+            PrivilegedBridge.putSystemSettingFloat(context, KEY_PEAK_REFRESH_RATE, target)
+        }
+        synchronized(refreshRateWriteLock) {
+            if (pendingRefreshRateTarget == target) {
+                pendingRefreshRateTarget = null
+            }
+        }
     }
 
     fun setDisplayBrightnessPercent(displayId: Int, percent: Int, temporary: Boolean) {
@@ -1340,6 +1408,11 @@ class SystemSettingsRepository(private val context: Context) {
     fun setShowEditButton(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_SHOW_EDIT_BUTTON, enabled).apply()
         _showEditButton.value = enabled
+    }
+
+    fun setAccurateGameFps(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_ACCURATE_GAME_FPS, enabled).apply()
+        _accurateGameFps.value = enabled
     }
 
     fun setLedBrightnessPercent(percent: Int) {

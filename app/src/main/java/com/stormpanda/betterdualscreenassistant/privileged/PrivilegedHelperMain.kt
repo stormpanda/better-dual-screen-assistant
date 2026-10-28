@@ -61,13 +61,22 @@ object PrivilegedHelperMain {
     const val TRANSACTION_CLEAR_OS_THEME = IBinder.FIRST_CALL_TRANSACTION + 15
     const val TRANSACTION_SWAP_DISPLAY_TASKS = IBinder.FIRST_CALL_TRANSACTION + 16
     const val TRANSACTION_SET_TOP_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 17
+    const val TRANSACTION_GET_GAME_FPS = IBinder.FIRST_CALL_TRANSACTION + 18
 
-    const val HELPER_PROTOCOL_VERSION = 9
+    const val HELPER_PROTOCOL_VERSION = 11
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
     private const val TYPED_VALUE_INT_COLOR_ARGB8 = 0x1c
     private const val KEY_THEME_CUSTOMIZATION_PACKAGES = "theme_customization_overlay_packages"
+
+    private const val SF_TRANSACTION_ADD_FPS_LISTENER = 57
+    private const val SF_TRANSACTION_REMOVE_FPS_LISTENER = 58
+    private const val DESCRIPTOR_SURFACE_COMPOSER = "android.ui.ISurfaceComposer"
+    private const val DESCRIPTOR_FPS_LISTENER = "android.gui.IFpsListener"
+    private const val DESCRIPTOR_TASK_FPS_CALLBACK = "android.window.ITaskFpsCallback"
+    private const val FPS_TASK_REFRESH_INTERVAL_MS = 1000L
+    private const val FPS_STALE_TIMEOUT_MS = 1600L
 
     // StatusBarManager.DISABLE_* flags that hide top-screen status bar elements without blocking hardware keys
     private const val STATUS_BAR_DISABLE_EXPAND = 0x00010000
@@ -340,6 +349,114 @@ object PrivilegedHelperMain {
         @Volatile
         private var isShuttingDown: Boolean = false
 
+        private val fpsSubscriptionLock = Any()
+
+        @Volatile
+        private var trackedFpsTaskId: Int = -1
+
+        @Volatile
+        private var lastFpsTaskCheckElapsedMs: Long = 0L
+
+        @Volatile
+        private var latestReportedTaskFps: Float = 0f
+
+        @Volatile
+        private var latestReportedTaskFpsElapsedMs: Long = 0L
+
+        @Volatile
+        private var fpsRegisteredViaSurfaceFlinger: Boolean = false
+
+        @Volatile
+        private var fpsRegisteredViaWindowManager: Boolean = false
+
+        @Volatile
+        private var fpsListenerBinder: IBinder = createFpsListenerBinder(-1)
+
+        @Volatile
+        private var activeTaskFpsCallbackProxy: Any? = null
+
+        private fun createFpsListenerBinder(expectedTaskId: Int): IBinder = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (code == INTERFACE_TRANSACTION) {
+                    reply?.writeString(
+                        if (fpsRegisteredViaWindowManager) {
+                            DESCRIPTOR_TASK_FPS_CALLBACK
+                        } else {
+                            DESCRIPTOR_FPS_LISTENER
+                        }
+                    )
+                    return true
+                }
+                if (code == FIRST_CALL_TRANSACTION) {
+                    val primaryDescriptor = if (fpsRegisteredViaWindowManager) {
+                        DESCRIPTOR_TASK_FPS_CALLBACK
+                    } else {
+                        DESCRIPTOR_FPS_LISTENER
+                    }
+                    val secondaryDescriptor = if (fpsRegisteredViaWindowManager) {
+                        DESCRIPTOR_FPS_LISTENER
+                    } else {
+                        DESCRIPTOR_TASK_FPS_CALLBACK
+                    }
+                    return try {
+                        data.enforceInterface(primaryDescriptor)
+                        val fps = data.readFloat()
+                        if (fps.isFinite() && fps >= 0f) {
+                            onTaskFpsReported(expectedTaskId, fps)
+                        }
+                        true
+                    } catch (_: Throwable) {
+                        try {
+                            data.setDataPosition(0)
+                            data.enforceInterface(secondaryDescriptor)
+                            val fps = data.readFloat()
+                            if (fps.isFinite() && fps >= 0f) {
+                                onTaskFpsReported(expectedTaskId, fps)
+                            }
+                            true
+                        } catch (_: Throwable) {
+                            false
+                        }
+                    }
+                }
+                return super.onTransact(code, data, reply, flags)
+            }
+        }
+
+        private fun createTaskFpsCallbackProxy(listenerBinder: IBinder): Any? {
+            return try {
+                val stubClass = Class.forName("android.window.ITaskFpsCallback\$Stub")
+                stubClass.getMethod("asInterface", IBinder::class.java)
+                    .invoke(null, listenerBinder)
+            } catch (_: Throwable) {
+                null
+            }
+        }
+
+        private val fpsTrackerMaintenanceRunnable: Runnable = object : Runnable {
+            override fun run() {
+                if (isShuttingDown) {
+                    unregisterFpsListenerInternal()
+                    return
+                }
+                val activeClient = clientBinder
+                if (activeClient == null || !activeClient.isBinderAlive) {
+                    unregisterFpsListenerInternal()
+                    return
+                }
+                ensureTargetTaskFpsSubscriptionInternal()
+                mainHandler.postDelayed(this, FPS_TASK_REFRESH_INTERVAL_MS)
+            }
+        }
+
+        private fun onTaskFpsReported(expectedTaskId: Int, fps: Float) {
+            val currentTaskId = trackedFpsTaskId
+            if (currentTaskId <= 0) return
+            if (expectedTaskId > 0 && expectedTaskId != currentTaskId) return
+            latestReportedTaskFps = fps
+            latestReportedTaskFpsElapsedMs = SystemClock.elapsedRealtime()
+        }
+
         private val clientDeathRecipient = IBinder.DeathRecipient {
             if (isShuttingDown) return@DeathRecipient
             Log.w(TAG, "Client app process binder died; starting lifecycle check")
@@ -571,6 +688,8 @@ object PrivilegedHelperMain {
                         isShuttingDown = true
                         mainHandler.removeCallbacks(watchdogCheckRunnable)
                         mainHandler.removeCallbacks(onClientDiedRunnable)
+                        mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                        unregisterFpsListenerInternal()
                         unlinkClientDeath()
                         reply?.writeNoException()
                         mainHandler.postDelayed(shutdownRunnable, 50L)
@@ -620,6 +739,12 @@ object PrivilegedHelperMain {
                         reply?.writeNoException()
                         true
                     }
+                    TRANSACTION_GET_GAME_FPS -> {
+                        val fps = getGameFpsInternal()
+                        reply?.writeNoException()
+                        reply?.writeFloat(fps)
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -644,12 +769,16 @@ object PrivilegedHelperMain {
             clientBinder = newClient
             mainHandler.removeCallbacks(watchdogCheckRunnable)
             mainHandler.removeCallbacks(onClientDiedRunnable)
+            mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
             if (newClient != null) {
                 try {
                     newClient.linkToDeath(clientDeathRecipient, 0)
                 } catch (_: Throwable) {
                     mainHandler.post(onClientDiedRunnable)
                 }
+                mainHandler.post(fpsTrackerMaintenanceRunnable)
+            } else {
+                unregisterFpsListenerInternal()
             }
         }
 
@@ -863,7 +992,8 @@ object PrivilegedHelperMain {
          */
         private fun restoreDisplayAndStockAssistant() {
             try {
-                // 0. Remove any helper top-screen blank cover window and re-enable status bar
+                // 0. Remove any helper top-screen blank cover window, re-enable status bar, and unregister FPS listener
+                unregisterFpsListenerInternal()
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
 
                 // 1. Restore top (0) and bottom (4) display brightness if blanked (< 0.005f)
@@ -1259,7 +1389,7 @@ object PrivilegedHelperMain {
             val data = Parcel.obtain()
             val reply = Parcel.obtain()
             return try {
-                data.writeInterfaceToken("android.ui.ISurfaceComposer")
+                data.writeInterfaceToken(DESCRIPTOR_SURFACE_COMPOSER)
                 sf.transact(1013, data, reply, 0)
                 reply.readInt()
             } catch (_: Throwable) {
@@ -1268,6 +1398,239 @@ object PrivilegedHelperMain {
                 data.recycle()
                 reply.recycle()
             }
+        }
+
+        private fun getGameFpsInternal(): Float {
+            val now = SystemClock.elapsedRealtime()
+            if (trackedFpsTaskId <= 0 || now - lastFpsTaskCheckElapsedMs >= FPS_TASK_REFRESH_INTERVAL_MS) {
+                ensureTargetTaskFpsSubscriptionInternal()
+            }
+            if (trackedFpsTaskId <= 0) {
+                return -1f
+            }
+            val sampleElapsed = latestReportedTaskFpsElapsedMs
+            if (sampleElapsed <= 0L || now - sampleElapsed > FPS_STALE_TIMEOUT_MS) {
+                return 0f
+            }
+            return latestReportedTaskFps
+        }
+
+        private fun isDeviceInteractiveInternal(): Boolean {
+            val pm = powerManagerProxy ?: return true
+            return try {
+                val method = pm.javaClass.getMethod("isInteractive")
+                method.invoke(pm) as? Boolean ?: true
+            } catch (_: Throwable) {
+                true
+            }
+        }
+
+        private fun ensureTargetTaskFpsSubscriptionInternal() {
+            synchronized(fpsSubscriptionLock) {
+                val now = SystemClock.elapsedRealtime()
+                lastFpsTaskCheckElapsedMs = now
+                if (isShuttingDown || !isDeviceInteractiveInternal()) {
+                    unregisterFpsListenerInternal()
+                    return
+                }
+                val targetTaskId = findTargetTaskIdForFpsInternal()
+                if (targetTaskId <= 0) {
+                    unregisterFpsListenerInternal()
+                    return
+                }
+                if (targetTaskId != trackedFpsTaskId) {
+                    // SurfaceFlinger's C++ FpsReporter::addListener uses std::unordered_map::insert
+                    // keyed by wp<IBinder>, which is a no-op if the same IBinder is already present.
+                    // Always unregister the previous listener and allocate a fresh Binder per taskId.
+                    unregisterFpsListenerInternal()
+                    registerFpsListenerForTaskInternal(targetTaskId)
+                }
+            }
+        }
+
+        private fun registerFpsListenerForTaskInternal(taskId: Int): Boolean {
+            if (taskId <= 0) return false
+            val newListenerBinder = createFpsListenerBinder(taskId)
+            fpsListenerBinder = newListenerBinder
+            trackedFpsTaskId = taskId
+            latestReportedTaskFps = 0f
+            latestReportedTaskFpsElapsedMs = 0L
+
+            // Primary path: direct SurfaceFlinger addFpsListener(taskId, IFpsListener) transaction (57).
+            try {
+                val sf = getServiceMethod.invoke(null, "SurfaceFlinger") as? IBinder
+                if (sf != null) {
+                    val data = Parcel.obtain()
+                    val reply = Parcel.obtain()
+                    try {
+                        data.writeInterfaceToken(DESCRIPTOR_SURFACE_COMPOSER)
+                        data.writeInt(taskId)
+                        data.writeStrongBinder(newListenerBinder)
+                        if (sf.transact(SF_TRANSACTION_ADD_FPS_LISTENER, data, reply, 0)) {
+                            fpsRegisteredViaSurfaceFlinger = true
+                            fpsRegisteredViaWindowManager = false
+                            activeTaskFpsCallbackProxy = null
+                            return true
+                        }
+                    } finally {
+                        data.recycle()
+                        reply.recycle()
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "SurfaceFlinger addFpsListener($taskId) failed", t)
+            }
+
+            // Fallback path: IWindowManager.registerTaskFpsCallback(taskId, ITaskFpsCallback)
+            val wm = windowManagerProxy
+            val proxy = createTaskFpsCallbackProxy(newListenerBinder)
+            if (wm != null && proxy != null) {
+                try {
+                    val regMethod = wm.javaClass.methods.firstOrNull { m ->
+                        m.name == "registerTaskFpsCallback" && m.parameterTypes.size == 2
+                    }
+                    if (regMethod != null) {
+                        regMethod.invoke(wm, taskId, proxy)
+                        activeTaskFpsCallbackProxy = proxy
+                        fpsRegisteredViaWindowManager = true
+                        fpsRegisteredViaSurfaceFlinger = false
+                        return true
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "IWindowManager.registerTaskFpsCallback($taskId) failed", t)
+                }
+            }
+
+            trackedFpsTaskId = -1
+            return false
+        }
+
+        private fun unregisterFpsListenerInternal() {
+            synchronized(fpsSubscriptionLock) {
+                val hadTask = trackedFpsTaskId > 0
+                val oldListenerBinder = fpsListenerBinder
+                val oldProxy = activeTaskFpsCallbackProxy
+                trackedFpsTaskId = -1
+                activeTaskFpsCallbackProxy = null
+                latestReportedTaskFps = 0f
+                latestReportedTaskFpsElapsedMs = 0L
+                if (!hadTask && !fpsRegisteredViaSurfaceFlinger && !fpsRegisteredViaWindowManager) {
+                    return
+                }
+                if (fpsRegisteredViaSurfaceFlinger) {
+                    fpsRegisteredViaSurfaceFlinger = false
+                    try {
+                        val sf = getServiceMethod.invoke(null, "SurfaceFlinger") as? IBinder
+                        if (sf != null) {
+                            val data = Parcel.obtain()
+                            val reply = Parcel.obtain()
+                            try {
+                                data.writeInterfaceToken(DESCRIPTOR_SURFACE_COMPOSER)
+                                data.writeStrongBinder(oldListenerBinder)
+                                sf.transact(SF_TRANSACTION_REMOVE_FPS_LISTENER, data, reply, 0)
+                            } finally {
+                                data.recycle()
+                                reply.recycle()
+                            }
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }
+                if (fpsRegisteredViaWindowManager) {
+                    fpsRegisteredViaWindowManager = false
+                    val wm = windowManagerProxy
+                    if (wm != null && oldProxy != null) {
+                        try {
+                            val unregMethod = wm.javaClass.methods.firstOrNull { m ->
+                                m.name == "unregisterTaskFpsCallback" && m.parameterTypes.size == 1
+                            }
+                            unregMethod?.invoke(wm, oldProxy)
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            }
+        }
+
+        private fun findTargetTaskIdForFpsInternal(): Int {
+            val atm = activityTaskManagerProxy ?: return -1
+            return try {
+                val getTasksMethod = atm.javaClass.getMethod(
+                    "getAllRootTaskInfosOnDisplay",
+                    Int::class.javaPrimitiveType
+                )
+                val topTasks = getTasksMethod.invoke(atm, 0) as? List<*> ?: emptyList<Any?>()
+                val bottomTasks = getTasksMethod.invoke(atm, 4) as? List<*> ?: emptyList<Any?>()
+
+                // Screen blanking on AYN Thor sets brightness to -1.0f (< 0f); 0.0f is valid minimum slider brightness.
+                val isTopBlanked = topBootProgressBlankView != null ||
+                    getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f } < 0f
+
+                if (!isTopBlanked) {
+                    findVisibleTaskIdForFps(topTasks, requireStandardActivity = true).takeIf { it > 0 }
+                        ?.let { return it }
+                    findVisibleTaskIdForFps(topTasks, requireStandardActivity = false).takeIf { it > 0 }
+                        ?.let { return it }
+                    findVisibleTaskIdForFps(bottomTasks, requireStandardActivity = true).takeIf { it > 0 }
+                        ?.let { return it }
+                    findVisibleTaskIdForFps(bottomTasks, requireStandardActivity = false).takeIf { it > 0 }
+                        ?.let { return it }
+                    findTopStandardTaskId(topTasks)
+                } else {
+                    findVisibleTaskIdForFps(bottomTasks, requireStandardActivity = true).takeIf { it > 0 }
+                        ?.let { return it }
+                    findVisibleTaskIdForFps(bottomTasks, requireStandardActivity = false).takeIf { it > 0 }
+                        ?.let { return it }
+                    findVisibleTaskIdForFps(topTasks, requireStandardActivity = true).takeIf { it > 0 }
+                        ?.let { return it }
+                    findTopStandardTaskId(bottomTasks)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "findTargetTaskIdForFpsInternal failed", t)
+                -1
+            }
+        }
+
+        private fun findVisibleTaskIdForFps(tasks: List<*>, requireStandardActivity: Boolean): Int {
+            for (task in tasks) {
+                if (task == null) continue
+                try {
+                    val taskId = task.javaClass.getField("taskId").getInt(task)
+                    if (taskId <= 0) continue
+                    val visible = try {
+                        task.javaClass.getField("visible").getBoolean(task)
+                    } catch (_: Throwable) {
+                        try {
+                            task.javaClass.getField("isVisible").getBoolean(task)
+                        } catch (_: Throwable) {
+                            true
+                        }
+                    }
+                    if (!visible) continue
+                    val topActivity =
+                        task.javaClass.getField("topActivity").get(task) as? android.content.ComponentName
+                    val pkg = topActivity?.packageName ?: ""
+                    if (pkg == APP_PACKAGE_NAME ||
+                        pkg == STOCK_PACKAGE_NAME ||
+                        pkg == SYSUI_PACKAGE
+                    ) {
+                        continue
+                    }
+                    val config = task.javaClass.getField("configuration").get(task)
+                    val winConfig = config?.javaClass?.getField("windowConfiguration")?.get(config)
+                    val actType = winConfig?.javaClass?.getMethod("getActivityType")?.invoke(winConfig) as? Int ?: 0
+                    if (requireStandardActivity && actType != 1) {
+                        continue
+                    }
+                    if (!requireStandardActivity && actType == 3) {
+                        // Exclude Recents activity (3 == ACTIVITY_TYPE_RECENTS)
+                        continue
+                    }
+                    return taskId
+                } catch (_: Throwable) {
+                }
+            }
+            return -1
         }
 
         private fun getOrCreateDisplay0Context(): Context? {

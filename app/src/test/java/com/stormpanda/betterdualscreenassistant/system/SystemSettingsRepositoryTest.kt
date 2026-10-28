@@ -317,4 +317,74 @@ class SystemSettingsRepositoryTest {
 
         repo.unregister()
     }
+
+    @Test
+    fun `toggleRefreshRate updates UI state immediately while deferring and coalescing Settings writes`() {
+        Settings.System.putFloat(context.contentResolver, SystemSettingsRepository.KEY_MIN_REFRESH_RATE, 120f)
+        Settings.System.putFloat(context.contentResolver, SystemSettingsRepository.KEY_PEAK_REFRESH_RATE, 120f)
+        val wrappedContext = object : android.content.ContextWrapper(context) {
+            override fun getSystemServiceName(serviceClass: Class<*>): String? {
+                if (serviceClass == android.hardware.display.DisplayManager::class.java) {
+                    return Context.DISPLAY_SERVICE
+                }
+                return super.getSystemServiceName(serviceClass)
+            }
+
+            override fun getSystemService(name: String): Any? {
+                if (name == Context.DISPLAY_SERVICE) return null
+                return super.getSystemService(name)
+            }
+        }
+
+        val repo = SystemSettingsRepository(wrappedContext)
+        assertEquals(120, repo.refreshRate.value)
+
+        // Single tap: UI state flips immediately to 60, while Settings.System write is deferred
+        repo.toggleRefreshRate()
+        assertEquals(60, repo.refreshRate.value)
+        assertEquals(
+            120f,
+            Settings.System.getFloat(context.contentResolver, SystemSettingsRepository.KEY_PEAK_REFRESH_RATE, -1f),
+            0.01f
+        )
+
+        // Intervening refreshAll() during the 220ms settle window must not clobber optimistic UI state
+        repo.refreshAll(refreshDisplayBrightness = false, refreshMegingiardTheme = false)
+        assertEquals(60, repo.refreshRate.value)
+
+        // Once the settle window commits, both min and peak refresh rates are updated to 60f
+        repo.commitPendingRefreshRate()
+        assertEquals(
+            60f,
+            Settings.System.getFloat(context.contentResolver, SystemSettingsRepository.KEY_MIN_REFRESH_RATE, -1f),
+            0.01f
+        )
+        assertEquals(
+            60f,
+            Settings.System.getFloat(context.contentResolver, SystemSettingsRepository.KEY_PEAK_REFRESH_RATE, -1f),
+            0.01f
+        )
+
+        // Rapid double-tap (60 -> 120 -> 60) within settle window coalesces back to 60 without writing 120f
+        repo.toggleRefreshRate()
+        assertEquals(120, repo.refreshRate.value)
+        repo.toggleRefreshRate()
+        assertEquals(60, repo.refreshRate.value)
+        repo.commitPendingRefreshRate()
+        assertEquals(
+            60f,
+            Settings.System.getFloat(context.contentResolver, SystemSettingsRepository.KEY_PEAK_REFRESH_RATE, -1f),
+            0.01f
+        )
+
+        // Unregistering while a write is pending flushes it synchronously
+        repo.toggleRefreshRate()
+        assertEquals(120, repo.refreshRate.value)
+        repo.unregister()
+        assertEquals(
+            120f,
+            Settings.System.getFloat(context.contentResolver, SystemSettingsRepository.KEY_PEAK_REFRESH_RATE, -1f),
+            0.01f
+        )
+    }
 }
