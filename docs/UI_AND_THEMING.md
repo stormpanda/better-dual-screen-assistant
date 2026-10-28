@@ -171,10 +171,10 @@ The top-screen Companion App (`MainActivity`) is built on the **Megingiard** gam
 ### 4.1 `GamepadTwoPaneScaffold` & `GamepadDeck`
 
 [`GamepadTwoPaneScaffold`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/megingiard/ui/GamepadScaffold.kt) structures the screen into:
-- **Left Sidebar (`180dp` width)**: Vertical list of `GamepadSidebarCategory` items. Shows a `3dp × 18dp` vertical accent indicator bar when selected, and a `2dp` primary border + subtle scale (`1.02f`) when focused by the gamepad.
+- **Left Sidebar (`168dp` width)**: Vertical list of `GamepadSidebarCategory` items. Shows a `3dp × 18dp` vertical accent indicator bar when selected, and a `2dp` primary border + subtle scale (`1.02f`) when focused by the gamepad.
 - **Right Content Pane (`weight = 1f`)**:
   - **Breadcrumb Header**: Displays `Category` or `Category  ›  Sub-Page` with a touch/clickable Back pill when inside a sub-page.
-  - **`GamepadDeck`**: Scrollable vertical column of settings cards where each item is wrapped in a `FocusBringIntoViewWrapper` (`onFocusedBoundsChanged` + `scrollTo`) so D-pad navigation automatically keeps the focused card comfortably inside the viewport with `40dp` top/bottom padding.
+  - **`GamepadDeck`**: Scrollable vertical column of settings cards where each item is wrapped in a `FocusBringIntoViewWrapper` (`onFocusedBoundsChanged` + `scrollTo`) so D-pad navigation automatically keeps the focused card comfortably inside the viewport with `48dp` top/bottom padding.
 
 ### 4.2 `PrimaryOverlayInputBridge` (Controller Input & Repeat Engine)
 
@@ -184,7 +184,7 @@ The top-screen Companion App (`MainActivity`) is built on the **Megingiard** gam
 
 ### 4.3 Interactive `QuickTogglesVisualReorderCard`
 
-Implemented in [`MainActivity.kt`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/betterdualscreenassistant/MainActivity.kt#L1125-L1579), this component embeds an authentic `470dp × 246dp` interactive preview of the bottom-screen Quick Settings panel inside the top-screen settings deck:
+Implemented in [`MainActivity.kt`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/betterdualscreenassistant/MainActivity.kt#L1061-L1607), this component embeds a compact `max-420dp × 174dp` (`160dp` single-page) interactive preview of the bottom-screen Quick Settings panel inside the top-screen settings deck so **Enable / Disable Toggles** and **Reset Quick Toggles** remain visible above the fold:
 - **Dual Input Model**:
   - **Touch**: Tap any tile (`selectedTileForSwap`) to highlight it, then tap any second tile to swap their positions in `qs_tile_order`.
   - **Controller**: Press `A` on the card to enter `isGridActive` mode -> navigate slots with D-Pad or `L1`/`R1` -> press `A` to toggle `isGrabbing = true` -> moving cursor with D-Pad/`L1`/`R1` immediately calls `repository.moveQuickSettingTile(tile, targetIndex)` so both the top-screen preview and bottom-screen live overlay reorder in real time -> press `A` or `B` to drop.

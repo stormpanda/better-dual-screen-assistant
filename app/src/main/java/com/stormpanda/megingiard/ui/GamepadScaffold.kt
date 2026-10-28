@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -86,21 +87,24 @@ import java.util.Locale
 
 private const val TAG = "GamepadScaffold"
 
-private val GS_SIDEBAR_WIDTH = 180.dp
-private val GS_SIDEBAR_ITEM_HEIGHT = 40.dp
-private val GS_SIDEBAR_CORNER = 10.dp
+private val GS_SIDEBAR_WIDTH = 168.dp
+private val GS_SIDEBAR_ITEM_HEIGHT = 36.dp
+private val GS_SIDEBAR_CORNER = 9.dp
 private val GS_SIDEBAR_SHAPE = RoundedCornerShape(GS_SIDEBAR_CORNER)
-private val GS_SIDEBAR_ICON_SIZE = 20.dp
+private val GS_SIDEBAR_ICON_SIZE = 18.dp
 private val GS_FOCUS_STROKE_WIDTH = 1.5.dp
 private val GS_ZERO_BORDER_WIDTH = 0.dp
-private val GS_SIDEBAR_ITEM_PADDING_H = 12.dp
-private val GS_SIDEBAR_ITEM_SPACING = 10.dp
-private val GS_SIDEBAR_PADDING = 8.dp
-private val GS_SIDEBAR_SPACING = 4.dp
-private val GS_DECK_PADDING_H = 16.dp
-private val GS_DECK_PADDING_V = 12.dp
-private val GS_DECK_SPACING = 10.dp
-private val GS_DECK_SCROLL_EXTRA_PADDING = 64.dp
+private val GS_SIDEBAR_ITEM_PADDING_H = 10.dp
+private val GS_SIDEBAR_ITEM_SPACING = 8.dp
+private val GS_SIDEBAR_PADDING = 6.dp
+private val GS_SIDEBAR_SPACING = 3.dp
+private val GS_DECK_PADDING_H = 12.dp
+private val GS_DECK_PADDING_V = 8.dp
+private val GS_BREADCRUMB_PADDING_TOP = 8.dp
+private val GS_BREADCRUMB_PADDING_BOTTOM = 4.dp
+private val GS_DECK_TOP_CLEARANCE = 2.dp
+private val GS_DECK_SPACING = 8.dp
+private val GS_DECK_SCROLL_EXTRA_PADDING = 48.dp
 private const val GS_SIDEBAR_SELECTED_FOCUSED_ALPHA = 0.35f
 private const val GS_SIDEBAR_SELECTED_ALPHA = 0.2f
 private const val GS_CARD_FOCUSED_BG_ALPHA = 0.95f
@@ -183,6 +187,7 @@ fun GamepadBreadcrumbHeader(
             GamepadSectionHeader(
                 text = crumbs.joinToString("  ›  ") { it.uppercase(Locale.ROOT) },
                 color = accentColor,
+                contentPadding = PaddingValues(horizontal = GC_SPACING_4, vertical = 0.dp),
             )
         }
     }
@@ -193,7 +198,7 @@ fun GamepadBreadcrumbHeader(
  *
  * Automatically manages:
  * - Top breadcrumb / category header trail formatted with ' › ' in uppercase (when rendered inside standalone deck).
- * - Standardized 16.dp horizontal padding and 10.dp vertical spacing.
+ * - Standardized 12.dp horizontal padding and 8.dp vertical spacing.
  * - Gamepad [BringIntoViewSpec] focus scrolling behavior.
  * - Optional vertical scrolling container vs non-scrollable fill (e.g. for LazyLists or custom canvas).
  */
@@ -260,8 +265,10 @@ fun GamepadDeck(
                     .fillMaxSize()
                     .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                     .padding(
-                        horizontal = GS_DECK_PADDING_H,
-                        vertical = if (showLocalHeader) GS_DECK_PADDING_V else 0.dp,
+                        start = GS_DECK_PADDING_H,
+                        end = GS_DECK_PADDING_H,
+                        top = if (showLocalHeader) GS_DECK_PADDING_V else GS_DECK_TOP_CLEARANCE,
+                        bottom = GS_DECK_PADDING_V,
                     ),
             verticalArrangement = Arrangement.spacedBy(GS_DECK_SPACING),
         ) {
@@ -866,8 +873,10 @@ fun GamepadTwoPaneScaffold(
                                     .fillMaxWidth()
                                     .then(breadcrumbClickModifier)
                                     .padding(
-                                        horizontal = GS_DECK_PADDING_H,
-                                        vertical = GS_DECK_PADDING_V,
+                                        start = GS_DECK_PADDING_H,
+                                        end = GS_DECK_PADDING_H,
+                                        top = GS_BREADCRUMB_PADDING_TOP,
+                                        bottom = GS_BREADCRUMB_PADDING_BOTTOM,
                                     ),
                         ) {
                             GamepadBreadcrumbHeader(

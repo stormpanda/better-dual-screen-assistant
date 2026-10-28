@@ -28,6 +28,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -38,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -106,6 +108,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -591,9 +595,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                .height(44.dp)
                 .background(colors.surfaceVariant.copy(alpha = 0.8f))
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 16.dp)
                 .focusProperties {
                     canFocus = false
                     enter = { FocusRequester.Cancel }
@@ -602,9 +606,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(7.dp))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(7.dp)),
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(6.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
@@ -628,12 +632,12 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                         }
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Text(
                 text = "BetterDualScreenAssistant",
                 color = colors.onSurface,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
@@ -647,8 +651,8 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                 painter = painterResource(R.drawable.support_me_on_kofi_dark),
                 contentDescription = stringResource(R.string.settings_support_app),
                 modifier = Modifier
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(7.dp))
                     .focusProperties { canFocus = false }
                     .clickable {
                         launchUrlOnPrimaryDisplay(context, "https://ko-fi.com/stormpanda")
@@ -1041,9 +1045,9 @@ private fun QuickTogglesSettingsTabContent(
         title = "Reset Quick Toggles",
         confirmTitle = "Confirm Reset to Default",
         description = if (isModified) {
-            "Restore default toggle order and category defaults (Stock AYN on, Android System & Tools off)"
+            "Restore default toggle order and category visibility"
         } else {
-            "All toggles are currently in their default order and category state"
+            "All toggles are currently in their default order and visibility"
         },
         confirmDescription = "Press A again to reset toggle order and visibility, or B to cancel",
         actionText = "Reset",
@@ -1165,10 +1169,10 @@ private fun QuickTogglesVisualReorderCard(
 
     val currentTile = activeTiles.getOrNull(cursorIndex)
     val subtitle = when {
-        !isGridActive -> "Press A to enter the Quick Settings grid, or tap any two tiles to swap positions"
-        isGrabbed && currentTile != null -> "Moving \"${currentTile.title}\" — use D-pad to reposition, then press A or B to drop"
-        currentTile != null -> "Selected #${cursorIndex + 1} \"${currentTile.title}\" — press A to grab & move, or B to exit grid"
-        else -> "Use D-pad to select a toggle, press A to grab & move, or B to exit"
+        !isGridActive -> "Press A to reorder with D-pad, or tap two tiles to swap"
+        isGrabbed && currentTile != null -> "Moving \"${currentTile.title}\" — D-pad to reposition, A or B to drop"
+        currentTile != null -> "Selected #${cursorIndex + 1} \"${currentTile.title}\" — A to grab & move, B to exit"
+        else -> "Use D-pad to select a toggle, A to grab & move, or B to exit"
     }
     val pillText = when {
         isGrabbed -> "Moving #${cursorIndex + 1}"
@@ -1194,6 +1198,7 @@ private fun QuickTogglesVisualReorderCard(
         modifier = modifier,
         itemKey = "quick_toggles_visual_reorder",
         isAdjusting = isGridActive,
+        contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp),
         onFocusChanged = { focused ->
             hasCardFocus = focused
             if (!focused) {
@@ -1310,14 +1315,15 @@ private fun QuickTogglesVisualReorderCard(
                 }
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Authentic QuickSettingsPanel replica (2x4 paged grid + bottom page indicator)
+            // Compact QuickSettingsPanel replica (2x4 paged grid + bottom page indicator)
             Column(
                 modifier = Modifier
-                    .width(470.dp)
-                    .height(246.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .widthIn(max = 420.dp)
+                    .fillMaxWidth()
+                    .height(if (pageCount > 1) 174.dp else 160.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(tccColors.panelBackground)
                     .border(
                         width = if (isGridActive) 1.5.dp else 1.dp,
@@ -1326,16 +1332,16 @@ private fun QuickTogglesVisualReorderCard(
                         } else {
                             appColors.onSurface.copy(alpha = 0.10f)
                         },
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(16.dp)
                     )
-                    .padding(top = 6.dp, bottom = 4.dp),
+                    .padding(top = 12.dp, bottom = if (pageCount > 1) 8.dp else 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.91f)
+                        .weight(1f)
                         .padding(horizontal = 10.dp)
                         .focusProperties { canFocus = false }
                 ) { pageIndex ->
@@ -1343,7 +1349,7 @@ private fun QuickTogglesVisualReorderCard(
                     val pageOffset = pageIndex * 8
                     Column(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceEvenly
+                        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)
                     ) {
                         for (rowIndex in 0 until 2) {
                             Row(
@@ -1401,23 +1407,23 @@ private fun QuickTogglesVisualReorderCard(
                     }
                 }
 
-                // Bottom 9%: ViewPagerIndicator matching QuickSettingsPanel
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.09f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (pageCount > 1) {
+                if (pageCount > 1) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             repeat(pageCount) { index ->
                                 val isSelected = pagerState.currentPage == index
                                 Box(
                                     modifier = Modifier
-                                        .size(6.dp)
+                                        .size(5.dp)
                                         .clip(CircleShape)
                                         .background(if (isSelected) tccColors.accent else tccColors.secondary)
                                         .focusProperties { canFocus = false }
@@ -1437,9 +1443,9 @@ private fun QuickTogglesVisualReorderCard(
 }
 
 /**
- * Interactive replica of `TccButton` used inside `QuickTogglesVisualReorderCard`,
- * preserving exact 50.5dp circle + 26dp icon + 29dp title dimensions while adding
- * a slot index badge and cursor/grabbed highlight states.
+ * Compact interactive replica of `TccButton` used inside `QuickTogglesVisualReorderCard`,
+ * scaled (`35dp` circle + `18dp` icon + `23dp` title) so all Quick Toggles cards fit above
+ * the fold while preserving slot index badges and cursor/grabbed highlight states.
  */
 @Composable
 private fun ReorderableTccTile(
@@ -1454,7 +1460,7 @@ private fun ReorderableTccTile(
     val interactionSource = remember { MutableInteractionSource() }
 
     val scale by animateFloatAsState(
-        targetValue = if (isGrabbed) 1.07f else 1f,
+        targetValue = if (isGrabbed) 1.06f else 1f,
         animationSpec = tween(durationMillis = 150),
         label = "tileGrabScale"
     )
@@ -1480,7 +1486,7 @@ private fun ReorderableTccTile(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(
                 when {
                     isGrabbed -> appColors.accent.copy(alpha = 0.18f)
@@ -1490,9 +1496,9 @@ private fun ReorderableTccTile(
             )
             .then(
                 if (isGrabbed) {
-                    Modifier.border(2.dp, appColors.accent, RoundedCornerShape(10.dp))
+                    Modifier.border(2.dp, appColors.accent, RoundedCornerShape(8.dp))
                 } else if (isCursorSelected) {
-                    Modifier.border(1.5.dp, appColors.accent.copy(alpha = 0.85f), RoundedCornerShape(10.dp))
+                    Modifier.border(1.5.dp, appColors.accent.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
                 } else {
                     Modifier
                 }
@@ -1503,22 +1509,20 @@ private fun ReorderableTccTile(
                 indication = null,
                 onClick = onClick
             )
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(horizontal = 3.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.width(72.5.dp),
+            modifier = Modifier.width(70.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(6.dp))
-
             Box(
-                modifier = Modifier.size(50.5.dp),
+                modifier = Modifier.size(35.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .size(50.5.dp)
+                        .size(35.dp)
                         .clip(CircleShape)
                         .then(
                             if (isGrabbed) {
@@ -1547,7 +1551,7 @@ private fun ReorderableTccTile(
                         painter = painterResource(id = tccDrawable(tile.iconRes)),
                         contentDescription = tile.title,
                         colorFilter = ColorFilter.tint(iconTint),
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(18.dp),
                         contentScale = ContentScale.Fit
                     )
                 }
@@ -1556,7 +1560,7 @@ private fun ReorderableTccTile(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(5.dp))
                         .background(
                             if (isGrabbed || isCursorSelected) {
                                 appColors.accent
@@ -1564,7 +1568,7 @@ private fun ReorderableTccTile(
                                 appColors.surfaceVariant.copy(alpha = 0.92f)
                             }
                         )
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                        .padding(horizontal = 3.5.dp, vertical = 0.5.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -1574,24 +1578,28 @@ private fun ReorderableTccTile(
                         } else {
                             appColors.onSurfaceSecondary
                         },
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
+                        lineHeight = 9.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(3.dp))
+
             Box(
                 modifier = Modifier
-                    .width(72.5.dp)
-                    .height(29.dp)
-                    .padding(horizontal = 2.dp),
-                contentAlignment = Alignment.Center
+                    .width(70.dp)
+                    .height(23.dp)
+                    .padding(horizontal = 1.dp),
+                contentAlignment = Alignment.TopCenter
             ) {
                 Text(
                     text = tile.title,
                     color = textColor,
-                    fontSize = 11.sp,
-                    lineHeight = 12.5.sp,
+                    fontSize = 10.sp,
+                    lineHeight = 11.sp,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                     fontWeight = if (isCursorSelected || isGrabbed) FontWeight.SemiBold else FontWeight.Normal,
                     textAlign = TextAlign.Center,
                     maxLines = 2,

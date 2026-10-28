@@ -309,7 +309,7 @@ Configures core assistant behavior and optional UI controls:
 Allows complete customization of which Quick Setting tiles appear in the overlay and in what order:
 
 1. **Quick Settings Layout (`QuickTogglesVisualReorderCard`)**:
-   - Renders a live, interactive **`2 × 4` paged replica** (`470dp × 246dp`) of the Quick Settings panel complete with `#1..#N` slot badges and page dots.
+   - Renders a compact, live, interactive **`2 × 4` paged replica** (`max-420dp × 174dp`) of the Quick Settings panel complete with `#1..#N` slot badges and page dots, sized so **Enable / Disable Toggles** and **Reset Quick Toggles** remain visible above the fold without scrolling.
    - **Touch Reordering**: Tap any tile to select it, then tap a second tile to swap their positions.
    - **Gamepad Reordering**: Focus the layout card and press **`A`** to enter the grid -> use **D-Pad** (or **`L1`/`R1`** to cross page boundaries) to highlight a tile -> press **`A`** to **Grab** the tile -> move with **D-Pad** / **`L1`/`R1`** to shift the tile through the grid in real time -> press **`A`** or **`B`** to **Drop** the tile -> press **`B`** again to return to the settings deck.
 2. **Enable / Disable Toggles (`SubPage.ENABLE_DISABLE_TOGGLES`)**:

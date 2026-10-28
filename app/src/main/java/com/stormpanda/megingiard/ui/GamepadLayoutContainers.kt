@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,10 +35,10 @@ private val GC_INFO_BOX_RADIUS = 8.dp
 private const val GC_INFO_BOX_BG_ALPHA = 0.5f
 private const val GC_INFO_BOX_BORDER_ALPHA = 0.2f
 private val GC_INFO_BOX_BORDER_WIDTH = 1.dp
-private val GC_INFO_BOX_PADDING_H = 14.dp
-private val GC_INFO_BOX_PADDING_V = 12.dp
-private val GC_INFO_BOX_SPACING = 10.dp
-private val GC_INFO_BOX_ICON_SIZE = 20.dp
+private val GC_INFO_BOX_PADDING_H = 12.dp
+private val GC_INFO_BOX_PADDING_V = 9.dp
+private val GC_INFO_BOX_SPACING = 8.dp
+private val GC_INFO_BOX_ICON_SIZE = 18.dp
 private val GC_INFO_BOX_TEXT_SPACING = 2.dp
 private val GC_INFO_BOX_SHAPE = RoundedCornerShape(GC_INFO_BOX_RADIUS)
 
@@ -49,6 +50,7 @@ fun GamepadSectionHeader(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = LocalAppColors.current.sectionHeaderColor,
+    contentPadding: PaddingValues = PaddingValues(horizontal = GC_SPACING_6, vertical = GC_SPACING_4),
 ) {
     Text(
         text = text.uppercase(Locale.ROOT),
@@ -59,7 +61,7 @@ fun GamepadSectionHeader(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(horizontal = GC_SPACING_8, vertical = GC_SPACING_6),
+                .padding(contentPadding),
     )
 }
 

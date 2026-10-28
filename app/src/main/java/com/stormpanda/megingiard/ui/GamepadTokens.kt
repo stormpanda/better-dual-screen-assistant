@@ -3,14 +3,14 @@ package com.stormpanda.megingiard.ui
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 
-internal val GC_CARD_CORNER = 12.dp
-internal val GC_CARD_MIN_HEIGHT = 56.dp
-internal val GC_CARD_H_PADDING = 16.dp
-internal val GC_CARD_V_PADDING = 12.dp
+internal val GC_CARD_CORNER = 10.dp
+internal val GC_CARD_MIN_HEIGHT = 48.dp
+internal val GC_CARD_H_PADDING = 13.dp
+internal val GC_CARD_V_PADDING = 9.dp
 internal val GC_FOCUS_BORDER_WIDTH = 2.5.dp
 internal val GC_DEFAULT_BORDER_WIDTH = 1.dp
-internal val GC_ICON_BOX_SIZE = 36.dp
-internal val GC_ROW_CONTENT_SPACING = 12.dp
+internal val GC_ICON_BOX_SIZE = 32.dp
+internal val GC_ROW_CONTENT_SPACING = 10.dp
 internal val GC_SPACING_2 = 2.dp
 internal val GC_SPACING_4 = 4.dp
 internal val GC_SPACING_6 = 6.dp

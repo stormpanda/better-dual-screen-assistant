@@ -251,6 +251,76 @@ class GamepadScaffoldTouchNavigationTest {
     }
 
     @Test
+    @Config(qualifiers = "w832dp-h468dp-369dpi")
+    fun `Quick Toggles tab shows all three options above the fold on AYN Thor top screen without scrolling`() {
+        assertAllQuickTogglesCardsVisibleAboveFold()
+    }
+
+    @Test
+    @Config(qualifiers = "w538dp-h468dp-369dpi")
+    fun `Quick Toggles tab shows all three options above the fold on AYN Thor bottom screen without scrolling`() {
+        assertAllQuickTogglesCardsVisibleAboveFold()
+    }
+
+    private fun assertAllQuickTogglesCardsVisibleAboveFold() {
+        mockkObject(PServerClient)
+        mockkObject(PrivilegedBridge)
+        mockkObject(UpdateManager)
+        every { PServerClient.isAvailable() } returns true
+        every { PServerClient.isStockAssistantEnabled(any()) } returns false
+        every { PServerClient.ensurePermissionsGranted(any()) } just runs
+        every { PrivilegedBridge.ensureInitialized(any()) } just runs
+        every { UpdateManager.init(any()) } just runs
+        every { UpdateManager.checkForUpdates(any(), any()) } just runs
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        activeControllers.add(controller)
+        val activity = controller.get()
+        idleCompose(activity, 300)
+
+        tapClickableNodeWithText(activity, "Quick Toggles")
+        idleCompose(activity, 300)
+
+        val windowHeight = activity.window.decorView.height.toFloat()
+        assertTrue("Expected realistic AYN Thor ~1080px height, got $windowHeight", windowHeight in 1000f..1150f)
+
+        listOf(
+            "Quick Settings Layout",
+            "Enable / Disable Toggles",
+            "Reset Quick Toggles",
+            "All toggles are currently in their default order and visibility"
+        ).forEach { label ->
+            val bounds = findCardBoundsForText(activity, label)
+            assertTrue(
+                "Node '$label' should have positive height, got $bounds",
+                bounds.height > 0f && bounds.top >= 0f
+            )
+            assertTrue(
+                "Node '$label' bottom (${bounds.bottom}) must be completely visible within viewport height ($windowHeight) without scrolling",
+                bounds.bottom <= windowHeight
+            )
+        }
+
+        // Also swap two tiles to enable Reset Quick Toggles and arm its 2-step confirmation state,
+        // verifying the expanded confirmation card still fits completely above the fold.
+        tapClickableNodeWithText(activity, "Performance Mode")
+        idleCompose(activity, 100)
+        tapClickableNodeWithText(activity, "Fan Control")
+        idleCompose(activity, 150)
+        tapClickableNodeWithText(activity, "Reset Quick Toggles")
+        idleCompose(activity, 150)
+
+        val confirmDescBounds = findNodeWithText(
+            activity,
+            "Press A again to reset toggle order and visibility, or B to cancel"
+        ).boundsInWindow
+        assertTrue(
+            "Armed Reset confirmation description bottom (${confirmDescBounds.bottom}) must remain visible within viewport height ($windowHeight)",
+            confirmDescBounds.bottom <= windowHeight
+        )
+    }
+
+    @Test
     fun `MainActivity gamepad carousel adjustment keeps focus across theme changes and D-pad Left cycles options without backing out`() {
         mockkObject(PServerClient)
         mockkObject(PrivilegedBridge)
@@ -847,9 +917,10 @@ class GamepadScaffoldTouchNavigationTest {
     private fun idleCompose(activity: ComponentActivity, advanceMs: Long) {
         val steps = (advanceMs / 16L).coerceAtLeast(2L)
         val decor = activity.window.decorView
+        val dm = activity.resources.displayMetrics
         val canvas = Canvas(Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888))
-        val w = if (decor.width > 0) decor.width else 2560
-        val h = if (decor.height > 0) decor.height else 1600
+        val w = if (decor.width > 0) decor.width else dm.widthPixels
+        val h = if (decor.height > 0) decor.height else dm.heightPixels
         repeat(steps.toInt()) { stepIndex ->
             if (stepIndex == 2 && advanceMs >= 50L) {
                 Thread.sleep(65L)
@@ -889,6 +960,15 @@ class GamepadScaffoldTouchNavigationTest {
     private fun findNodeWithText(activity: ComponentActivity, substring: String): SemanticsNode =
         findNodeWithTextOrNull(activity, substring)
             ?: throw AssertionError("Expected Compose node containing text '$substring'")
+
+    private fun findCardBoundsForText(activity: ComponentActivity, substring: String): Rect {
+        val textNode = findNodeWithText(activity, substring)
+        var cardNode: SemanticsNode? = textNode
+        while (cardNode != null && !cardNode.config.contains(SemanticsActions.OnClick) && !cardNode.config.contains(SemanticsProperties.Focused)) {
+            cardNode = cardNode.parent
+        }
+        return (cardNode ?: textNode).boundsInWindow
+    }
 
     private fun tapClickableNodeWithText(activity: ComponentActivity, substring: String) {
         val textNode = findNodeWithText(activity, substring)

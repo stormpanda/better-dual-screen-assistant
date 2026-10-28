@@ -79,9 +79,9 @@ private const val TAG = "GamepadCards"
 
 private val GC_FOCUS_ELEVATION = 6.dp
 private val GC_DEFAULT_ELEVATION = 0.dp
-private val GC_ICON_SIZE = 22.dp
-private val GC_STATUS_PILL_H_PADDING = 10.dp
-private val GC_STATUS_PILL_V_PADDING = 4.dp
+private val GC_ICON_SIZE = 19.dp
+private val GC_STATUS_PILL_H_PADDING = 9.dp
+private val GC_STATUS_PILL_V_PADDING = 3.dp
 private val GC_TEXT_SIZE_PILL = 12.sp
 private const val GC_CARD_FOCUSED_BG_ALPHA = 0.95f
 private const val GC_CARD_UNFOCUSED_BG_ALPHA = 0.55f
@@ -540,7 +540,7 @@ fun GamepadCardRow(
         if (trailingContent != null) {
             Spacer(modifier = Modifier.width(GC_ROW_CONTENT_SPACING))
             Box(
-                modifier = Modifier.height(GC_ICON_BOX_SIZE),
+                modifier = Modifier.defaultMinSize(minHeight = GC_ICON_BOX_SIZE),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 trailingContent()

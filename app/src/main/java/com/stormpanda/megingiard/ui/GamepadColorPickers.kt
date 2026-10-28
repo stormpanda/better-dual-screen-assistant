@@ -53,15 +53,15 @@ import kotlin.math.roundToInt
 
 private const val TAG = "GamepadColorPickers"
 
-private val GC_SWATCH_SIZE = 28.dp
-private val GC_SWATCH_CHECK_ICON_SIZE = 16.dp
+private val GC_SWATCH_SIZE = 26.dp
+private val GC_SWATCH_CHECK_ICON_SIZE = 15.dp
 private val GC_SWATCH_BORDER_WIDTH_ADJUSTING = 3.dp
 private val GC_SWATCH_BORDER_WIDTH_DEFAULT = 1.dp
 private val GC_PALETTE_CONTAINER_H_PADDING = 8.dp
-private val GC_PALETTE_CONTAINER_V_PADDING = 6.dp
+private val GC_PALETTE_CONTAINER_V_PADDING = 5.dp
 private val GC_PALETTE_CONTAINER_BORDER_ADJUSTING = 2.dp
 private val GC_PALETTE_CONTAINER_BORDER_DEFAULT = 1.dp
-private val GC_COLOR_CARD_CONTENT_SPACING = 8.dp
+private val GC_COLOR_CARD_CONTENT_SPACING = 6.dp
 private const val GC_SWATCH_BORDER_ALPHA = 0.3f
 
 /**

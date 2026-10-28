@@ -65,8 +65,8 @@ import com.stormpanda.megingiard.shared.ui.R
 import kotlinx.coroutines.delay
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
-private val GC_STEPPER_BTN_SIZE = 32.dp
-private val GC_SLIDER_HEIGHT = 24.dp
+private val GC_STEPPER_BTN_SIZE = 28.dp
+private val GC_SLIDER_HEIGHT = 22.dp
 private val GC_SLIDER_TRACK_HEIGHT = 8.dp
 private val GC_TEXT_SIZE_CAPSULE = 13.sp
 private val GC_CAPSULE_TEXT_WIDTH = 140.dp
@@ -535,7 +535,7 @@ fun GamepadSliderCard(
     ) { focused ->
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(GC_SPACING_8),
+            verticalArrangement = Arrangement.spacedBy(GC_SPACING_6),
         ) {
             GamepadCardRow(
                 title = title,
