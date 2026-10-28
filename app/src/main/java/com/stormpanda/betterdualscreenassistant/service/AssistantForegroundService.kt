@@ -243,6 +243,13 @@ class AssistantForegroundService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.d(TAG, "Task removed; keeping AssistantForegroundService active")
+        PrivilegedBridge.ensureInitialized(applicationContext)
+        enforceStockTakeoverIfPreferred()
+    }
+
     override fun onDestroy() {
         instance = null
         try {
@@ -272,10 +279,18 @@ class AssistantForegroundService : Service() {
         }
         nm?.createNotificationChannel(channel)
 
+        val activityIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+            )
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            activityIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 

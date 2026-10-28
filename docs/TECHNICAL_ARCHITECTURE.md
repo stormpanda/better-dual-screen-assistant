@@ -221,16 +221,19 @@ sequenceDiagram
 
 To verify health at runtime (`PServerClient.isStockAssistantEnabled()`), the app inspects `/proc/<pid>/stat` for the stopped process state `) T ` in addition to querying `pm list packages -d`.
 
-### 4.3 Automatic Uninstall & Force-Stop Watchdog (`PrivilegedHelperMain`)
+### 4.3 Persistent Service Supervisor & Automatic Uninstall Watchdog (`PrivilegedHelperMain`)
 
-Because `PrivilegedHelperMain` runs independently under `UID 0`, it survives when our app process is killed, updated, force-stopped, or uninstalled. It monitors the app via two mechanisms:
+Because `PrivilegedHelperMain` runs independently under `UID 0`, it survives when our app process is killed by Recents task removal, Recents "Clear All", vendor RAM cleaners (`forceStopPackage`), OOM, updates, or uninstall. Meanwhile, `MainActivity` is marked `android:excludeFromRecents="true"` and calls `finishAndRemoveTask()` when navigating away so no persistent Settings card sits in Recents.
+
+`PrivilegedHelperMain` monitors the app via two mechanisms:
 1. **`IBinder.DeathRecipient` (`binderDied()`)** on the `clientToken` registered via `TRANSACTION_REGISTER_CLIENT`.
 2. **Periodic Package Watchdog (`WATCHDOG_POLL_INTERVAL_MS = 250ms`)** checking `IPackageManager.getApplicationInfo`.
 
 When the client process dies or disappears:
-- **Uninstall Detection (`!isPackageInstalled`)**: Triggers recovery immediately.
-- **Force-Stop vs. Update Discrimination (`FORCE_STOP_GRACE_MS = 1500ms`)**: When Android installs an APK update (`adb install -r`), `PackageManager` briefly sets `ApplicationInfo.FLAG_STOPPED` while replacing the code. The watchdog waits `1.5s`; if `FLAG_STOPPED` is still set and no new client has re-registered, it confirms a genuine user Force-Stop.
-- **Unexpected Crash Grace (`RESTART_GRACE_MS = 3000ms`)**: If the process died without `FLAG_STOPPED`, it waits up to `3.0s` for `AssistantForegroundService` to restart before triggering recovery.
+- **Uninstall or Package Disable Detection (`appInfo == null || !appInfo.enabled`)**: Triggers stock recovery immediately.
+- **Opt-Out Respect (`!replaceStockPreferred`)**: If the user toggled off *Replace Stock Assistant* in Settings, does not force-respawn BDSA and cleans up helper state.
+- **True Persistent Respawn (`replaceStockPreferred == true`)**: Clears `ApplicationInfo.FLAG_STOPPED` via `IPackageManager.setPackageStoppedState` and immediately restarts `AssistantForegroundService` (via direct `IActivityManager.startService` with `am start-foreground-service` fallback). If the same APK restarted, re-offers `HelperBinder` immediately; if `sourceDir` changed after an in-place APK update, allows the updated APK to spawn a fresh helper and exits cleanly.
+- **Rapid-Crash Circuit Breaker (`MAX_RAPID_CRASHES = 8`, `MAX_UNREGISTERED_RESPAWN_ATTEMPTS = 6`)**: If the app repeatedly crashes within `3.0s` of startup or fails to register after `6` respawn attempts, triggers stock recovery rather than infinite-looping.
 
 **Recovery Sequence (`restoreStockAssistantAndCleanup()`)**:
 1. Removes any Display 0 blanking cover window and restores status bar flags (`IStatusBarService.disable(0)`).

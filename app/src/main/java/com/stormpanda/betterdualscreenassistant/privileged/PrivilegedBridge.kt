@@ -188,6 +188,12 @@ object PrivilegedBridge {
         scope.launch {
             try {
                 PServerClient.ensurePermissionsGranted(appContext)
+                val reconnected = helperBinder
+                if (reconnected != null && reconnected.isBinderAlive && ping()) {
+                    _isHelperConnected.value = true
+                    syncWatchdogStateToHelper()
+                    return@launch
+                }
                 val apkPath = PServerClient.shellQuote(appContext.applicationInfo.sourceDir)
                 val cmd = "CLASSPATH=$apkPath /system/bin/app_process /system/bin " +
                     "com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain >/dev/null 2>&1 &"

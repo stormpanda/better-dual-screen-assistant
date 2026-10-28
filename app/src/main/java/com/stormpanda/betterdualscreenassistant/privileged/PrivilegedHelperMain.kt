@@ -29,9 +29,13 @@ import java.nio.charset.StandardCharsets
  * Delivers an in-memory [IBinder] to [PrivilegedBinderProvider] so our user-installed APK
  * can perform system-level Binder and sysfs operations at 120Hz with sub-millisecond latency.
  *
- * Also acts as an event-driven (`IBinder.linkToDeath`) lifecycle companion that restores
- * Dual-Screen display state, unblanks screens, and wakes the stock `com.odin.dualscreen.assistant`
- * if our app is uninstalled or force-stopped.
+ * Also acts as an event-driven (`IBinder.linkToDeath`) persistent lifecycle supervisor:
+ * - Automatically respawns `AssistantForegroundService` (clearing `FLAG_STOPPED` if set by Recents
+ *   "Clear All" or RAM cleaners) while the package remains installed & enabled and stock takeover
+ *   is active (`replaceStockPreferred == true`), with a rapid-crash circuit breaker.
+ * - Restores Dual-Screen display state, unblanks screens, removes OS theme overlays, and wakes
+ *   the stock `com.odin.dualscreen.assistant` if our app is uninstalled, disabled, opted out, or
+ *   trips the crash-loop circuit breaker.
  */
 @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
 object PrivilegedHelperMain {
@@ -63,7 +67,7 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SET_TOP_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 17
     const val TRANSACTION_GET_GAME_FPS = IBinder.FIRST_CALL_TRANSACTION + 18
 
-    const val HELPER_PROTOCOL_VERSION = 11
+    const val HELPER_PROTOCOL_VERSION = 12
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -91,9 +95,12 @@ object PrivilegedHelperMain {
             STATUS_BAR_DISABLE_SYSTEM_INFO or
             STATUS_BAR_DISABLE_CLOCK
 
-    private const val WATCHDOG_POLL_INTERVAL_MS = 250L
-    private const val FORCE_STOP_GRACE_MS = 1500L
-    private const val RESTART_GRACE_MS = 3000L
+    internal const val WATCHDOG_POLL_INTERVAL_MS = 250L
+    internal const val RESPAWN_RETRY_INTERVAL_MS = 1500L
+    internal const val RESTART_GRACE_MS = 3000L
+    internal const val RAPID_CRASH_UPTIME_THRESHOLD_MS = 3000L
+    internal const val MAX_RAPID_CRASHES = 8
+    internal const val MAX_UNREGISTERED_RESPAWN_ATTEMPTS = 6
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -347,6 +354,27 @@ object PrivilegedHelperMain {
         private var deathElapsedRealtime: Long = 0L
 
         @Volatile
+        private var registeredSourceDir: String = ""
+
+        @Volatile
+        private var lastClientRegisteredElapsedMs: Long = 0L
+
+        @Volatile
+        private var lastRespawnAttemptElapsedMs: Long = 0L
+
+        @Volatile
+        private var unregisteredRespawnAttempts: Int = 0
+
+        @Volatile
+        private var rapidCrashCount: Int = 0
+
+        internal var packageInfoOverride: ((String) -> ApplicationInfo?)? = null
+        internal var appProcessRunningOverride: ((String) -> Boolean)? = null
+        internal var respawnServiceOverride: ((String) -> Unit)? = null
+        internal var restoreStockOverride: (() -> Unit)? = null
+        internal var exitProcessOverride: (() -> Unit)? = null
+
+        @Volatile
         private var isShuttingDown: Boolean = false
 
         private val fpsSubscriptionLock = Any()
@@ -466,7 +494,16 @@ object PrivilegedHelperMain {
         private val onClientDiedRunnable = Runnable {
             if (isShuttingDown) return@Runnable
             clientBinder = null
-            deathElapsedRealtime = SystemClock.elapsedRealtime()
+            val now = SystemClock.elapsedRealtime()
+            deathElapsedRealtime = now
+            lastRespawnAttemptElapsedMs = 0L
+            unregisteredRespawnAttempts = 0
+            val regTime = lastClientRegisteredElapsedMs
+            if (regTime > 0L && (now - regTime) < RAPID_CRASH_UPTIME_THRESHOLD_MS) {
+                rapidCrashCount++
+            } else {
+                rapidCrashCount = 0
+            }
             mainHandler.removeCallbacks(watchdogCheckRunnable)
             mainHandler.postDelayed(watchdogCheckRunnable, WATCHDOG_POLL_INTERVAL_MS)
         }
@@ -480,46 +517,94 @@ object PrivilegedHelperMain {
                 }
 
                 val pkg = clientPackageName
-                val installed = isPackageInstalledInternal(pkg)
-                if (!installed) {
-                    Log.i(TAG, "Package $pkg uninstalled; restoring Dual-Screen and stock assistant")
-                    restoreDisplayAndStockAssistant()
-                    System.exit(0)
+                val appInfo = resolveInstalledApplicationInfo(pkg)
+                if (appInfo == null || !appInfo.enabled) {
+                    Log.i(
+                        TAG,
+                        "Package $pkg uninstalled or disabled (installed=${appInfo != null}); " +
+                            "restoring Dual-Screen and stock assistant"
+                    )
+                    performRestoreDisplayAndStockAssistant()
+                    exitHelperProcess()
                     return
                 }
 
-                if (isAppProcessRunningInternal(pkg)) {
-                    // The app process restarted (e.g. after app update or START_STICKY).
-                    // Try re-offering our binder; if a new helper took over, we will receive SHUTDOWN or exit.
-                    try {
-                        val bundle = Bundle().apply {
-                            putBinder(EXTRA_BINDER, this@HelperBinder)
+                val now = SystemClock.elapsedRealtime()
+                val currentSourceDir = appInfo.sourceDir.orEmpty()
+                val apkUpdated = registeredSourceDir.isNotEmpty() &&
+                    currentSourceDir.isNotEmpty() &&
+                    currentSourceDir != registeredSourceDir
+
+                if (checkAppProcessRunning(pkg)) {
+                    // When the same APK process restarts (e.g. respawned after Recents kill),
+                    // re-offer our existing HelperBinder so it reconnects without spawning a duplicate helper.
+                    // When the APK path changed (in-place update), let the new APK spawn its updated helper.
+                    if (!apkUpdated) {
+                        try {
+                            val bundle = Bundle().apply {
+                                putBinder(EXTRA_BINDER, this@HelperBinder)
+                            }
+                            callProviderExternal(AUTHORITY, METHOD_REGISTER_BINDER, null, bundle)
+                        } catch (_: Throwable) {
                         }
-                        callProviderExternal(AUTHORITY, METHOD_REGISTER_BINDER, null, bundle)
-                    } catch (_: Throwable) {
                     }
-                    val elapsedAfterRestart = SystemClock.elapsedRealtime() - deathElapsedRealtime
+                    val elapsedAfterRestart = now - deathElapsedRealtime
                     if (elapsedAfterRestart >= RESTART_GRACE_MS && clientBinder == null) {
-                        // A new helper process likely replaced us after an APK update
                         Log.i(TAG, "App process $pkg is running with a new helper; exiting old helper")
-                        System.exit(0)
+                        setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
+                        unregisterFpsListenerInternal()
+                        exitHelperProcess()
                         return
                     }
                     mainHandler.postDelayed(this, WATCHDOG_POLL_INTERVAL_MS)
                     return
                 }
 
-                val elapsed = SystemClock.elapsedRealtime() - deathElapsedRealtime
-                val forceStopped = isPackageForceStoppedInternal(pkg)
-                if ((forceStopped && elapsed >= FORCE_STOP_GRACE_MS) || elapsed >= RESTART_GRACE_MS) {
-                    Log.i(
+                // If the user explicitly toggled OFF "Replace Stock Assistant", do not force-respawn.
+                if (!replaceStockPreferred) {
+                    val elapsed = now - deathElapsedRealtime
+                    val forceStopped = (appInfo.flags and ApplicationInfo.FLAG_STOPPED) != 0
+                    if (forceStopped || elapsed >= RESTART_GRACE_MS) {
+                        Log.i(
+                            TAG,
+                            "App $pkg stopped while replaceStockPreferred=false; restoring state and exiting"
+                        )
+                        performRestoreDisplayAndStockAssistant()
+                        exitHelperProcess()
+                        return
+                    }
+                    mainHandler.postDelayed(this, WATCHDOG_POLL_INTERVAL_MS)
+                    return
+                }
+
+                // True persistent mode: auto-respawn AssistantForegroundService unless circuit breaker trips.
+                if (rapidCrashCount >= MAX_RAPID_CRASHES ||
+                    unregisteredRespawnAttempts >= MAX_UNREGISTERED_RESPAWN_ATTEMPTS
+                ) {
+                    Log.e(
                         TAG,
-                        "App $pkg stopped (forceStopped=$forceStopped, elapsed=${elapsed}ms); " +
+                        "App $pkg tripped persistent respawn circuit breaker " +
+                            "(rapidCrashCount=$rapidCrashCount, attempts=$unregisteredRespawnAttempts); " +
                             "restoring Dual-Screen and stock assistant"
                     )
-                    restoreDisplayAndStockAssistant()
-                    System.exit(0)
+                    performRestoreDisplayAndStockAssistant()
+                    exitHelperProcess()
                     return
+                }
+
+                if (lastRespawnAttemptElapsedMs == 0L ||
+                    (now - lastRespawnAttemptElapsedMs) >= RESPAWN_RETRY_INTERVAL_MS
+                ) {
+                    lastRespawnAttemptElapsedMs = now
+                    unregisteredRespawnAttempts++
+                    val stoppedFlag = (appInfo.flags and ApplicationInfo.FLAG_STOPPED) != 0
+                    Log.i(
+                        TAG,
+                        "Persistent supervisor respawning $pkg/.service.AssistantForegroundService " +
+                            "(attempt=$unregisteredRespawnAttempts, rapidCrashes=$rapidCrashCount, " +
+                            "stoppedFlag=$stoppedFlag)"
+                    )
+                    performRespawnAssistantService(pkg)
                 }
 
                 mainHandler.postDelayed(this, WATCHDOG_POLL_INTERVAL_MS)
@@ -549,7 +634,16 @@ object PrivilegedHelperMain {
         }
 
         private val shutdownRunnable = Runnable {
-            System.exit(0)
+            exitHelperProcess()
+        }
+
+        private fun exitHelperProcess() {
+            val hook = exitProcessOverride
+            if (hook != null) {
+                hook()
+            } else {
+                System.exit(0)
+            }
         }
 
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -690,9 +784,12 @@ object PrivilegedHelperMain {
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
                         unregisterFpsListenerInternal()
+                        mainHandler.post {
+                            setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
+                        }
                         unlinkClientDeath()
                         reply?.writeNoException()
-                        mainHandler.postDelayed(shutdownRunnable, 50L)
+                        mainHandler.postDelayed(shutdownRunnable, 80L)
                         true
                     }
                     TRANSACTION_APPLY_OS_THEME -> {
@@ -766,11 +863,15 @@ object PrivilegedHelperMain {
             replaceStockPreferred = replaceStock
             if (topBright > 0f) savedTopBrightness = topBright
             if (bottomBright > 0f) savedBottomBrightness = bottomBright
+            registeredSourceDir = resolveInstalledApplicationInfo(pkg)?.sourceDir.orEmpty()
             clientBinder = newClient
+            unregisteredRespawnAttempts = 0
+            lastRespawnAttemptElapsedMs = 0L
             mainHandler.removeCallbacks(watchdogCheckRunnable)
             mainHandler.removeCallbacks(onClientDiedRunnable)
             mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
             if (newClient != null) {
+                lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
                 try {
                     newClient.linkToDeath(clientDeathRecipient, 0)
                 } catch (_: Throwable) {
@@ -907,19 +1008,95 @@ object PrivilegedHelperMain {
             return fallbackId
         }
 
-        private fun isPackageInstalledInternal(pkg: String): Boolean {
-            if (!allowedPackageRegex.matches(pkg)) return false
+        private fun resolveInstalledApplicationInfo(pkg: String): ApplicationInfo? {
+            packageInfoOverride?.let { return it(pkg) }
+            if (!allowedPackageRegex.matches(pkg)) return null
             if (!File("/data/data/$pkg").exists()) {
-                return false
+                return null
             }
-            val appInfo = getApplicationInfoInternal(pkg)
-            return appInfo != null
+            return getApplicationInfoInternal(pkg)
         }
 
-        private fun isPackageForceStoppedInternal(pkg: String): Boolean {
-            if (!allowedPackageRegex.matches(pkg)) return false
-            val appInfo = getApplicationInfoInternal(pkg) ?: return false
-            return (appInfo.flags and ApplicationInfo.FLAG_STOPPED) != 0
+        private fun checkAppProcessRunning(pkg: String): Boolean {
+            appProcessRunningOverride?.let { return it(pkg) }
+            return isAppProcessRunningInternal(pkg)
+        }
+
+        private fun performRespawnAssistantService(pkg: String) {
+            val hook = respawnServiceOverride
+            if (hook != null) {
+                hook(pkg)
+            } else {
+                respawnAssistantServiceInternal(pkg)
+            }
+        }
+
+        private fun performRestoreDisplayAndStockAssistant() {
+            val hook = restoreStockOverride
+            if (hook != null) {
+                hook()
+            } else {
+                restoreDisplayAndStockAssistant()
+            }
+        }
+
+        private fun respawnAssistantServiceInternal(pkg: String) {
+            if (!allowedPackageRegex.matches(pkg)) return
+            // 1. Explicitly clear ApplicationInfo.FLAG_STOPPED in PackageManager so service starts
+            //    and manifest receivers work immediately even after forceStopPackage.
+            val pm = packageManagerProxy
+            if (pm != null) {
+                try {
+                    val setStopped = pm.javaClass.methods.firstOrNull { m ->
+                        m.name == "setPackageStoppedState" && m.parameterTypes.size == 3
+                    }
+                    setStopped?.invoke(pm, pkg, false, 0)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "setPackageStoppedState($pkg, false) failed", t)
+                }
+            }
+
+            // 2. Fast path: direct IActivityManager.startService(..., requireForeground = true, ...)
+            val am = activityManagerProxy
+            if (am != null) {
+                try {
+                    val startServiceMethod = am.javaClass.methods.firstOrNull { m ->
+                        m.name == "startService" && m.parameterTypes.size == 7
+                    }
+                    if (startServiceMethod != null) {
+                        val callingPkg = when (Process.myUid()) {
+                            0 -> "root"
+                            Process.SYSTEM_UID -> "android"
+                            else -> "com.android.shell"
+                        }
+                        val serviceIntent = android.content.Intent().apply {
+                            setClassName(pkg, "$pkg.service.AssistantForegroundService")
+                            action = "$pkg.action.START"
+                        }
+                        val cn = startServiceMethod.invoke(
+                            am,
+                            null,
+                            serviceIntent,
+                            null,
+                            true, // requireForeground
+                            callingPkg,
+                            null,
+                            0 // userId
+                        ) as? android.content.ComponentName
+                        if (cn != null && cn.packageName == pkg) {
+                            return
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Direct IActivityManager.startService failed, falling back to shell", t)
+                }
+            }
+
+            // 3. Fallback path: `am start-foreground-service` via root shell
+            val qPkg = pkg.replace("'", "'\\''")
+            execRootCommand(
+                "am start-foreground-service --user 0 -a '$qPkg.action.START' -n '$qPkg/.service.AssistantForegroundService'"
+            )
         }
 
         private fun getApplicationInfoInternal(pkg: String): ApplicationInfo? {

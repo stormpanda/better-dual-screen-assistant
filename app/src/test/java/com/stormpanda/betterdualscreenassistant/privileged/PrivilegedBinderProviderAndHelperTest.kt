@@ -1,5 +1,6 @@
 package com.stormpanda.betterdualscreenassistant.privileged
 
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
@@ -7,13 +8,19 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
+import android.os.SystemClock
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowLooper
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class PrivilegedBinderProviderAndHelperTest {
@@ -189,6 +196,199 @@ class PrivilegedBinderProviderAndHelperTest {
         assertEquals(53.2f, fpsReply.readFloat(), 0.001f)
         fpsData.recycle()
         fpsReply.recycle()
+    }
+
+    @Test
+    fun `persistent watchdog respawns service on process death even when FLAG_STOPPED is set`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var respawnCount = 0
+        var restoreStockCalled = false
+        var exitCalled = false
+
+        val installedAppInfo = ApplicationInfo().apply {
+            packageName = PrivilegedHelperMain.APP_PACKAGE_NAME
+            sourceDir = "/data/app/bdsa/base.apk"
+            enabled = true
+            flags = ApplicationInfo.FLAG_STOPPED
+        }
+        helperBinder.packageInfoOverride = { installedAppInfo }
+        helperBinder.appProcessRunningOverride = { false }
+        helperBinder.respawnServiceOverride = { pkg ->
+            assertEquals(PrivilegedHelperMain.APP_PACKAGE_NAME, pkg)
+            respawnCount++
+        }
+        helperBinder.restoreStockOverride = { restoreStockCalled = true }
+        helperBinder.exitProcessOverride = { exitCalled = true }
+
+        val deathRecipient = registerMockClientAndCaptureDeathRecipient(
+            helperBinder = helperBinder,
+            replaceStock = true
+        )
+        ShadowLooper.idleMainLooper(5_000L, TimeUnit.MILLISECONDS)
+
+        // Simulate app process killed by Recents / Clear All / RAM cleaner (with FLAG_STOPPED)
+        deathRecipient.binderDied()
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.WATCHDOG_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+
+        assertEquals(1, respawnCount)
+        assertFalse(restoreStockCalled)
+        assertFalse(exitCalled)
+
+        // Re-registering client resets respawn attempts and halts further respawn ticks
+        registerMockClientAndCaptureDeathRecipient(helperBinder = helperBinder, replaceStock = true)
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.RESPAWN_RETRY_INTERVAL_MS * 2, TimeUnit.MILLISECONDS)
+        assertEquals(1, respawnCount)
+        assertFalse(restoreStockCalled)
+        assertFalse(exitCalled)
+    }
+
+    @Test
+    fun `persistent watchdog restores stock assistant and exits on uninstall or package disable`() {
+        // 1. Uninstall (packageInfo == null)
+        val uninstallBinder = createAuthorizedHelperBinder()
+        var respawnCount = 0
+        var restoreStockCalled = false
+        var exitCalled = false
+
+        val appInfo = ApplicationInfo().apply {
+            packageName = PrivilegedHelperMain.APP_PACKAGE_NAME
+            sourceDir = "/data/app/bdsa/base.apk"
+            enabled = true
+        }
+        var currentAppInfo: ApplicationInfo? = appInfo
+        uninstallBinder.packageInfoOverride = { currentAppInfo }
+        uninstallBinder.appProcessRunningOverride = { false }
+        uninstallBinder.respawnServiceOverride = { respawnCount++ }
+        uninstallBinder.restoreStockOverride = { restoreStockCalled = true }
+        uninstallBinder.exitProcessOverride = { exitCalled = true }
+
+        val death1 = registerMockClientAndCaptureDeathRecipient(uninstallBinder, replaceStock = true)
+        currentAppInfo = null
+        death1.binderDied()
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.WATCHDOG_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+
+        assertEquals(0, respawnCount)
+        assertTrue(restoreStockCalled)
+        assertTrue(exitCalled)
+
+        // 2. Package disabled (enabled == false)
+        val disableBinder = createAuthorizedHelperBinder()
+        var disableRestoreCalled = false
+        var disableExitCalled = false
+        val disabledInfo = ApplicationInfo().apply {
+            packageName = PrivilegedHelperMain.APP_PACKAGE_NAME
+            sourceDir = "/data/app/bdsa/base.apk"
+            enabled = true
+        }
+        disableBinder.packageInfoOverride = { disabledInfo }
+        disableBinder.appProcessRunningOverride = { false }
+        disableBinder.respawnServiceOverride = { respawnCount++ }
+        disableBinder.restoreStockOverride = { disableRestoreCalled = true }
+        disableBinder.exitProcessOverride = { disableExitCalled = true }
+
+        val death2 = registerMockClientAndCaptureDeathRecipient(disableBinder, replaceStock = true)
+        disabledInfo.enabled = false
+        death2.binderDied()
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.WATCHDOG_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+
+        assertEquals(0, respawnCount)
+        assertTrue(disableRestoreCalled)
+        assertTrue(disableExitCalled)
+    }
+
+    @Test
+    fun `persistent watchdog does not respawn when replaceStockPreferred is false`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var respawnCount = 0
+        var restoreStockCalled = false
+        var exitCalled = false
+
+        val appInfo = ApplicationInfo().apply {
+            packageName = PrivilegedHelperMain.APP_PACKAGE_NAME
+            sourceDir = "/data/app/bdsa/base.apk"
+            enabled = true
+            flags = ApplicationInfo.FLAG_STOPPED
+        }
+        helperBinder.packageInfoOverride = { appInfo }
+        helperBinder.appProcessRunningOverride = { false }
+        helperBinder.respawnServiceOverride = { respawnCount++ }
+        helperBinder.restoreStockOverride = { restoreStockCalled = true }
+        helperBinder.exitProcessOverride = { exitCalled = true }
+
+        val deathRecipient = registerMockClientAndCaptureDeathRecipient(
+            helperBinder = helperBinder,
+            replaceStock = false
+        )
+        deathRecipient.binderDied()
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.WATCHDOG_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+
+        assertEquals(0, respawnCount)
+        assertTrue(restoreStockCalled)
+        assertTrue(exitCalled)
+    }
+
+    @Test
+    fun `persistent watchdog trips circuit breaker after repeated rapid crashes and restores stock`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var respawnCount = 0
+        var restoreStockCalled = false
+        var exitCalled = false
+
+        val appInfo = ApplicationInfo().apply {
+            packageName = PrivilegedHelperMain.APP_PACKAGE_NAME
+            sourceDir = "/data/app/bdsa/base.apk"
+            enabled = true
+        }
+        helperBinder.packageInfoOverride = { appInfo }
+        helperBinder.appProcessRunningOverride = { false }
+        helperBinder.respawnServiceOverride = { respawnCount++ }
+        helperBinder.restoreStockOverride = { restoreStockCalled = true }
+        helperBinder.exitProcessOverride = { exitCalled = true }
+
+        // Ensure elapsedRealtime() starts well past 0L
+        ShadowLooper.idleMainLooper(10_000L, TimeUnit.MILLISECONDS)
+        assertTrue(SystemClock.elapsedRealtime() > 0L)
+
+        for (i in 1..PrivilegedHelperMain.MAX_RAPID_CRASHES) {
+            val death = registerMockClientAndCaptureDeathRecipient(helperBinder, replaceStock = true)
+            // Crash after only 100ms (< RAPID_CRASH_UPTIME_THRESHOLD_MS)
+            ShadowLooper.idleMainLooper(100L, TimeUnit.MILLISECONDS)
+            death.binderDied()
+            ShadowLooper.idleMainLooper(PrivilegedHelperMain.WATCHDOG_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        }
+
+        // First (MAX_RAPID_CRASHES - 1) crashes respawned; the MAX_RAPID_CRASHES-th crash trips breaker
+        assertEquals(PrivilegedHelperMain.MAX_RAPID_CRASHES - 1, respawnCount)
+        assertTrue(restoreStockCalled)
+        assertTrue(exitCalled)
+    }
+
+    private fun registerMockClientAndCaptureDeathRecipient(
+        helperBinder: PrivilegedHelperMain.HelperBinder,
+        replaceStock: Boolean
+    ): IBinder.DeathRecipient {
+        var capturedRecipient: IBinder.DeathRecipient? = null
+        val clientToken = mockk<IBinder>(relaxed = true)
+        every { clientToken.isBinderAlive } returns true
+        every { clientToken.linkToDeath(any(), any()) } answers {
+            capturedRecipient = firstArg<IBinder.DeathRecipient>()
+        }
+
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(clientToken)
+            writeString(PrivilegedHelperMain.APP_PACKAGE_NAME)
+            writeInt(if (replaceStock) 1 else 0)
+            writeFloat(0.5f)
+            writeFloat(0.5f)
+        }
+        val reply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_REGISTER_CLIENT, data, reply, 0))
+        reply.setDataPosition(0)
+        reply.readException()
+        data.recycle()
+        reply.recycle()
+        return requireNotNull(capturedRecipient)
     }
 
     private fun createAuthorizedHelperBinder(): PrivilegedHelperMain.HelperBinder {

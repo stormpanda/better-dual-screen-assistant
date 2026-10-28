@@ -507,7 +507,8 @@ class ScreenOverlayManager(
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                     )
                 }
                 val options = ActivityOptions.makeBasic().apply {
@@ -519,7 +520,7 @@ class ScreenOverlayManager(
             }
             // Ensure the activity task is moved to Display 0 even if it was already open on Display 4
             PServerClient.exec(
-                "am start --display 0 --activity-single-top -n ${context.packageName}/.MainActivity",
+                "am start --display 0 --activity-single-top --activity-exclude-from-recents -n ${context.packageName}/.MainActivity",
                 wait = false
             )
         }

@@ -21,7 +21,7 @@ import org.robolectric.RobolectricTestRunner
 class PrivilegedBridgeTest {
 
     private lateinit var context: Context
-    private val pServerCommands = mutableListOf<String>()
+    private val pServerCommands = java.util.concurrent.CopyOnWriteArrayList<String>()
     private var pServerResponder: (String) -> String = { "" }
 
     @Before

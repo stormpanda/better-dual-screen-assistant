@@ -370,7 +370,8 @@ Provides real-time visibility into the privileged execution layer, hardware topo
 
 - **Automatic Boot Startup**: `BootReceiver` listens for `LOCKED_BOOT_COMPLETED`, `BOOT_COMPLETED`, and `MY_PACKAGE_REPLACED` to start `AssistantForegroundService` automatically on device boot or app update.
 - **Zero-Footprint Stock Suppression**: While `Replace Stock Assistant` is enabled, the stock `com.odin.dualscreen.assistant` is frozen in memory (`SIGSTOP`) while its package and `.services.TccServices` component remain **enabled on disk** in `PackageManager`.
-- **Automatic Uninstall / Force-Stop Recovery**: The root `PrivilegedHelperMain` daemon monitors our app process via `IBinder.DeathRecipient` and a `250ms` package watchdog. If the user **uninstalls** or **force-stops** Better Dual Screen Assistant from Android Settings:
+- **Recents Exclusion & Self-Finishing Settings UI**: `MainActivity` sets `android:excludeFromRecents="true"` and automatically finishes and removes its task (`finishAndRemoveTask()`) when backing out or switching away, keeping Recents uncluttered and freeing UI memory when closed.
+- **True Persistent Service Supervision & Automatic Uninstall Recovery**: The root `PrivilegedHelperMain` daemon monitors our app process via `IBinder.DeathRecipient` and a `250ms` package watchdog. While Better Dual Screen Assistant is installed and *Replace Stock Assistant* is enabled, `PrivilegedHelperMain` automatically clears `FLAG_STOPPED` and respawns `AssistantForegroundService` if killed by Recents "Clear All" or RAM cleaners (guarded by a rapid-crash circuit breaker). If the user **uninstalls** or disables Better Dual Screen Assistant (or toggles *Replace Stock Assistant* off):
   1. Both displays are unblanked and restored to normal brightness.
   2. `dual_screen_display_mode` is reset to `0` (Dual-screen display) and `screen_focus_lock` to `0`.
   3. Touchscreen input on both displays is re-enabled (`sys.temp.disabled.touch = "0,0"`).

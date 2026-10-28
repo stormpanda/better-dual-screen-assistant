@@ -116,8 +116,8 @@ To prevent this, [`PServerClient.setStockAssistantEnabled(false)`](../app/src/ma
 2. It **immediately re-enables `com.odin.dualscreen.assistant` and `TccServices` on disk** while the process is frozen in RAM.
 3. Because the stock app is never left disabled on disk, a simple reboot—or our automatic recovery watchdog—always leaves the stock assistant intact.
 
-### 6.2 Automatic Uninstall & Force-Stop Watchdog
-[`PrivilegedHelperMain`](../app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedHelperMain.kt#L343-L410) links a Binder `DeathRecipient` (`linkToDeath`) to our app process. If **Better Dual Screen Assistant** is uninstalled or force-stopped in Android Settings, `PrivilegedHelperMain` automatically executes [`restoreDisplayAndStockAssistant()`](../app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedHelperMain.kt#L860-L916) before exiting:
+### 6.2 Persistent Service Supervisor & Automatic Uninstall Watchdog
+[`PrivilegedHelperMain`](../app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedHelperMain.kt) links a Binder `DeathRecipient` (`linkToDeath`) to our app process. While **Better Dual Screen Assistant** remains installed and *Replace Stock Assistant* is active, it acts as a persistent service supervisor (automatically respawning `AssistantForegroundService` across Recents task clears or RAM cleaners, with a rapid-crash circuit breaker). If **Better Dual Screen Assistant** is uninstalled, package-disabled, or trips the crash circuit breaker, `PrivilegedHelperMain` automatically executes [`restoreDisplayAndStockAssistant()`](../app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedHelperMain.kt) before exiting:
 1. Removes any top-screen blanking cover window and restores the status bar.
 2. Restores both Top (`displayId = 0`) and Bottom (`displayId = 4`) screen brightness to your saved brightness level if either screen was blanked.
 3. Resets `dual_screen_display_mode = 0` (Dual-Screen mode) and re-enables touch input on both screens (`sys.temp.disabled.touch = "0,0"`).

@@ -3,10 +3,12 @@ package com.stormpanda.betterdualscreenassistant
 import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -170,6 +172,14 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         window.isNavigationBarContrastEnforced = false
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    finishAndRemoveTask()
+                }
+            }
+        )
         UpdateManager.init(this)
         UpdateManager.checkForUpdates(force = false)
         ensureOverlayStateForDisplay()
@@ -237,13 +247,29 @@ class MainActivity : ComponentActivity() {
         ensureOverlayStateForDisplay()
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && !isFinishing && isDeviceInteractive()) {
+            finishAndRemoveTask()
+        }
+    }
+
+    private fun isDeviceInteractive(): Boolean {
+        val pm = getSystemService(PowerManager::class.java) ?: return true
+        return pm.isInteractive
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         ensureOverlayStateForDisplay()
     }
 
     private fun ensureOverlayStateForDisplay() {
-        val currentDisplayId = display?.displayId ?: Display.DEFAULT_DISPLAY
+        val currentDisplayId = try {
+            display?.displayId ?: Display.DEFAULT_DISPLAY
+        } catch (_: UnsupportedOperationException) {
+            Display.DEFAULT_DISPLAY
+        }
         if (currentDisplayId != ScreenOverlayManager.BOTTOM_DISPLAY_ID) {
             AssistantForegroundService.startService(
                 this,
