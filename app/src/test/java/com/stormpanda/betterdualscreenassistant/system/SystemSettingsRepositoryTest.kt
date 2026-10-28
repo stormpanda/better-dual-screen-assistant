@@ -191,9 +191,18 @@ class SystemSettingsRepositoryTest {
         repo.toggleGamepadMouseMode()
         assertTrue(repo.gamepadMouseMode.value)
 
+        // Simulate GameAssistant active in a game (is_show_floatingIcon = 1); toggling Key Mapper must ONLY
+        // update key_adapter_enable (default 1 -> 0 -> 1) and never clobber GameAssistant's is_show_floatingIcon!
+        Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, 1)
+        assertTrue(repo.keyMapperEnabled.value)
+        repo.toggleKeyMapper()
+        assertFalse(repo.keyMapperEnabled.value)
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ADAPTER_ENABLE, -1))
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, -1))
         repo.toggleKeyMapper()
         assertTrue(repo.keyMapperEnabled.value)
-        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ADAPTER_ENABLE, 0))
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ADAPTER_ENABLE, -1))
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, -1))
 
         repo.toggleKeepScreenOn()
         assertTrue(repo.keepScreenOn.value)
@@ -386,5 +395,42 @@ class SystemSettingsRepositoryTest {
             Settings.System.getFloat(context.contentResolver, SystemSettingsRepository.KEY_PEAK_REFRESH_RATE, -1f),
             0.01f
         )
+    }
+
+    @Test
+    fun `resyncFloatingIconGestureGuard notifies observers only when is_show_floatingIcon is active without modifying value`() {
+        val repo = SystemSettingsRepository(context)
+        val uri = Settings.System.getUriFor(SystemSettingsRepository.KEY_SHOW_FLOATING_ICON)
+        var observerCallCount = 0
+        val observer = object : android.database.ContentObserver(
+            android.os.Handler(android.os.Looper.getMainLooper())
+        ) {
+            override fun onChange(selfChange: Boolean) {
+                observerCallCount++
+            }
+        }
+        context.contentResolver.registerContentObserver(uri, false, observer)
+        try {
+            // 1. When is_show_floatingIcon is 0 (outside a game), resync does not emit spurious notifications
+            Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, 0)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            observerCallCount = 0
+            repo.resyncFloatingIconGestureGuard()
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertEquals(0, observerCallCount)
+            assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, -1))
+
+            // 2. When is_show_floatingIcon is 1 (GameAssistant active), resync notifies SystemUI observer without modifying value
+            Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, 1)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            observerCallCount = 0
+            repo.resyncFloatingIconGestureGuard()
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertEquals(1, observerCallCount)
+            assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_SHOW_FLOATING_ICON, -1))
+        } finally {
+            context.contentResolver.unregisterContentObserver(observer)
+            repo.unregister()
+        }
     }
 }

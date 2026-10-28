@@ -363,6 +363,109 @@ class PrivilegedBinderProviderAndHelperTest {
         assertTrue(exitCalled)
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST brackets ordered broadcasts with SIGCONT and SIGSTOP and safety timeout`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val sentSignals = mutableListOf<Pair<Int, Int>>()
+        var stockPid = 8268
+        var stockStopped = true
+
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.sendSignalOverride = { pid, sig ->
+            sentSignals.add(pid to sig)
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+
+        fun sendFreezeTransaction(freeze: Boolean) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeInt(if (freeze) 1 else 0)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+        }
+
+        // 1. Pre-broadcast unfreeze -> sends SIGCONT to frozen stock PID
+        sendFreezeTransaction(freeze = false)
+        assertEquals(listOf(8268 to PrivilegedHelperMain.SIGNAL_CONT), sentSignals)
+        assertFalse(stockStopped)
+
+        // 2. Post-broadcast re-freeze -> sends SIGSTOP immediately and cancels safety timer
+        sendFreezeTransaction(freeze = true)
+        assertEquals(
+            listOf(
+                8268 to PrivilegedHelperMain.SIGNAL_CONT,
+                8268 to PrivilegedHelperMain.SIGNAL_STOP
+            ),
+            sentSignals
+        )
+        assertTrue(stockStopped)
+
+        // Advancing past safety timeout must NOT emit a duplicate SIGSTOP
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS + 100L,
+            TimeUnit.MILLISECONDS
+        )
+        assertEquals(2, sentSignals.size)
+
+        // 3. If post-broadcast never arrives (e.g. aborted ordered broadcast), 350ms safety timer re-freezes PID
+        sentSignals.clear()
+        sendFreezeTransaction(freeze = false)
+        assertEquals(listOf(8268 to PrivilegedHelperMain.SIGNAL_CONT), sentSignals)
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS + 10L,
+            TimeUnit.MILLISECONDS
+        )
+        assertEquals(
+            listOf(
+                8268 to PrivilegedHelperMain.SIGNAL_CONT,
+                8268 to PrivilegedHelperMain.SIGNAL_STOP
+            ),
+            sentSignals
+        )
+        assertTrue(stockStopped)
+
+        // 4. If stock PID is NOT in stopped ('T') state, pre-broadcast unfreeze does nothing
+        sentSignals.clear()
+        stockPid = 9001
+        stockStopped = false
+        sendFreezeTransaction(freeze = false)
+        assertTrue(sentSignals.isEmpty())
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_CLEAR_OS_THEME is a no-op when no BDSA overlay is active`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(-1)
+            writeString("")
+        }
+        val reply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_CLEAR_OS_THEME, data, reply, 0))
+        reply.setDataPosition(0)
+        reply.readException()
+        data.recycle()
+        reply.recycle()
+
+        ShadowLooper.idleMainLooper(100L, TimeUnit.MILLISECONDS)
+        val activeField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("osThemeOverlayActive").apply { isAccessible = true }
+        assertFalse(activeField.getBoolean(helperBinder))
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

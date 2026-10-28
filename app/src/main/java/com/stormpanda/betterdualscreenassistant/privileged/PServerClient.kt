@@ -26,6 +26,11 @@ object PServerClient {
     private val PACKAGE_NAME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$")
     private val stockAssistantLock = Any()
 
+    @Volatile
+    private var fallbackUnfrozenStockPid: String = ""
+
+    fun hasFallbackUnfrozenStockPid(): Boolean = fallbackUnfrozenStockPid.isNotEmpty()
+
     /**
      * Safely quotes a single argument for POSIX `/system/bin/sh` by wrapping in single quotes
      * and escaping any embedded single quotes as `'\''`.
@@ -160,12 +165,23 @@ object PServerClient {
      *    stock app is never left disabled on disk.
      */
     fun setStockAssistantEnabled(enabled: Boolean, context: Context? = null): Boolean = synchronized(stockAssistantLock) {
+        fallbackUnfrozenStockPid = ""
         context?.let {
             setReplaceStockPreferred(it, !enabled)
             PrivilegedBridge.setReplaceStockPreferred(!enabled)
         }
         return if (enabled) {
-            PrivilegedBridge.clearOsThemeOverlay(context, -1)
+            val shouldClearOsTheme = if (context != null) {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.getBoolean("inject_os_theme", false) ||
+                    prefs.contains("saved_os_night_mode") ||
+                    prefs.contains("saved_os_theme_json")
+            } else {
+                true
+            }
+            if (shouldClearOsTheme) {
+                PrivilegedBridge.clearOsThemeOverlay(context, -1)
+            }
             exec("pm enable $STOCK_PACKAGE_NAME", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.services.TccServices", wait = true)
             exec("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver", wait = true)
@@ -223,6 +239,35 @@ object PServerClient {
                 }
             }
         } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Fallback via `PServerBinder` when [PrivilegedHelperMain] is not yet connected during an
+     * early ordered screen broadcast (`ACTION_SCREEN_ON` / `ACTION_SCREEN_OFF`).
+     */
+    fun setStockProcessFrozenForBroadcastFallback(freeze: Boolean) = synchronized(stockAssistantLock) {
+        if (!freeze) {
+            val pidOut = exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("")
+            val firstPid = parseNumericPids(pidOut).firstOrNull().orEmpty()
+            if (firstPid.isNotEmpty()) {
+                val statOut = exec("cat /proc/$firstPid/stat", wait = true).getOrDefault("")
+                if (statOut.contains(") T ")) {
+                    fallbackUnfrozenStockPid = firstPid
+                    exec("kill -CONT $firstPid", wait = true)
+                }
+            }
+        } else {
+            val pid = fallbackUnfrozenStockPid
+            fallbackUnfrozenStockPid = ""
+            if (pid.isNotEmpty()) {
+                val currentPids = parseNumericPids(
+                    exec("pidof $STOCK_PACKAGE_NAME", wait = true).getOrDefault("")
+                )
+                if (pid in currentPids) {
+                    exec("kill -STOP $pid", wait = true)
+                }
+            }
         }
     }
 }

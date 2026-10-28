@@ -21,9 +21,14 @@
         tools:ignore="ProtectedPermissions" />
 
     <queries>
+        <package android:name="com.odin.mapping" />
+        <package android:name="com.odin.gameassistant" />
         <package android:name="com.stormpanda.megingiard" />
         <package android:name="com.stormpanda.megingiard.debug" />
         <provider android:authorities="com.stormpanda.megingiard.provider;com.stormpanda.megingiard.debug.provider" />
+        <intent>
+            <action android:name="com.ro.mapping.action.MAPPING_SERVICE" />
+        </intent>
     </queries>
 
     <application

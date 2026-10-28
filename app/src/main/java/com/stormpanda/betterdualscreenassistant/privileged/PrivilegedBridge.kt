@@ -93,7 +93,11 @@ object PrivilegedBridge {
         }
         pendingOsThemeRequest?.let { req ->
             scope.launch {
-                dispatchOsThemeRequestToBinder(binder, req)
+                if (dispatchOsThemeRequestToBinder(binder, req)) {
+                    if (pendingOsThemeRequest === req) {
+                        pendingOsThemeRequest = null
+                    }
+                }
             }
         }
         if (context != null) {
@@ -814,6 +818,9 @@ object PrivilegedBridge {
             val binder = helperBinder
             if (binder != null && binder.isBinderAlive) {
                 if (dispatchOsThemeRequestToBinder(binder, req)) {
+                    if (pendingOsThemeRequest === req) {
+                        pendingOsThemeRequest = null
+                    }
                     return@launch
                 }
             }
@@ -877,5 +884,40 @@ object PrivilegedBridge {
             data.recycle()
             reply.recycle()
         }
+    }
+
+    /**
+     * Temporarily wakes (`freeze = false`) or re-freezes (`freeze = true`) the suppressed stock
+     * `com.odin.dualscreen.assistant` process around foreground ordered screen broadcasts so
+     * `system_server`'s `BroadcastQueue` never stalls or ANR-respawns `TccServices`.
+     */
+    fun setStockProcessFrozenForBroadcast(freeze: Boolean) {
+        if (freeze && PServerClient.hasFallbackUnfrozenStockPid()) {
+            PServerClient.setStockProcessFrozenForBroadcastFallback(true)
+        }
+        if (!replaceStockPreferred) return
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeInt(if (freeze) 1 else 0)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                return
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper setStockProcessFrozenForBroadcast($freeze) failed", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze)
     }
 }

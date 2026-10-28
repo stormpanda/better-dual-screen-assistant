@@ -23,8 +23,10 @@ import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -77,6 +79,42 @@ class AssistantForegroundService : Service() {
 
     private var lastTccToggleElapsedMs: Long = 0L
     private var longPressConsumed: Boolean = false
+    private var postBroadcastStockCheckJob: Job? = null
+
+    /**
+     * Runs at high priority (`SYSTEM_HIGH_PRIORITY - 1` = `999`) ahead of stock
+     * `com.odin.dualscreen.assistant`'s `ScreenReceiver` (`priority = 0`) and
+     * `com.odin.gameassistant` (`priority = 0`) on foreground ordered screen broadcasts.
+     * Briefly sends `SIGCONT` to the windowless stock process so `BroadcastQueue` never stalls
+     * 10s or triggers a 12s ANR respawn.
+     */
+    private val preOrderedScreenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_SCREEN_OFF,
+                Intent.ACTION_SHUTDOWN,
+                "android.intent.action.REBOOT" -> {
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                }
+            }
+        }
+    }
+
+    /**
+     * Runs at low priority (`SYSTEM_LOW_PRIORITY + 1` = `-999`) immediately after all default-priority
+     * ordered screen broadcast receivers finish, re-freezing the windowless stock process (`SIGSTOP`).
+     */
+    private val postOrderedScreenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_SCREEN_OFF -> {
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true)
+                }
+            }
+        }
+    }
 
     private val systemEventsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -97,6 +135,8 @@ class AssistantForegroundService : Service() {
                 Intent.ACTION_SCREEN_ON,
                 Intent.ACTION_USER_PRESENT -> {
                     overlayManager.onDeviceScreenInteractiveChanged(true)
+                    repository.resyncFloatingIconGestureGuard()
+                    schedulePostScreenBroadcastStockCheck()
                 }
                 Intent.ACTION_CLOSE_SYSTEM_DIALOGS -> {
                     val reason = intent.getStringExtra("reason")
@@ -119,21 +159,50 @@ class AssistantForegroundService : Service() {
         repository = SystemSettingsRepository.getInstance(applicationContext).also { it.register() }
         telemetryMonitor = TelemetryMonitor(applicationContext)
         overviewProxyClient = OverviewProxyClient(applicationContext).also { it.bind() }
-        mappingServiceClient = MappingServiceClient(applicationContext) {
-            overlayManager.hideAssistantOverlay()
-        }.also { it.bind() }
         overlayManager = ScreenOverlayManager(
             context = applicationContext,
             repository = repository,
             telemetryMonitor = telemetryMonitor,
             overviewProxyClient = overviewProxyClient
         )
+        mappingServiceClient = MappingServiceClient(applicationContext) {
+            if (!overlayManager.isBottomScreenBlanked && overlayManager.isAssistantShowing) {
+                overlayManager.hideAssistantOverlay()
+                true
+            } else {
+                false
+            }
+        }.also { it.bind() }
 
         serviceScope.launch {
             repository.dualScreenDisplayMode.collectLatest { mode ->
                 overlayManager.applyDisplayModeOverlays(mode)
             }
         }
+
+        val preScreenFilter = IntentFilter().apply {
+            priority = IntentFilter.SYSTEM_HIGH_PRIORITY - 1
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SHUTDOWN)
+            addAction("android.intent.action.REBOOT")
+        }
+        registerReceiver(
+            preOrderedScreenReceiver,
+            preScreenFilter,
+            Context.RECEIVER_EXPORTED
+        )
+
+        val postScreenFilter = IntentFilter().apply {
+            priority = IntentFilter.SYSTEM_LOW_PRIORITY + 1
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        registerReceiver(
+            postOrderedScreenReceiver,
+            postScreenFilter,
+            Context.RECEIVER_EXPORTED
+        )
 
         val filter = IntentFilter().apply {
             addAction("action.tcc.button.key.event")
@@ -168,6 +237,14 @@ class AssistantForegroundService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    private fun schedulePostScreenBroadcastStockCheck() {
+        postBroadcastStockCheckJob?.cancel()
+        postBroadcastStockCheckJob = serviceScope.launch {
+            delay(500L)
+            enforceStockTakeoverIfPreferred()
+        }
     }
 
     private fun enforceStockTakeoverIfPreferred() {
@@ -252,6 +329,15 @@ class AssistantForegroundService : Service() {
 
     override fun onDestroy() {
         instance = null
+        postBroadcastStockCheckJob?.cancel()
+        try {
+            unregisterReceiver(preOrderedScreenReceiver)
+        } catch (_: Throwable) {
+        }
+        try {
+            unregisterReceiver(postOrderedScreenReceiver)
+        } catch (_: Throwable) {
+        }
         try {
             unregisterReceiver(systemEventsReceiver)
         } catch (_: Throwable) {

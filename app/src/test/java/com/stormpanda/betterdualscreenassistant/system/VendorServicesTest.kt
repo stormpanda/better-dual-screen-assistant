@@ -113,10 +113,12 @@ class VendorServicesTest {
     }
 
     @Test
-    fun `MappingServiceClient keyListenerBinder invokes onHomePressed only on HOME key down`() {
+    fun `MappingServiceClient registers HOME InputEvent listener and returns consumed state`() {
         var homePressCount = 0
+        var shouldConsume = true
         val client = MappingServiceClient(context) {
             homePressCount++
+            shouldConsume
         }
 
         val listenerField = MappingServiceClient::class.java.getDeclaredField("keyListenerBinder").apply {
@@ -124,48 +126,108 @@ class VendorServicesTest {
         }
         val listenerBinder = listenerField.get(client) as IBinder
 
+        // 0. Verify registerKeyListener (tx 2) and unbind (tx 3) on com.ro.mapping.sdk.IServerApi
+        var registeredListener: IBinder? = null
+        var registeredIds: Array<String>? = null
+        var unregisteredListener: IBinder? = null
+        val fakeMappingServer = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                data.enforceInterface(MappingServiceClient.MAPPING_DESCRIPTOR)
+                when (code) {
+                    MappingServiceClient.TRANSACTION_REGISTER_INPUT_LISTENER -> {
+                        registeredListener = data.readStrongBinder()
+                        registeredIds = data.createStringArray()
+                        reply?.writeNoException()
+                        return true
+                    }
+                    MappingServiceClient.TRANSACTION_UNREGISTER_INPUT_LISTENER -> {
+                        unregisteredListener = data.readStrongBinder()
+                        reply?.writeNoException()
+                        return true
+                    }
+                }
+                return false
+            }
+        }
+        val registerMethod = MappingServiceClient::class.java.getDeclaredMethod(
+            "registerKeyListener",
+            IBinder::class.java
+        ).apply { isAccessible = true }
+        registerMethod.invoke(client, fakeMappingServer)
+        assertEquals(listenerBinder, registeredListener)
+        assertArrayEquals(arrayOf("HOME"), registeredIds)
+
+        val binderField = MappingServiceClient::class.java.getDeclaredField("mappingBinder").apply {
+            isAccessible = true
+        }
+        binderField.set(client, fakeMappingServer)
+        client.unbind()
+        assertEquals(listenerBinder, unregisteredListener)
+
         // 1. INTERFACE_TRANSACTION
         val ifaceData = Parcel.obtain()
         val ifaceReply = Parcel.obtain()
         assertTrue(listenerBinder.transact(IBinder.INTERFACE_TRANSACTION, ifaceData, ifaceReply, 0))
         ifaceReply.setDataPosition(0)
-        assertEquals("com.ro.mapping.IKeyEventListener", ifaceReply.readString())
+        assertEquals(MappingServiceClient.LISTENER_DESCRIPTOR, ifaceReply.readString())
         ifaceData.recycle()
         ifaceReply.recycle()
 
-        // 2. HOME key (inputId = 3) + ACTION_DOWN (action = 0) -> triggers onHomePressed
-        val homeDownData = Parcel.obtain().apply {
-            writeInterfaceToken("com.ro.mapping.IKeyEventListener")
-            writeInt(3)
-            writeInt(0)
+        fun buildInputEventParcel(id: String, value1: Int): Parcel = Parcel.obtain().apply {
+            writeInterfaceToken(MappingServiceClient.LISTENER_DESCRIPTOR)
+            writeInt(1) // non-null InputEvent
+            writeString(id)
+            writeInt(value1)
+            writeInt(0) // value2
+            writeInt(0) // fd
+            writeInt(1) // type (EV_KEY)
+            writeInt(102) // code (KEY_HOME)
+            writeInt(value1) // value
         }
+
+        // 2. HOME key pressed (value1 = 1) while overlay consumes event -> returns 1
+        val homeDownData = buildInputEventParcel("HOME", 1)
         val homeDownReply = Parcel.obtain()
         assertTrue(listenerBinder.transact(IBinder.FIRST_CALL_TRANSACTION, homeDownData, homeDownReply, 0))
+        homeDownReply.setDataPosition(0)
+        homeDownReply.readException()
+        assertEquals(1, homeDownReply.readInt())
         assertEquals(1, homePressCount)
         homeDownData.recycle()
         homeDownReply.recycle()
 
-        // 3. HOME key (inputId = 3) + ACTION_UP (action = 1) -> ignored
-        val homeUpData = Parcel.obtain().apply {
-            writeInterfaceToken("com.ro.mapping.IKeyEventListener")
-            writeInt(3)
-            writeInt(1)
-        }
+        // 3. HOME key pressed (value1 = 1) while overlay is hidden (shouldConsume = false) -> returns 0
+        shouldConsume = false
+        val homePassData = buildInputEventParcel("HOME", 1)
+        val homePassReply = Parcel.obtain()
+        assertTrue(listenerBinder.transact(IBinder.FIRST_CALL_TRANSACTION, homePassData, homePassReply, 0))
+        homePassReply.setDataPosition(0)
+        homePassReply.readException()
+        assertEquals(0, homePassReply.readInt())
+        assertEquals(2, homePressCount)
+        homePassData.recycle()
+        homePassReply.recycle()
+
+        // 4. HOME key released (value1 = 0) -> ignored and returns 0
+        shouldConsume = true
+        val homeUpData = buildInputEventParcel("HOME", 0)
         val homeUpReply = Parcel.obtain()
         assertTrue(listenerBinder.transact(IBinder.FIRST_CALL_TRANSACTION, homeUpData, homeUpReply, 0))
-        assertEquals(1, homePressCount)
+        homeUpReply.setDataPosition(0)
+        homeUpReply.readException()
+        assertEquals(0, homeUpReply.readInt())
+        assertEquals(2, homePressCount)
         homeUpData.recycle()
         homeUpReply.recycle()
 
-        // 4. Other key (inputId = 4) + ACTION_DOWN (action = 0) -> ignored
-        val otherKeyData = Parcel.obtain().apply {
-            writeInterfaceToken("com.ro.mapping.IKeyEventListener")
-            writeInt(4)
-            writeInt(0)
-        }
+        // 5. Non-HOME key ("BACK", value1 = 1) -> ignored and returns 0
+        val otherKeyData = buildInputEventParcel("BACK", 1)
         val otherKeyReply = Parcel.obtain()
         assertTrue(listenerBinder.transact(IBinder.FIRST_CALL_TRANSACTION, otherKeyData, otherKeyReply, 0))
-        assertEquals(1, homePressCount)
+        otherKeyReply.setDataPosition(0)
+        otherKeyReply.readException()
+        assertEquals(0, otherKeyReply.readInt())
+        assertEquals(2, homePressCount)
         otherKeyData.recycle()
         otherKeyReply.recycle()
     }

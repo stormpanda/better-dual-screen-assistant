@@ -66,8 +66,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SWAP_DISPLAY_TASKS = IBinder.FIRST_CALL_TRANSACTION + 16
     const val TRANSACTION_SET_TOP_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 17
     const val TRANSACTION_GET_GAME_FPS = IBinder.FIRST_CALL_TRANSACTION + 18
+    const val TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST = IBinder.FIRST_CALL_TRANSACTION + 19
 
-    const val HELPER_PROTOCOL_VERSION = 12
+    const val HELPER_PROTOCOL_VERSION = 13
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -101,6 +102,11 @@ object PrivilegedHelperMain {
     internal const val RAPID_CRASH_UPTIME_THRESHOLD_MS = 3000L
     internal const val MAX_RAPID_CRASHES = 8
     internal const val MAX_UNREGISTERED_RESPAWN_ATTEMPTS = 6
+    internal const val STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS = 350L
+    internal val SIGNAL_CONT: Int =
+        android.system.OsConstants.SIGCONT.takeIf { it > 0 } ?: 18
+    internal val SIGNAL_STOP: Int =
+        android.system.OsConstants.SIGSTOP.takeIf { it > 0 } ?: 19
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -373,6 +379,21 @@ object PrivilegedHelperMain {
         internal var respawnServiceOverride: ((String) -> Unit)? = null
         internal var restoreStockOverride: (() -> Unit)? = null
         internal var exitProcessOverride: (() -> Unit)? = null
+        internal var resolveStockPidOverride: (() -> Int)? = null
+        internal var isPidStoppedOverride: ((Int) -> Boolean)? = null
+        internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
+
+        private val stockFreezeLock = Any()
+
+        @Volatile
+        private var cachedStockPid: Int = -1
+
+        @Volatile
+        private var temporarilyUnfrozenStockPid: Int = -1
+
+        private val refreezeStockSafetyRunnable = Runnable {
+            setStockProcessFrozenForBroadcastInternal(true)
+        }
 
         @Volatile
         private var isShuttingDown: Boolean = false
@@ -779,7 +800,9 @@ object PrivilegedHelperMain {
                         true
                     }
                     TRANSACTION_SHUTDOWN -> {
+                        setStockProcessFrozenForBroadcastInternal(true)
                         isShuttingDown = true
+                        mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                         mainHandler.removeCallbacks(watchdogCheckRunnable)
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
@@ -840,6 +863,12 @@ object PrivilegedHelperMain {
                         val fps = getGameFpsInternal()
                         reply?.writeNoException()
                         reply?.writeFloat(fps)
+                        true
+                    }
+                    TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST -> {
+                        val freeze = data.readInt() != 0
+                        setStockProcessFrozenForBroadcastInternal(freeze)
+                        reply?.writeNoException()
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)
@@ -913,6 +942,19 @@ object PrivilegedHelperMain {
                 }
                 callProviderExternal("settings", "PUT_secure", key, extras)
             } catch (_: Throwable) {
+            }
+        }
+
+        private fun getSecureSettingInternal(key: String): String {
+            return try {
+                val extras = Bundle().apply {
+                    putInt("_user", 0)
+                }
+                callProviderExternal("settings", "GET_secure", key, extras)
+                    ?.getString("value")
+                    .orEmpty()
+            } catch (_: Throwable) {
+                ""
             }
         }
 
@@ -1162,6 +1204,115 @@ object PrivilegedHelperMain {
             }
         }
 
+        private fun doesPidMatchStockPackage(pid: Int): Boolean {
+            if (pid <= 0) return false
+            return try {
+                val raw = File("/proc/$pid/cmdline").readBytes()
+                val end = raw.indexOf(0.toByte()).let { if (it >= 0) it else raw.size }
+                val cmdline = String(raw, 0, end, StandardCharsets.UTF_8).trim()
+                cmdline == STOCK_PACKAGE_NAME
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
+        private fun resolveStockPidInternal(): Int {
+            resolveStockPidOverride?.let { return it() }
+            val cached = cachedStockPid
+            if (cached > 0 && doesPidMatchStockPackage(cached)) {
+                return cached
+            }
+            val am = activityManagerProxy
+            if (am != null) {
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    val procs = am.javaClass.getMethod("getRunningAppProcesses")
+                        .invoke(am) as? List<ActivityManager.RunningAppProcessInfo>
+                    val match = procs?.firstOrNull {
+                        it.processName == STOCK_PACKAGE_NAME && it.pid > 0
+                    }
+                    if (match != null) {
+                        cachedStockPid = match.pid
+                        return match.pid
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            val resolved = execRootCommand("pidof $STOCK_PACKAGE_NAME")
+                .trim()
+                .split(Regex("\\s+"))
+                .firstOrNull { it.isNotEmpty() && it.all(Char::isDigit) }
+                ?.toIntOrNull()
+                ?: -1
+            if (resolved > 0) {
+                cachedStockPid = resolved
+            }
+            return resolved
+        }
+
+        private fun isPidStoppedInternal(pid: Int): Boolean {
+            isPidStoppedOverride?.let { return it(pid) }
+            if (pid <= 0) return false
+            return try {
+                File("/proc/$pid/stat").readText().contains(") T ")
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
+        private fun sendSignalToStockPidInternal(pid: Int, sig: Int) {
+            val hook = sendSignalOverride
+            if (hook != null) {
+                hook(pid, sig)
+                return
+            }
+            try {
+                android.system.Os.kill(pid, sig)
+                return
+            } catch (_: Throwable) {
+            }
+            val sigArg = if (sig == SIGNAL_CONT) "-CONT" else "-STOP"
+            execRootCommand("kill $sigArg $pid")
+        }
+
+        /**
+         * Temporarily wakes (`SIGCONT`) or re-freezes (`SIGSTOP`) the windowless stock
+         * `com.odin.dualscreen.assistant` process around foreground ordered broadcasts
+         * (`ACTION_SCREEN_ON`, `ACTION_SCREEN_OFF`, `ACTION_SHUTDOWN`, `REBOOT`).
+         *
+         * Because `com.odin.dualscreen.assistant` registers a dynamic `ScreenReceiver` in
+         * `ThisApplication.onCreate()`, leaving it in `T` (`SIGSTOP`) state during ordered
+         * screen broadcasts stalls `system_server`'s foreground `BroadcastQueue` for 10s
+         * (delaying `SCREEN_ON`/`SCREEN_OFF` delivery to `com.odin.gameassistant`) and triggers
+         * a 12s ANR kill-and-respawn with `TccServices` re-bound.
+         */
+        private fun setStockProcessFrozenForBroadcastInternal(freeze: Boolean) {
+            synchronized(stockFreezeLock) {
+                if (!freeze) {
+                    if (!replaceStockPreferred || isShuttingDown) return
+                    val pid = resolveStockPidInternal()
+                    if (pid <= 0) return
+                    if (temporarilyUnfrozenStockPid == pid || isPidStoppedInternal(pid)) {
+                        temporarilyUnfrozenStockPid = pid
+                        sendSignalToStockPidInternal(pid, SIGNAL_CONT)
+                        mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                        mainHandler.postDelayed(
+                            refreezeStockSafetyRunnable,
+                            STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS
+                        )
+                    }
+                } else {
+                    mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                    val pid = temporarilyUnfrozenStockPid
+                    temporarilyUnfrozenStockPid = -1
+                    if (!replaceStockPreferred || isShuttingDown || pid <= 0) return
+                    if (resolveStockPidInternal() == pid) {
+                        sendSignalToStockPidInternal(pid, SIGNAL_STOP)
+                    }
+                }
+            }
+        }
+
         /**
          * Restores Dual-Screen mode (`0`), unblanks any display whose brightness was set to `-1.0f`,
          * re-enables touch on both screens, and ensures the stock `com.odin.dualscreen.assistant`
@@ -1169,6 +1320,10 @@ object PrivilegedHelperMain {
          */
         private fun restoreDisplayAndStockAssistant() {
             try {
+                synchronized(stockFreezeLock) {
+                    mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                    temporarilyUnfrozenStockPid = -1
+                }
                 // 0. Remove any helper top-screen blank cover window, re-enable status bar, and unregister FPS listener
                 unregisterFpsListenerInternal()
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
@@ -1262,8 +1417,20 @@ object PrivilegedHelperMain {
             } else {
                 lastOverlayResourceNames = emptyArray()
                 lastOverlayColorValues = IntArray(0)
-                unregisterOsThemeOverlayOnly()
-                restoreStockThemeJsonInternal(savedThemeJson)
+                val hadOverlay = hasRegisteredBdsaThemeOverlay()
+                if (hadOverlay) {
+                    unregisterOsThemeOverlayOnly()
+                } else {
+                    osThemeOverlayActive = false
+                }
+                val currentThemeJson = getSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES)
+                if (hadOverlay ||
+                    currentThemeJson.contains("\"999\"") ||
+                    savedStockThemeJson.isNotBlank() ||
+                    savedThemeJson.isNotBlank()
+                ) {
+                    restoreStockThemeJsonInternal(savedThemeJson)
+                }
             }
         }
 
@@ -1384,12 +1551,42 @@ object PrivilegedHelperMain {
             }
         }
 
+        private fun hasRegisteredBdsaThemeOverlay(): Boolean {
+            if (osThemeOverlayActive) return true
+            val om = overlayManagerProxy ?: return false
+            return try {
+                val idClass = Class.forName("android.content.om.OverlayIdentifier")
+                val idCtor = idClass.getConstructor(String::class.java, String::class.java)
+                val getInfo = om.javaClass.methods.firstOrNull { m ->
+                    m.name == "getOverlayInfoByIdentifier" && m.parameterTypes.size == 2
+                } ?: return false
+                val shellId = idCtor.newInstance(OS_THEME_OWNING_PACKAGE, OS_THEME_OVERLAY_NAME)
+                if (getInfo.invoke(om, shellId, 0) != null) return true
+                val legacyId = idCtor.newInstance(APP_PACKAGE_NAME, OS_THEME_OVERLAY_NAME)
+                getInfo.invoke(om, legacyId, 0) != null
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
         private fun clearOsThemeOverlayInternal(restoreNightMode: Int, restoreThemeJson: String) {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
             lastOverlayResourceNames = emptyArray()
             lastOverlayColorValues = IntArray(0)
-            unregisterOsThemeOverlayOnly()
-            restoreStockThemeJsonInternal(restoreThemeJson)
+            val hadOverlay = hasRegisteredBdsaThemeOverlay()
+            if (hadOverlay) {
+                unregisterOsThemeOverlayOnly()
+            } else {
+                osThemeOverlayActive = false
+            }
+            val currentThemeJson = getSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES)
+            if (hadOverlay ||
+                currentThemeJson.contains("\"999\"") ||
+                savedStockThemeJson.isNotBlank() ||
+                restoreThemeJson.isNotBlank()
+            ) {
+                restoreStockThemeJsonInternal(restoreThemeJson)
+            }
             savedStockThemeJson = ""
             val nightToRestore = if (restoreNightMode == 1 || restoreNightMode == 2) {
                 restoreNightMode

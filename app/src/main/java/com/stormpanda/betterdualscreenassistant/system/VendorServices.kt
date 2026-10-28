@@ -247,16 +247,21 @@ class OverviewProxyClient(private val context: Context) {
 
 class MappingServiceClient(
     private val context: Context,
-    private val onHomePressed: () -> Unit = {}
+    private val onHomePressed: () -> Boolean = { false }
 ) {
     @Volatile
     var isHomeMapped: Boolean = false
         private set
+
     companion object {
         private const val TAG = "MappingServiceClient"
-        private const val MAPPING_DESCRIPTOR = "com.ro.mapping.IMappingService"
-        private const val LISTENER_DESCRIPTOR = "com.ro.mapping.IKeyEventListener"
-        private const val INPUT_ID_HOME = 3
+        private const val ACTION_MAPPING_SERVICE = "com.ro.mapping.action.MAPPING_SERVICE"
+        private const val MAPPING_PACKAGE = "com.odin.mapping"
+        internal const val MAPPING_DESCRIPTOR = "com.ro.mapping.sdk.IServerApi"
+        internal const val LISTENER_DESCRIPTOR = "com.ro.mapping.sdk.listener.OnInputEventListener"
+        internal const val TRANSACTION_REGISTER_INPUT_LISTENER = 2
+        internal const val TRANSACTION_UNREGISTER_INPUT_LISTENER = 3
+        internal const val INPUT_ID_HOME = "HOME"
     }
 
     private var mappingBinder: IBinder? = null
@@ -270,12 +275,22 @@ class MappingServiceClient(
             }
             if (code == FIRST_CALL_TRANSACTION) {
                 data.enforceInterface(LISTENER_DESCRIPTOR)
-                val inputId = data.readInt()
-                val action = data.readInt()
-                if (inputId == INPUT_ID_HOME && action == 0) {
-                    onHomePressed()
+                val hasEvent = data.readInt() != 0
+                var consumed = false
+                if (hasEvent) {
+                    val inputId = data.readString()
+                    val value1 = data.readInt().toShort()
+                    data.readInt() // value2
+                    data.readInt() // fd
+                    data.readInt() // type
+                    data.readInt() // code
+                    data.readInt() // value
+                    if (inputId == INPUT_ID_HOME && value1.toInt() != 0) {
+                        consumed = onHomePressed()
+                    }
                 }
                 reply?.writeNoException()
+                reply?.writeInt(if (consumed) 1 else 0)
                 return true
             }
             return super.onTransact(code, data, reply, flags)
@@ -297,10 +312,22 @@ class MappingServiceClient(
     }
 
     fun bind() {
+        if (mappingBinder != null || isBound) return
         try {
-            val intent = Intent("com.ro.mapping.action.MAPPING_SERVICE")
-                .setPackage("com.odin.gameassistant")
-            isBound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            val queryIntent = Intent(ACTION_MAPPING_SERVICE)
+            @Suppress("DEPRECATION")
+            val resolved = context.packageManager
+                .queryIntentServices(queryIntent, 0)
+                ?.firstOrNull()
+                ?.serviceInfo
+            val bindIntent = if (resolved != null) {
+                Intent(ACTION_MAPPING_SERVICE).setComponent(
+                    ComponentName(resolved.packageName, resolved.name)
+                )
+            } else {
+                Intent(ACTION_MAPPING_SERVICE).setPackage(MAPPING_PACKAGE)
+            }
+            isBound = context.bindService(bindIntent, connection, Context.BIND_AUTO_CREATE)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to bind MAPPING_SERVICE", t)
         }
@@ -314,7 +341,8 @@ class MappingServiceClient(
             try {
                 data.writeInterfaceToken(MAPPING_DESCRIPTOR)
                 data.writeStrongBinder(keyListenerBinder)
-                service.transact(2, data, reply, 0)
+                service.transact(TRANSACTION_UNREGISTER_INPUT_LISTENER, data, reply, 0)
+                reply.readException()
             } catch (_: Throwable) {
             } finally {
                 data.recycle()
@@ -337,10 +365,11 @@ class MappingServiceClient(
         try {
             data.writeInterfaceToken(MAPPING_DESCRIPTOR)
             data.writeStrongBinder(keyListenerBinder)
-            service.transact(1, data, reply, 0)
+            data.writeStringArray(arrayOf(INPUT_ID_HOME))
+            service.transact(TRANSACTION_REGISTER_INPUT_LISTENER, data, reply, 0)
             reply.readException()
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed to register IKeyEventListener", t)
+            Log.w(TAG, "Failed to register OnInputEventListener", t)
         } finally {
             data.recycle()
             reply.recycle()

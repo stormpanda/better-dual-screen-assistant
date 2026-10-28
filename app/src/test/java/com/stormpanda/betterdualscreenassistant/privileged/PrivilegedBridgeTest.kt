@@ -293,6 +293,40 @@ class PrivilegedBridgeTest {
     }
 
     @Test
+    fun `setStockProcessFrozenForBroadcast delegates to helper binder or falls back to PServerClient`() {
+        PrivilegedBridge.setReplaceStockPreferred(true)
+        val helperFreezeCalls = mutableListOf<Boolean>()
+        val helper = createMockHelperBinder { code, data, reply ->
+            if (code == PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST) {
+                data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                helperFreezeCalls.add(data.readInt() != 0)
+                reply.writeNoException()
+            }
+        }
+        setHelperBinder(helper)
+
+        PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+        PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true)
+        assertEquals(listOf(false, true), helperFreezeCalls)
+
+        // Fallback to PServerClient when helper binder is absent
+        setHelperBinder(null)
+        pServerCommands.clear()
+        pServerResponder = { cmd ->
+            when {
+                cmd.startsWith("pidof com.odin.dualscreen.assistant") -> "7788"
+                cmd.startsWith("cat /proc/7788/stat") -> "7788 (reen.assistant) T 1 7788 1 0"
+                else -> ""
+            }
+        }
+        PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+        assertTrue(pServerCommands.contains("kill -CONT 7788"))
+
+        PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true)
+        assertTrue(pServerCommands.contains("kill -STOP 7788"))
+    }
+
+    @Test
     fun `captureScreenshot parses SurfaceFlinger display IDs for port 131 and 132`() {
         pServerResponder = { cmd ->
             if (cmd.contains("dumpsys SurfaceFlinger --display-id")) {

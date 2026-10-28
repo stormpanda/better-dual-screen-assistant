@@ -167,6 +167,14 @@ class SystemSettingsRepository(private val context: Context) {
         commitPendingRefreshRate()
     }
 
+    private val floatingIconEarlyResyncRunnable = Runnable {
+        resyncFloatingIconGestureGuard()
+    }
+
+    private val floatingIconLateResyncRunnable = Runnable {
+        resyncFloatingIconGestureGuard()
+    }
+
     // Display Mode: 0 = Dual, 1 = Top Only, 2 = Bottom Only
     private val _dualScreenDisplayMode = MutableStateFlow(getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, 0))
     val dualScreenDisplayMode: StateFlow<Int> = _dualScreenDisplayMode.asStateFlow()
@@ -290,7 +298,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val _gamepadMouseMode = MutableStateFlow(getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1)
     val gamepadMouseMode: StateFlow<Boolean> = _gamepadMouseMode.asStateFlow()
 
-    private val _keyMapperEnabled = MutableStateFlow(getInt(KEY_SHOW_FLOATING_ICON, 0) == 1)
+    private val _keyMapperEnabled = MutableStateFlow(getInt(KEY_ADAPTER_ENABLE, 1) == 1)
     val keyMapperEnabled: StateFlow<Boolean> = _keyMapperEnabled.asStateFlow()
 
     private val _keepScreenOn = MutableStateFlow(getInt(KEY_KEEP_SCREEN_ON, 0) == 1)
@@ -387,7 +395,7 @@ class SystemSettingsRepository(private val context: Context) {
                 val saved = readSavedThemeMode()
                 if (_themeMode.value != saved) {
                     _themeMode.value = saved
-                    scheduleOsThemeSync(0L)
+                    scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
                 }
             }
             PREF_CUSTOM_ACCENT_ARGB -> {
@@ -397,7 +405,7 @@ class SystemSettingsRepository(private val context: Context) {
                 )
                 if (_customAccentArgb.value != saved) {
                     _customAccentArgb.value = saved
-                    scheduleOsThemeSync(0L)
+                    scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
                 }
             }
             PREF_INJECT_OS_THEME -> {
@@ -537,7 +545,7 @@ class SystemSettingsRepository(private val context: Context) {
             KEY_TRIGGER_INPUT_MODE,
             KEY_CHARGE_LIMIT_80,
             KEY_GAMEPAD_MOUSE_MODE,
-            KEY_SHOW_FLOATING_ICON,
+            KEY_ADAPTER_ENABLE,
             KEY_KEEP_SCREEN_ON,
             KEY_PREVENT_ACCIDENTAL_HOME,
             "screen_brightness"
@@ -581,10 +589,13 @@ class SystemSettingsRepository(private val context: Context) {
         context.registerReceiver(megingiardPackageReceiver, pkgFilter, Context.RECEIVER_NOT_EXPORTED)
         registerDisplayBrightnessListener()
         refreshAll()
+        resyncFloatingIconGestureGuard()
     }
 
     fun unregister() {
         mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
+        mainHandler.removeCallbacks(floatingIconEarlyResyncRunnable)
+        mainHandler.removeCallbacks(floatingIconLateResyncRunnable)
         if (pendingRefreshRateTarget != null) {
             commitPendingRefreshRate()
         }
@@ -682,7 +693,7 @@ class SystemSettingsRepository(private val context: Context) {
         _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
-        _keyMapperEnabled.value = getInt(KEY_SHOW_FLOATING_ICON, 0) == 1
+        _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
         _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
         _preventAccidentalHome.value = getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
         _quickTileOrder.value = readSavedQuickTileOrder()
@@ -855,8 +866,20 @@ class SystemSettingsRepository(private val context: Context) {
                 val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
             }
-            1 -> PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
-            2 -> PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
+            1 -> {
+                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
+                if (getInt(KEY_SCREEN_FOCUS_LOCK, 1) != 1) {
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
+                }
+            }
+            2 -> {
+                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
+                if (getInt(KEY_SCREEN_FOCUS_LOCK, 2) != 2) {
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
+                }
+            }
         }
     }
 
@@ -959,16 +982,19 @@ class SystemSettingsRepository(private val context: Context) {
         }
         PrivilegedBridge.putSystemSettingInt(context, KEY_TCC_THEME_MODE, stockEquivalent)
         if (mode == AppThemeOption.SYNC_MEGINGIARD.id) {
-            refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+            refreshMegingiardSyncedThemeAsync(
+                changedUri = null,
+                debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS
+            )
         } else {
-            scheduleOsThemeSync(0L)
+            scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
         }
     }
 
     fun setCustomAccentArgb(argb: Int) {
         _customAccentArgb.value = argb
         prefs.edit().putInt(PREF_CUSTOM_ACCENT_ARGB, argb).apply()
-        scheduleOsThemeSync(0L)
+        scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
     }
 
     fun setInjectOsTheme(enabled: Boolean) {
@@ -1202,6 +1228,7 @@ class SystemSettingsRepository(private val context: Context) {
             }
             if (force || hadSavedSnapshot) {
                 PrivilegedBridge.clearOsThemeOverlay(context, savedNight, savedJson)
+                scheduleFloatingIconGestureGuardResync()
             }
             return
         }
@@ -1225,6 +1252,7 @@ class SystemSettingsRepository(private val context: Context) {
                 if (!force && lastAppliedOsThemeSignature == sig) return
                 lastAppliedOsThemeSignature = sig
                 PrivilegedBridge.clearOsThemeOverlay(context, savedNight, savedJson)
+                scheduleFloatingIconGestureGuardResync()
             }
             AppThemeOption.STOCK_LIGHT -> {
                 val sig = "ON:STOCK_LIGHT:$savedNight"
@@ -1239,6 +1267,7 @@ class SystemSettingsRepository(private val context: Context) {
                     injectedThemeJson = "",
                     savedThemeJson = savedJson
                 )
+                scheduleFloatingIconGestureGuardResync()
             }
             AppThemeOption.STOCK_DARK -> {
                 val sig = "ON:STOCK_DARK:$savedNight"
@@ -1253,6 +1282,7 @@ class SystemSettingsRepository(private val context: Context) {
                     injectedThemeJson = "",
                     savedThemeJson = savedJson
                 )
+                scheduleFloatingIconGestureGuardResync()
             }
             else -> {
                 val sig = "ON:MG:${option.id}:${_customAccentArgb.value}:" +
@@ -1277,6 +1307,7 @@ class SystemSettingsRepository(private val context: Context) {
                     injectedThemeJson = injectedJson,
                     savedThemeJson = savedJson
                 )
+                scheduleFloatingIconGestureGuardResync()
             }
         }
     }
@@ -1600,11 +1631,37 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun toggleKeyMapper() {
         val next = !_keyMapperEnabled.value
-        if (next) {
-            PrivilegedBridge.putSystemSettingInt(context, KEY_ADAPTER_ENABLE, 1)
-        }
-        PrivilegedBridge.putSystemSettingInt(context, KEY_SHOW_FLOATING_ICON, if (next) 1 else 0)
+        PrivilegedBridge.putSystemSettingInt(context, KEY_ADAPTER_ENABLE, if (next) 1 else 0)
         _keyMapperEnabled.value = next
+    }
+
+    /**
+     * Non-destructively notifies `ContentObserver`s watching `Settings.System["is_show_floatingIcon"]`
+     * when its value is currently non-zero (`1`).
+     *
+     * On AYN Thor firmware, `SystemUI`'s `EdgeBackGestureHandler.isRightFloatViewShow` defaults to
+     * `false` on `SystemUI` startup and only updates inside `ShowFloatingIconObserver.onChange()`.
+     * Re-notifying the URI without writing to `Settings.System` preserves `GameAssistant`'s sole
+     * ownership of `is_show_floatingIcon` while ensuring `EdgeBackGestureHandler` never steals
+     * right-edge `GameAssistant` swipes after a `SystemUI` restart or `FabricatedOverlay` commit.
+     */
+    fun resyncFloatingIconGestureGuard() {
+        try {
+            if (getInt(KEY_SHOW_FLOATING_ICON, 0) != 0) {
+                contentResolver.notifyChange(
+                    Settings.System.getUriFor(KEY_SHOW_FLOATING_ICON),
+                    null
+                )
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun scheduleFloatingIconGestureGuardResync() {
+        mainHandler.removeCallbacks(floatingIconEarlyResyncRunnable)
+        mainHandler.removeCallbacks(floatingIconLateResyncRunnable)
+        mainHandler.postDelayed(floatingIconEarlyResyncRunnable, 800L)
+        mainHandler.postDelayed(floatingIconLateResyncRunnable, 2200L)
     }
 
     fun toggleKeepScreenOn() {

@@ -178,7 +178,7 @@ enum class QuickSettingTileId(
     KEY_MAPPER(
         key = "key_mapper",
         title = "Key Mapper",
-        description = "Toggle the AYN floating key-mapping overlay icon",
+        description = "Toggle AYN screen key mapping (Key Adapter)",
         iconRes = R.drawable.ic_qs_key_mapper,
         category = QuickSettingCategory.TOOLS
     ),
