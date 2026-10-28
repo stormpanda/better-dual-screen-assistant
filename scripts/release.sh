@@ -65,7 +65,7 @@ build_release_apk() {
     ./gradlew :app:assembleRelease
 
     # Ensure output dir exists, clean old artifacts, and copy the APK
-    rm -f app/release/*.apk(N) app/release/*-checksum-*.txt(N)
+    rm -f app/release/*.apk(N) app/release/*-checksum-*.txt(N) app/release/*-mapping.txt(N)
     mkdir -p app/release
 
     generated_apk="app/build/outputs/apk/release/BetterDualScreenAssistant-v${release_version}.apk"
@@ -85,6 +85,13 @@ build_release_apk() {
 
     cp "$generated_apk" "$copied_apk"
     log_info "Copied APK to $copied_apk"
+
+    mapping_file="app/build/outputs/mapping/release/mapping.txt"
+    if [[ -f "$mapping_file" ]]; then
+        copied_mapping="app/release/BetterDualScreenAssistant-v${release_version}-mapping.txt"
+        cp "$mapping_file" "$copied_mapping"
+        log_info "Archived R8 mapping file to $copied_mapping"
+    fi
 
     # Run checksum script
     log_info "Generating SHA-256 checksum..."

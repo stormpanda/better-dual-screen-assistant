@@ -66,7 +66,8 @@ android {
                 logger.warn("WARNING: Release keystore not configured or missing; falling back to debug signing config.")
                 signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
