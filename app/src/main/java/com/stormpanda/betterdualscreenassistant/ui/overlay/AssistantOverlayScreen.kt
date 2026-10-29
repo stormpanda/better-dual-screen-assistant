@@ -130,6 +130,7 @@ fun AssistantOverlayScreen(
     val showLedBrightnessSlider by repository.showLedBrightnessSlider.collectAsState()
     val showSwapScreensButton by repository.showSwapScreensButton.collectAsState()
     val showEditButton by repository.showEditButton.collectAsState()
+    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
     val ledBrightnessPercent by repository.ledBrightnessPercent.collectAsState()
     val wifiEnabled by repository.wifiEnabled.collectAsState()
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
@@ -268,6 +269,7 @@ fun AssistantOverlayScreen(
                     } else {
                         SystemSettingsTab(
                             telemetry = telemetry,
+                            tempFahrenheit = tempFahrenheit,
                             refreshRate = refreshRate,
                             dualScreenMode = dualScreenMode,
                             focusLock = focusLock,
@@ -295,6 +297,7 @@ fun AssistantOverlayScreen(
                             quickTileOrder = quickTileOrder,
                             disabledQuickTiles = disabledQuickTiles,
                             onToggleRefreshRate = { repository.toggleRefreshRate() },
+                            onToggleTempUnit = { repository.toggleTempFahrenheit() },
                             onOpenDialog = { dialog -> activeDialog = dialog },
                             onToggleChargingSeparation = { repository.toggleChargingSeparation() },
                             onToggleVibrate = { repository.toggleVibrate() },
@@ -881,6 +884,7 @@ private data class QuickSettingTileModel(
 @Composable
 private fun SystemSettingsTab(
     telemetry: HardwareTelemetryState,
+    tempFahrenheit: Boolean,
     refreshRate: Int,
     dualScreenMode: Int,
     focusLock: Int,
@@ -908,6 +912,7 @@ private fun SystemSettingsTab(
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     onToggleRefreshRate: () -> Unit,
+    onToggleTempUnit: () -> Unit,
     onOpenDialog: (ActiveDialog) -> Unit,
     onToggleChargingSeparation: () -> Unit,
     onToggleVibrate: () -> Unit,
@@ -1333,19 +1338,19 @@ private fun SystemSettingsTab(
                 .weight(0.3f)
                 .padding(top = 5.dp)
         ) {
-            val tempInt = telemetry.cpuTempCelsius.roundToInt()
+            val tempCelsiusInt = telemetry.cpuTempCelsius.roundToInt()
             val tempTint = if (colors.isMegingiardStyle) {
                 when {
-                    tempInt >= 86 -> colors.error
-                    tempInt >= 71 -> colors.error.copy(alpha = 0.85f)
-                    tempInt >= 51 -> colors.accent
+                    tempCelsiusInt >= 86 -> colors.error
+                    tempCelsiusInt >= 71 -> colors.error.copy(alpha = 0.85f)
+                    tempCelsiusInt >= 51 -> colors.accent
                     else -> colors.secondary
                 }
             } else {
                 when {
-                    tempInt >= 86 -> Color(0xFFF64646)
-                    tempInt >= 71 -> Color(0xFFF67474)
-                    tempInt >= 51 -> Color(0xFFF6A6A6)
+                    tempCelsiusInt >= 86 -> Color(0xFFF64646)
+                    tempCelsiusInt >= 71 -> Color(0xFFF67474)
+                    tempCelsiusInt >= 51 -> Color(0xFFF6A6A6)
                     else -> Color(0xFF818184)
                 }
             }
@@ -1353,10 +1358,11 @@ private fun SystemSettingsTab(
 
             HardwareInfoComponentCard(
                 title = "TEMP",
-                valueWithUnit = "${tempInt}℃",
+                valueWithUnit = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit),
                 iconRes = R.drawable.ic_temp,
                 iconTint = tempTint,
                 iconSizeRate = 0.20f,
+                onClick = onToggleTempUnit,
                 modifier = Modifier
                     .weight(0.2f)
                     .fillMaxHeight()
@@ -1432,6 +1438,18 @@ private fun SystemSettingsTab(
                 )
             }
         }
+    }
+}
+
+/**
+ * Formats CPU temperature in Celsius (`"56℃"`) or Fahrenheit (`"133℉"`).
+ */
+internal fun formatCpuTemperature(cpuTempCelsius: Float, useFahrenheit: Boolean): String {
+    return if (useFahrenheit) {
+        val fahrenheit = ((cpuTempCelsius * 9f / 5f) + 32f).roundToInt()
+        "${fahrenheit}℉"
+    } else {
+        "${cpuTempCelsius.roundToInt()}℃"
     }
 }
 

@@ -78,6 +78,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
         const val PREF_ACCURATE_GAME_FPS = "accurate_game_fps"
+        const val PREF_TEMP_FAHRENHEIT = "temp_fahrenheit"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -268,6 +269,11 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val accurateGameFps: StateFlow<Boolean> = _accurateGameFps.asStateFlow()
 
+    private val _tempFahrenheit = MutableStateFlow(
+        prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
+    )
+    val tempFahrenheit: StateFlow<Boolean> = _tempFahrenheit.asStateFlow()
+
     private val _ledBrightnessPercent = MutableStateFlow(readLedBrightnessPercent())
     val ledBrightnessPercent: StateFlow<Int> = _ledBrightnessPercent.asStateFlow()
 
@@ -445,6 +451,10 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_ACCURATE_GAME_FPS -> {
                 _accurateGameFps.value =
                     prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+            }
+            PREF_TEMP_FAHRENHEIT -> {
+                _tempFahrenheit.value =
+                    prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
             }
             PREF_QUICK_TILE_ORDER -> {
                 _quickTileOrder.value = readSavedQuickTileOrder()
@@ -685,6 +695,7 @@ class SystemSettingsRepository(private val context: Context) {
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+        _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
         _bluetoothEnabled.value = readBluetoothEnabled()
@@ -1530,6 +1541,15 @@ class SystemSettingsRepository(private val context: Context) {
     fun setAccurateGameFps(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_ACCURATE_GAME_FPS, enabled).apply()
         _accurateGameFps.value = enabled
+    }
+
+    fun setTempFahrenheit(fahrenheit: Boolean) {
+        prefs.edit().putBoolean(PREF_TEMP_FAHRENHEIT, fahrenheit).apply()
+        _tempFahrenheit.value = fahrenheit
+    }
+
+    fun toggleTempFahrenheit() {
+        setTempFahrenheit(!_tempFahrenheit.value)
     }
 
     fun setLedBrightnessPercent(percent: Int) {

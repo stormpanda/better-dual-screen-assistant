@@ -1,6 +1,7 @@
 package com.stormpanda.betterdualscreenassistant.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import com.stormpanda.betterdualscreenassistant.ui.overlay.formatCpuTemperature
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -123,5 +124,20 @@ class TccThemeAndOverlayFormatTest {
         assertEquals("45.6", method.invoke(null, 45.6f))
         assertEquals("100", method.invoke(null, 100.0f))
         assertEquals("768", method.invoke(null, 768.4f))
+    }
+
+    @Test
+    fun `formatCpuTemperature formats Celsius by default and converts accurately to Fahrenheit`() {
+        assertEquals("0℃", formatCpuTemperature(0f, useFahrenheit = false))
+        assertEquals("32℉", formatCpuTemperature(0f, useFahrenheit = true))
+
+        assertEquals("56℃", formatCpuTemperature(56f, useFahrenheit = false))
+        assertEquals("133℉", formatCpuTemperature(56f, useFahrenheit = true))
+
+        assertEquals("44℃", formatCpuTemperature(44.4f, useFahrenheit = false))
+        assertEquals("112℉", formatCpuTemperature(44.4f, useFahrenheit = true))
+
+        assertEquals("100℃", formatCpuTemperature(100f, useFahrenheit = false))
+        assertEquals("212℉", formatCpuTemperature(100f, useFahrenheit = true))
     }
 }

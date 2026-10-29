@@ -388,14 +388,48 @@ fun HardwareInfoComponentCard(
     @DrawableRes iconRes: Int,
     iconTint: Color,
     iconSizeRate: Float = 0.17f,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
+    var isFocused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
 
     BoxWithConstraints(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(colors.panelBackground)
+            .background(
+                if (onClick != null && isFocused) {
+                    colors.panelBackgroundSelected
+                } else {
+                    colors.panelBackground
+                }
+            )
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .onFocusChanged { isFocused = it.isFocused }
+                        .onKeyEvent { event ->
+                            if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
+                            ) {
+                                onClick()
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onClick
+                        )
+                } else {
+                    Modifier
+                }
+            )
     ) {
         val density = LocalDensity.current
         val minDim = min(maxWidth, maxHeight)

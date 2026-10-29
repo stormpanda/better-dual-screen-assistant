@@ -80,6 +80,8 @@ Stored in `context.getSharedPreferences("better_dsa_prefs", Context.MODE_PRIVATE
 | Key Name | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
 | `replace_stock_assistant` | `Boolean` | `true` | Whether `com.odin.dualscreen.assistant` is ephemerally suppressed and replaced by this app. |
+| `accurate_game_fps` | `Boolean` | `true` | Enables per-task foreground game FPS measurement instead of global `SurfaceFlinger` page flips. |
+| `temp_fahrenheit` | `Boolean` | `false` | Displays CPU temperature in Fahrenheit (`℉`) when `true`, or Celsius (`℃`) when `false` (default). |
 | `show_edit_button` | `Boolean` | `true` | Shows the 4th **Edit** button in the overlay's bottom navigation bar. |
 | `remember_last_tab` | `Boolean` | `true` | Restores `last_active_tab` when reopening the overlay. |
 | `last_active_tab` | `Int` | `0` | Last selected overlay tab (`0` = Mode, `1` = Settings). |

@@ -324,6 +324,17 @@ class SystemSettingsRepositoryTest {
         repo.setNoMoreCloseBottomScreenTip(true)
         assertFalse(repo.shouldShowCloseBottomScreenTip())
 
+        // Temperature unit defaults to Celsius (false), toggles to Fahrenheit (true), and persists
+        assertFalse(repo.tempFahrenheit.value)
+        repo.toggleTempFahrenheit()
+        assertTrue(repo.tempFahrenheit.value)
+        repo.setTempFahrenheit(false)
+        assertFalse(repo.tempFahrenheit.value)
+        repo.setTempFahrenheit(true)
+        val reloadedRepo = SystemSettingsRepository(context)
+        assertTrue(reloadedRepo.tempFahrenheit.value)
+        reloadedRepo.unregister()
+
         repo.unregister()
     }
 

@@ -240,7 +240,7 @@ Located along the bottom `30%` of the **Settings** tab (`Tab 1`), the telemetry 
 
 | Widget | Width Share | Data Source | Visual Presentation |
 | :--- | :---: | :--- | :--- |
-| **TEMP Card** | `20%` | `/sys/devices/virtual/thermal/thermal_zone48/temp` (millidegrees Celsius) | Displays thermometer icon, `TEMP` label, and temperature in `XX℃`. In Stock themes, the icon and text dynamically change color at thermal thresholds: normal (`< 51℃`), `#FFBA14` (`51–70℃`), `#FF7823` (`71–85℃`), and `#E52D19` (`≥ 86℃`). |
+| **TEMP Card** | `20%` | `/sys/devices/virtual/thermal/thermal_zone48/temp` (millidegrees Celsius) | Displays thermometer icon, `TEMP` label, and temperature in `XX℃` (default) or `XXX℉` (tapping the card or changing **Temperature Unit** in General Settings toggles between Celsius and Fahrenheit). In Stock themes, the icon dynamically changes color at Celsius thermal thresholds: normal (`< 51℃`), `#F6A6A6` (`51–70℃`), `#F67474` (`71–85℃`), and `#F64646` (`≥ 86℃`). |
 | **FAN Card** | `20%` | `IFanControlProvider.getSpeedPercentage()` (`SettingsController` -> `FanProvider`) | Displays fan icon, `FAN` label, and current duty cycle percentage (`0%..100%`). |
 | **CPU Ring Gauge** | `15%` | `/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_cur_freq` & `cpuinfo_max_freq` | `270°` circular arc gauge (`HardwareRingGauge`, animated over `300ms` with `DecelerateInterpolator`). Displays prime core frequency in `GHz` (or `MHz` if `< 1 GHz`). Stock ring color: `#EE188C`. |
 | **GPU Ring Gauge** | `15%` | `/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq` & `max_freq` | `270°` circular arc gauge showing Adreno 740 clock in `MHz` (or `GHz`). Stock ring color: `#70E7FF`. |
@@ -296,6 +296,8 @@ Configures core assistant behavior and optional UI controls:
 | Setting Card | SharedPreferences Key | Default | Functional Effect |
 | :--- | :--- | :---: | :--- |
 | **Replace Stock Assistant** | `replace_stock_assistant` | `ON` | When enabled, suppresses the built-in `com.odin.dualscreen.assistant` so Better Dual Screen Assistant handles all physical AYN button presses and overlays. Turning this `OFF` immediately hides our overlay and wakes/restarts the stock assistant. |
+| **Accurate Game FPS Counter** | `accurate_game_fps` | `ON` | Measures real foreground game/app frame rate on the active display instead of the stock global `SurfaceFlinger` page-flip counter. |
+| **Temperature Unit** | `temp_fahrenheit` | `Celsius (°C)` | Switches the overlay CPU `TEMP` readout between **Celsius (`℃`)** and **Fahrenheit (`℉`)** (also toggleable directly by tapping the `TEMP` card in the overlay). |
 | **Show Edit Button in Overlay** | `show_edit_button` | `ON` | Shows or hides the 4th **Edit** button in the overlay's bottom navigation bar. |
 | **Remember Last Open Tab** | `remember_last_tab` | `ON` | When `ON`, reopening the overlay restores whichever tab (**Mode** or **Settings**) was last active (`last_active_tab`). When `OFF`, the overlay always opens on the **Mode** tab. |
 | **Show Swap Screens Button** | `show_swap_screens_button` | `ON` | Shows or hides the 4th **Swap Screens** action button in the **Mode** tab's Screen Mode panel. |

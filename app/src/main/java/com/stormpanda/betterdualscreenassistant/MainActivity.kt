@@ -70,6 +70,7 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tab
+import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Icon
@@ -502,6 +503,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
     val showEditButton by repo.showEditButton.collectAsState()
     val accurateGameFps by repo.accurateGameFps.collectAsState()
+    val tempFahrenheit by repo.tempFahrenheit.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
@@ -729,6 +731,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
                                                 accurateGameFps = accurateGameFps,
+                                                tempFahrenheit = tempFahrenheit,
                                                 onToggleReplaceStock = { replaceStock ->
                                                     stockDisabled = replaceStock
                                                     scope.launch(Dispatchers.IO) {
@@ -753,6 +756,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleAccurateGameFps = { enabled ->
                                                     repo.setAccurateGameFps(enabled)
+                                                },
+                                                onSetTempFahrenheit = { fahrenheit ->
+                                                    repo.setTempFahrenheit(fahrenheit)
                                                 }
                                             )
                                         }
@@ -918,13 +924,15 @@ private fun GeneralSettingsTabContent(
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     accurateGameFps: Boolean,
+    tempFahrenheit: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
     onToggleShowEditButton: (Boolean) -> Unit,
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit,
-    onToggleAccurateGameFps: (Boolean) -> Unit
+    onToggleAccurateGameFps: (Boolean) -> Unit,
+    onSetTempFahrenheit: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
 
@@ -959,6 +967,15 @@ private fun GeneralSettingsTabContent(
         checked = accurateGameFps,
         icon = Icons.Rounded.Speed,
         onCheckedChange = onToggleAccurateGameFps
+    )
+
+    GamepadChoiceCard(
+        title = "Temperature Unit",
+        description = "Display the overlay CPU temperature readout in Celsius (°C) or Fahrenheit (°F) — or tap the TEMP card directly",
+        selectedText = if (tempFahrenheit) "Fahrenheit (°F)" else "Celsius (°C)",
+        icon = Icons.Rounded.Thermostat,
+        onPrevious = { onSetTempFahrenheit(!tempFahrenheit) },
+        onNext = { onSetTempFahrenheit(!tempFahrenheit) }
     )
 
     GamepadToggleCard(
