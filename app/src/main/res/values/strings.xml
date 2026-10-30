@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Better Dual Screen Assistant</string>
+    <string name="app_name_manager">Better Dual Screen Manager</string>
     <string name="battery_level_text">%1$d%%</string>
     <string name="current_device_does_not_support_120hz">The current device does not support 120HZ</string>
     <string name="current_frame_rate_tip">CURRENT FPS</string>
@@ -150,6 +151,7 @@
     <string name="settings_add_to_obtainium">Add to Obtainium</string>
     <string name="help_settings_auto_update_desc">Check GitHub Releases once per session for newer app versions</string>
     <string name="help_settings_add_to_obtainium_desc">Open Obtainium to track and install Better Dual Screen Assistant updates automatically from GitHub</string>
+    <string name="help_settings_add_to_obtainium_manager_desc">Open Obtainium to track and install Better Dual Screen Manager updates automatically from GitHub</string>
     <string name="gamepad_action_check">Check</string>
     <string name="gamepad_action_checking">Checking</string>
 </resources>

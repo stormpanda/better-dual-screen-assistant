@@ -73,6 +73,7 @@ import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -205,6 +206,13 @@ class MainActivity : ComponentActivity() {
             val customAccentArgb by repo.customAccentArgb.collectAsState()
             val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
             val syncedMegingiardAccentArgb by repo.syncedMegingiardAccentArgb.collectAsState()
+            val promotedToManager by repo.promotedToManager.collectAsState()
+
+            LaunchedEffect(promotedToManager) {
+                title = getString(
+                    if (promotedToManager) R.string.app_name_manager else R.string.app_name
+                )
+            }
 
             val selectedTheme = AppThemeOption.fromId(themeModeId)
             val effectiveOption = if (selectedTheme == AppThemeOption.SYNC_MEGINGIARD) {
@@ -254,6 +262,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        SystemSettingsRepository.getInstance(applicationContext)
+            .setMainActivityStarted(System.identityHashCode(this), started = true)
         ensureOverlayStateForDisplay()
     }
 
@@ -280,10 +290,18 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        SystemSettingsRepository.getInstance(applicationContext).setSettingsUiActive(
-            activityToken = System.identityHashCode(this),
+        val repo = SystemSettingsRepository.getInstance(applicationContext)
+        val token = System.identityHashCode(this)
+        val flush = !isChangingConfigurations
+        repo.setSettingsUiActive(
+            activityToken = token,
             active = false,
-            flushIfInactive = !isChangingConfigurations
+            flushIfInactive = flush
+        )
+        repo.setMainActivityStarted(
+            activityToken = token,
+            started = false,
+            flushIfStopped = flush
         )
         super.onStop()
         if (!isChangingConfigurations && !isFinishing && isDeviceInteractive()) {
@@ -382,10 +400,18 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        SystemSettingsRepository.getInstance(applicationContext).setSettingsUiActive(
-            activityToken = System.identityHashCode(this),
+        val repo = SystemSettingsRepository.getInstance(applicationContext)
+        val token = System.identityHashCode(this)
+        val flush = !isChangingConfigurations
+        repo.setSettingsUiActive(
+            activityToken = token,
             active = false,
-            flushIfInactive = !isChangingConfigurations
+            flushIfInactive = flush
+        )
+        repo.setMainActivityStarted(
+            activityToken = token,
+            started = false,
+            flushIfStopped = flush
         )
         pendingUnhandledButtonBDown = false
         PrimaryOverlayInputBridge.resetJoystickState(preserveInputMode = isChangingConfigurations)
@@ -504,6 +530,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val showEditButton by repo.showEditButton.collectAsState()
     val accurateGameFps by repo.accurateGameFps.collectAsState()
     val tempFahrenheit by repo.tempFahrenheit.collectAsState()
+    val promotedToManager by repo.promotedToManager.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
@@ -637,7 +664,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
             Spacer(modifier = Modifier.width(10.dp))
 
             Text(
-                text = "BetterDualScreenAssistant",
+                text = if (promotedToManager) "BetterDualScreenManager" else "BetterDualScreenAssistant",
                 color = colors.onSurface,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -732,6 +759,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
                                                 accurateGameFps = accurateGameFps,
                                                 tempFahrenheit = tempFahrenheit,
+                                                promotedToManager = promotedToManager,
                                                 onToggleReplaceStock = { replaceStock ->
                                                     stockDisabled = replaceStock
                                                     scope.launch(Dispatchers.IO) {
@@ -759,6 +787,16 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onSetTempFahrenheit = { fahrenheit ->
                                                     repo.setTempFahrenheit(fahrenheit)
+                                                },
+                                                onTogglePromotedToManager = { promoted ->
+                                                    repo.setPromotedToManager(promoted)
+                                                    DialogToastManager.show(
+                                                        if (promoted) {
+                                                            "Congratulations on the promotion!"
+                                                        } else {
+                                                            "Back to Assistant duty."
+                                                        }
+                                                    )
                                                 }
                                             )
                                         }
@@ -790,6 +828,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 injectSystemTheme = injectSystemTheme,
                                                 syncedMegingiardOption = syncedMegingiardOption,
                                                 isMegingiardAvailable = isMegingiardAvailable,
+                                                promotedToManager = promotedToManager,
                                                 onSelectTheme = { repo.setThemeMode(it.id) },
                                                 onSelectAccentColor = { repo.setCustomAccentArgb(it) },
                                                 onOpenCustomAccent = {
@@ -807,6 +846,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 isCheckingUpdates = isCheckingUpdates,
                                                 updateCheckError = updateCheckError,
                                                 hasTriggeredManualCheck = hasTriggeredManualCheck,
+                                                promotedToManager = promotedToManager,
                                                 onTriggerManualCheck = {
                                                     hasTriggeredManualCheck = true
                                                     UpdateManager.checkForUpdates(
@@ -875,6 +915,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                     EnableDisableTogglesSubPageContent(
                                         quickTileOrder = quickTileOrder,
                                         disabledQuickTiles = disabledQuickTiles,
+                                        promotedToManager = promotedToManager,
                                         onSetTileEnabled = { tile, enabled ->
                                             repo.setQuickTileEnabled(tile, enabled)
                                         }
@@ -925,6 +966,7 @@ private fun GeneralSettingsTabContent(
     showLedBrightnessSlider: Boolean,
     accurateGameFps: Boolean,
     tempFahrenheit: Boolean,
+    promotedToManager: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
@@ -932,9 +974,14 @@ private fun GeneralSettingsTabContent(
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit,
     onToggleAccurateGameFps: (Boolean) -> Unit,
-    onSetTempFahrenheit: (Boolean) -> Unit
+    onSetTempFahrenheit: (Boolean) -> Unit,
+    onTogglePromotedToManager: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val appDisplayName = stringResource(
+        if (promotedToManager) R.string.app_name_manager else R.string.app_name
+    )
+    val roleLower = if (promotedToManager) "manager" else "assistant"
 
     if (updateAvailable && latestReleaseInfo != null) {
         GamepadActionCard(
@@ -951,7 +998,7 @@ private fun GeneralSettingsTabContent(
     GamepadToggleCard(
         title = "Replace Stock Assistant",
         description = if (stockDisabled) {
-            "Stock DualScreenAssistant is suppressed; physical AYN button opens Better Dual Screen Assistant"
+            "Stock DualScreenAssistant is suppressed; physical AYN button opens $appDisplayName"
         } else {
             "Stock DualScreenAssistant is currently active; enable to take over the physical AYN button"
         },
@@ -988,7 +1035,7 @@ private fun GeneralSettingsTabContent(
 
     GamepadToggleCard(
         title = "Remember Last Open Tab",
-        description = "Keep the last open overlay tab (Mode or Settings) in memory when reopening the assistant",
+        description = "Keep the last open overlay tab (Mode or Settings) in memory when reopening the $roleLower",
         checked = rememberLastTab,
         icon = Icons.Rounded.Tab,
         onCheckedChange = onToggleRememberLastTab
@@ -1016,6 +1063,18 @@ private fun GeneralSettingsTabContent(
         checked = showCloseBottomScreenTip,
         icon = Icons.Rounded.NotificationsActive,
         onCheckedChange = onToggleCloseBottomScreenTip
+    )
+
+    GamepadToggleCard(
+        title = "Good job, assistant! You get a promotion!",
+        description = if (promotedToManager) {
+            "Promoted to Better Dual Screen Manager (toggle off to demote)"
+        } else {
+            "Promote the app to Better Dual Screen Manager"
+        },
+        checked = promotedToManager,
+        icon = Icons.Rounded.WorkspacePremium,
+        onCheckedChange = onTogglePromotedToManager
     )
 }
 
@@ -1631,6 +1690,7 @@ private fun ReorderableTccTile(
 private fun EnableDisableTogglesSubPageContent(
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
+    promotedToManager: Boolean,
     onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit
 ) {
     val totalCount = QuickSettingTileId.entries.size
@@ -1661,12 +1721,13 @@ private fun EnableDisableTogglesSubPageContent(
             } else {
                 Modifier
             }
+            val tileDescription = tile.descriptionFor(promotedToManager)
             GamepadToggleCard(
                 title = tile.title,
                 description = if (!canToggle) {
-                    "${tile.description} (At least 1 toggle must stay enabled)"
+                    "$tileDescription (At least 1 toggle must stay enabled)"
                 } else {
-                    tile.description
+                    tileDescription
                 },
                 checked = isEnabled,
                 enabled = canToggle,
@@ -1688,6 +1749,7 @@ private fun AppearanceSettingsTabContent(
     injectSystemTheme: Boolean,
     syncedMegingiardOption: AppThemeOption,
     isMegingiardAvailable: Boolean,
+    promotedToManager: Boolean,
     onSelectTheme: (AppThemeOption) -> Unit,
     onSelectAccentColor: (Int) -> Unit,
     onOpenCustomAccent: () -> Unit,
@@ -1799,9 +1861,10 @@ private fun AppearanceSettingsTabContent(
         }
 
         ThemeSourceOption.CUSTOM_PALETTE -> {
+            val roleLower = if (promotedToManager) "manager" else "assistant"
             GamepadChoiceCard(
                 title = "Custom Palette",
-                description = "Color scheme for launcher & assistant overlay surfaces",
+                description = "Color scheme for launcher & $roleLower overlay surfaces",
                 selectedText = effectiveSelectedTheme.displayName,
                 icon = Icons.Rounded.ColorLens,
                 onPrevious = {
@@ -1994,6 +2057,7 @@ private fun UpdatesSettingsTabContent(
     isCheckingUpdates: Boolean,
     updateCheckError: String?,
     hasTriggeredManualCheck: Boolean,
+    promotedToManager: Boolean,
     onTriggerManualCheck: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2056,7 +2120,13 @@ private fun UpdatesSettingsTabContent(
     // 3. Add to Obtainium Button
     GamepadActionCard(
         title = stringResource(R.string.settings_add_to_obtainium),
-        description = stringResource(R.string.help_settings_add_to_obtainium_desc),
+        description = stringResource(
+            if (promotedToManager) {
+                R.string.help_settings_add_to_obtainium_manager_desc
+            } else {
+                R.string.help_settings_add_to_obtainium_desc
+            }
+        ),
         icon = Icons.Rounded.Download,
         onClick = {
             if (!launchUrlOnPrimaryDisplay(context, "obtainium://add/${UpdateManager.BDSA_OBTAINIUM_REPO_URL}")) {

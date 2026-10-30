@@ -471,7 +471,8 @@ class ScreenOverlayManager(
             val locked = repository.toggleTouchLock()
             if (locked) {
                 hideAssistantOverlay()
-                showBottomToast("Bottom screen touch locked (open Assistant to unlock)")
+                val roleTitle = if (repository.promotedToManager.value) "Manager" else "Assistant"
+                showBottomToast("Bottom screen touch locked (open $roleTitle to unlock)")
             } else {
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
                 showBottomToast("Bottom screen touch unlocked")

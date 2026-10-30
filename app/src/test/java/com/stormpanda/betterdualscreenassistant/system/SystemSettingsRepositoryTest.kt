@@ -444,4 +444,79 @@ class SystemSettingsRepositoryTest {
             repo.unregister()
         }
     }
+
+    @Test
+    fun `setPromotedToManager persists preference and defers launcher alias swap while MainActivity is started`() {
+        val pm = context.packageManager
+        val assistantComp = android.content.ComponentName(
+            context.packageName,
+            SystemSettingsRepository.LAUNCHER_ALIAS_ASSISTANT
+        )
+        val managerComp = android.content.ComponentName(
+            context.packageName,
+            SystemSettingsRepository.LAUNCHER_ALIAS_MANAGER
+        )
+        pm.setComponentEnabledSetting(
+            assistantComp,
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            android.content.pm.PackageManager.DONT_KILL_APP
+        )
+        pm.setComponentEnabledSetting(
+            managerComp,
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            android.content.pm.PackageManager.DONT_KILL_APP
+        )
+
+        val repo = SystemSettingsRepository(context)
+        assertFalse(repo.promotedToManager.value)
+
+        // 1. While MainActivity is started, toggling promotion updates StateFlow & SharedPreferences immediately
+        //    but defers PackageManager component state mutation until MainActivity stops.
+        val token = 4242
+        repo.setMainActivityStarted(token, started = true)
+        repo.setPromotedToManager(true)
+        assertTrue(repo.promotedToManager.value)
+        assertTrue(
+            context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(SystemSettingsRepository.PREF_PROMOTED_TO_MANAGER, false)
+        )
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            pm.getComponentEnabledSetting(managerComp)
+        )
+
+        // Configuration change stop (flushIfStopped = false) must NOT flush prematurely
+        repo.setMainActivityStarted(token, started = false, flushIfStopped = false)
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            pm.getComponentEnabledSetting(managerComp)
+        )
+
+        // Recreated MainActivity starts and then genuinely stops (flushIfStopped = true) -> flushes alias swap!
+        val recreatedToken = 4243
+        repo.setMainActivityStarted(recreatedToken, started = true)
+        repo.setMainActivityStarted(recreatedToken, started = false, flushIfStopped = true)
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            pm.getComponentEnabledSetting(managerComp)
+        )
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            pm.getComponentEnabledSetting(assistantComp)
+        )
+
+        // 2. When no MainActivity is started, demoting back to Assistant swaps aliases immediately
+        repo.setPromotedToManager(false)
+        assertFalse(repo.promotedToManager.value)
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            pm.getComponentEnabledSetting(assistantComp)
+        )
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            pm.getComponentEnabledSetting(managerComp)
+        )
+
+        repo.unregister()
+    }
 }

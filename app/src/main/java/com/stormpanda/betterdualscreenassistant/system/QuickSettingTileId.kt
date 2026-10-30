@@ -197,6 +197,13 @@ enum class QuickSettingTileId(
         category = QuickSettingCategory.TOOLS
     );
 
+    fun descriptionFor(promotedToManager: Boolean): String =
+        if (promotedToManager && this == THEME_MODE) {
+            "Switch manager overlay and system theme palette"
+        } else {
+            description
+        }
+
     companion object {
         val defaultOrder: List<QuickSettingTileId> = entries.toList()
         val defaultDisabled: Set<QuickSettingTileId> =

@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -79,6 +80,11 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
         const val PREF_ACCURATE_GAME_FPS = "accurate_game_fps"
         const val PREF_TEMP_FAHRENHEIT = "temp_fahrenheit"
+        const val PREF_PROMOTED_TO_MANAGER = "promoted_to_manager"
+        const val LAUNCHER_ALIAS_ASSISTANT =
+            "com.stormpanda.betterdualscreenassistant.MainActivityAssistantAlias"
+        const val LAUNCHER_ALIAS_MANAGER =
+            "com.stormpanda.betterdualscreenassistant.MainActivityManagerAlias"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -152,6 +158,10 @@ class SystemSettingsRepository(private val context: Context) {
     private val activeSettingsUiTokens = LinkedHashSet<Int>()
     private var pendingDeferredOsThemeSync = false
     private var pendingDeferredOsThemeForce = false
+
+    private val launcherAliasDeferLock = Any()
+    private val startedMainActivityTokens = LinkedHashSet<Int>()
+    private var pendingDeferredLauncherAliasSync = false
 
     private val debouncedOsThemeSyncRunnable = Runnable {
         val force = synchronized(osThemeDeferLock) {
@@ -273,6 +283,11 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
     )
     val tempFahrenheit: StateFlow<Boolean> = _tempFahrenheit.asStateFlow()
+
+    private val _promotedToManager = MutableStateFlow(
+        prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
+    )
+    val promotedToManager: StateFlow<Boolean> = _promotedToManager.asStateFlow()
 
     private val _ledBrightnessPercent = MutableStateFlow(readLedBrightnessPercent())
     val ledBrightnessPercent: StateFlow<Int> = _ledBrightnessPercent.asStateFlow()
@@ -456,6 +471,13 @@ class SystemSettingsRepository(private val context: Context) {
                 _tempFahrenheit.value =
                     prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
             }
+            PREF_PROMOTED_TO_MANAGER -> {
+                val saved = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
+                if (_promotedToManager.value != saved) {
+                    _promotedToManager.value = saved
+                    dispatchOrDeferLauncherAliasSync()
+                }
+            }
             PREF_QUICK_TILE_ORDER -> {
                 _quickTileOrder.value = readSavedQuickTileOrder()
             }
@@ -599,6 +621,7 @@ class SystemSettingsRepository(private val context: Context) {
         context.registerReceiver(megingiardPackageReceiver, pkgFilter, Context.RECEIVER_NOT_EXPORTED)
         registerDisplayBrightnessListener()
         refreshAll()
+        dispatchOrDeferLauncherAliasSync()
         resyncFloatingIconGestureGuard()
     }
 
@@ -696,6 +719,7 @@ class SystemSettingsRepository(private val context: Context) {
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
         _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
+        _promotedToManager.value = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
         _bluetoothEnabled.value = readBluetoothEnabled()
@@ -1062,6 +1086,100 @@ class SystemSettingsRepository(private val context: Context) {
                 val forceSnapshot = flushForce
                 mainHandler.post { syncOsThemeIfNeeded(force = forceSnapshot) }
             }
+        }
+    }
+
+    /**
+     * Tracks whether any `MainActivity` instance is currently in the `STARTED` lifecycle state so
+     * `PackageManager.setComponentEnabledSetting` swaps between launcher `<activity-alias>` entries
+     * are deferred until `MainActivity` stops (preventing Android 13 `ActivityTaskManagerService`
+     * from finishing a running alias-launched `MainActivity` mid-session).
+     */
+    fun setMainActivityStarted(
+        activityToken: Int,
+        started: Boolean,
+        flushIfStopped: Boolean = true
+    ) {
+        val shouldFlush = synchronized(launcherAliasDeferLock) {
+            if (started) {
+                startedMainActivityTokens.add(activityToken)
+                false
+            } else {
+                startedMainActivityTokens.remove(activityToken)
+                if (flushIfStopped && startedMainActivityTokens.isEmpty() && pendingDeferredLauncherAliasSync) {
+                    pendingDeferredLauncherAliasSync = false
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        if (shouldFlush) {
+            syncLauncherAliasComponentState()
+        }
+    }
+
+    private fun dispatchOrDeferLauncherAliasSync() {
+        val deferred = synchronized(launcherAliasDeferLock) {
+            if (startedMainActivityTokens.isNotEmpty()) {
+                pendingDeferredLauncherAliasSync = true
+                true
+            } else {
+                pendingDeferredLauncherAliasSync = false
+                false
+            }
+        }
+        if (!deferred) {
+            syncLauncherAliasComponentState()
+        }
+    }
+
+    internal fun syncLauncherAliasComponentState() {
+        val promoted = _promotedToManager.value
+        val pm = context.packageManager ?: return
+        val assistantComp = ComponentName(context.packageName, LAUNCHER_ALIAS_ASSISTANT)
+        val managerComp = ComponentName(context.packageName, LAUNCHER_ALIAS_MANAGER)
+        try {
+            // Enable the target alias BEFORE disabling the previous alias so the package
+            // always exposes at least one enabled LAUNCHER activity at every instant.
+            if (promoted) {
+                if (pm.getComponentEnabledSetting(managerComp) != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                    pm.setComponentEnabledSetting(
+                        managerComp,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+                if (pm.getComponentEnabledSetting(assistantComp) != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                    pm.setComponentEnabledSetting(
+                        assistantComp,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+            } else {
+                val currentAssistant = pm.getComponentEnabledSetting(assistantComp)
+                if (currentAssistant != PackageManager.COMPONENT_ENABLED_STATE_ENABLED &&
+                    currentAssistant != PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+                ) {
+                    pm.setComponentEnabledSetting(
+                        assistantComp,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+                val currentManager = pm.getComponentEnabledSetting(managerComp)
+                if (currentManager != PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
+                    currentManager != PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+                ) {
+                    pm.setComponentEnabledSetting(
+                        managerComp,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+            }
+        } catch (_: Throwable) {
         }
     }
 
@@ -1550,6 +1668,12 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun toggleTempFahrenheit() {
         setTempFahrenheit(!_tempFahrenheit.value)
+    }
+
+    fun setPromotedToManager(promoted: Boolean) {
+        prefs.edit().putBoolean(PREF_PROMOTED_TO_MANAGER, promoted).apply()
+        _promotedToManager.value = promoted
+        dispatchOrDeferLauncherAliasSync()
     }
 
     fun setLedBrightnessPercent(percent: Int) {

@@ -105,7 +105,10 @@ class GamepadScaffoldTouchNavigationTest {
         PrimaryOverlayInputBridge.resetJoystickState()
         DialogToastManager.clear()
         val context = ApplicationProvider.getApplicationContext<Context>()
-        SystemSettingsRepository.getInstance(context).resetQuickTilesToDefault()
+        SystemSettingsRepository.getInstance(context).apply {
+            resetQuickTilesToDefault()
+            setPromotedToManager(false)
+        }
     }
 
     @After
@@ -846,6 +849,102 @@ class GamepadScaffoldTouchNavigationTest {
         assertEquals("Gamepad focus recovery from touch sub-page must not jump to General", TestCategory.QUICK_TOGGLES, selectedCategory)
         assertEquals(listOf(TestSubPage.ENABLE_DISABLE), subPageStack)
         assertTrue("Gamepad focus recovery should focus sub-page deck item", subPageFirstItemFocused)
+    }
+
+    @Test
+    fun `MainActivity promotion toggle at bottom of General Settings renames app to BetterDualScreenManager across UI and flushes alias on stop`() {
+        mockkObject(PServerClient)
+        mockkObject(PrivilegedBridge)
+        mockkObject(UpdateManager)
+        every { PServerClient.isAvailable() } returns true
+        every { PServerClient.isStockAssistantEnabled(any()) } returns false
+        every { PServerClient.ensurePermissionsGranted(any()) } just runs
+        every { PrivilegedBridge.ensureInitialized(any()) } just runs
+        every { UpdateManager.init(any()) } just runs
+        every { UpdateManager.checkForUpdates(any(), any()) } just runs
+
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
+        val pm = appContext.packageManager
+        val assistantComp = android.content.ComponentName(
+            appContext.packageName,
+            SystemSettingsRepository.LAUNCHER_ALIAS_ASSISTANT
+        )
+        val managerComp = android.content.ComponentName(
+            appContext.packageName,
+            SystemSettingsRepository.LAUNCHER_ALIAS_MANAGER
+        )
+        pm.setComponentEnabledSetting(
+            assistantComp,
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            android.content.pm.PackageManager.DONT_KILL_APP
+        )
+        pm.setComponentEnabledSetting(
+            managerComp,
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            android.content.pm.PackageManager.DONT_KILL_APP
+        )
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        activeControllers.add(controller)
+        val activity = controller.get()
+        idleCompose(activity, 300)
+
+        // Default state: Assistant
+        assertNotNull(findNodeWithTextOrNull(activity, "BetterDualScreenAssistant"))
+        assertNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
+        assertEquals("Better Dual Screen Assistant", activity.title.toString())
+
+        // Enter General deck and navigate to the very bottom item (9th card, 8 D-pad Down presses)
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
+        idleCompose(activity, 100)
+        repeat(8) {
+            sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
+            idleCompose(activity, 80)
+        }
+
+        assertNotNull(
+            "Promotion option must be visible at the bottom of General Settings",
+            findNodeWithTextOrNull(activity, "Good job, assistant! You get a promotion!")
+        )
+        assertNotNull(
+            findNodeWithTextOrNull(activity, "Promote the app to Better Dual Screen Manager")
+        )
+
+        // Toggle ON with Button A
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
+        idleCompose(activity, 250)
+
+        assertNotNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
+        assertNull(findNodeWithTextOrNull(activity, "BetterDualScreenAssistant"))
+        assertEquals("Better Dual Screen Manager", activity.title.toString())
+        assertNotNull(
+            findNodeWithTextOrNull(activity, "Promoted to Better Dual Screen Manager (toggle off to demote)")
+        )
+        assertEquals(
+            "Congratulations on the promotion!",
+            DialogToastManager.currentToast.value?.message
+        )
+
+        // Toggle OFF and back ON to verify demote toast + re-promotion
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
+        idleCompose(activity, 200)
+        assertNotNull(findNodeWithTextOrNull(activity, "BetterDualScreenAssistant"))
+        assertEquals("Back to Assistant duty.", DialogToastManager.currentToast.value?.message)
+
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
+        idleCompose(activity, 200)
+        assertNotNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
+
+        // Stopping MainActivity flushes the deferred launcher <activity-alias> swap
+        controller.pause().stop()
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            pm.getComponentEnabledSetting(managerComp)
+        )
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            pm.getComponentEnabledSetting(assistantComp)
+        )
     }
 
     private fun resetSystemSettingsRepositorySingleton() {

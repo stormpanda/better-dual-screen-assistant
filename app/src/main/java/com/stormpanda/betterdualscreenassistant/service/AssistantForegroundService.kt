@@ -151,7 +151,11 @@ class AssistantForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        startForeground(NOTIFICATION_ID, createForegroundNotification())
+        val initialPromoted = getSharedPreferences(
+            SystemSettingsRepository.PREFS_NAME,
+            Context.MODE_PRIVATE
+        ).getBoolean(SystemSettingsRepository.PREF_PROMOTED_TO_MANAGER, false)
+        startForeground(NOTIFICATION_ID, createForegroundNotification(initialPromoted))
 
         PrivilegedBridge.ensureInitialized(applicationContext)
         enforceStockTakeoverIfPreferred()
@@ -177,6 +181,11 @@ class AssistantForegroundService : Service() {
         serviceScope.launch {
             repository.dualScreenDisplayMode.collectLatest { mode ->
                 overlayManager.applyDisplayModeOverlays(mode)
+            }
+        }
+        serviceScope.launch {
+            repository.promotedToManager.collectLatest { promoted ->
+                updateForegroundNotification(promoted)
             }
         }
 
@@ -353,11 +362,21 @@ class AssistantForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createForegroundNotification(): Notification {
+    internal fun updateForegroundNotification(promoted: Boolean) {
         val nm = getSystemService(NotificationManager::class.java)
+        nm?.notify(NOTIFICATION_ID, createForegroundNotification(promoted))
+    }
+
+    internal fun createForegroundNotification(promoted: Boolean = false): Notification {
+        val nm = getSystemService(NotificationManager::class.java)
+        val channelTitle = if (promoted) {
+            "Dual Screen Manager Service"
+        } else {
+            "Dual Screen Assistant Service"
+        }
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Dual Screen Assistant Service",
+            channelTitle,
             NotificationManager.IMPORTANCE_LOW
         ).apply {
             description = "Keeps the dual-screen overlay and TCC button handler ready"
@@ -380,8 +399,9 @@ class AssistantForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val appTitleRes = if (promoted) R.string.app_name_manager else R.string.app_name
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.app_name))
+            .setContentTitle(getString(appTitleRes))
             .setContentText("Ready for TCC button & dual-screen controls")
             .setSmallIcon(R.drawable.ic_dual_screen_display)
             .setContentIntent(pendingIntent)
