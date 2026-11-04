@@ -45,6 +45,7 @@ class ScreenOverlayManagerTest {
         every { PrivilegedBridge.getDisplayBrightnessInfo(any(), any()) } returns floatArrayOf(0.5f, 0f, 1f)
         every { PrivilegedBridge.setDisplayBrightness(any(), any(), any(), any()) } just runs
         every { PrivilegedBridge.setTopScreenBlanked(any(), any(), any()) } just runs
+        every { PrivilegedBridge.setBottomScreenBlanked(any(), any(), any()) } just runs
         every { PrivilegedBridge.updateSavedBrightness(any(), any()) } just runs
         every { PrivilegedBridge.setSystemProperty(any(), any()) } just runs
     }
@@ -87,6 +88,7 @@ class ScreenOverlayManagerTest {
         assertEquals(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, bottomLp.type)
         assertEquals(PixelFormat.TRANSLUCENT, bottomLp.format)
         assertEquals(Gravity.CENTER, bottomLp.gravity)
+        assertEquals(0, bottomLp.fitInsetsTypes)
 
         // Top Display (ID 0): DOES include FLAG_LAYOUT_NO_LIMITS
         val topLp = method.invoke(
@@ -145,12 +147,14 @@ class ScreenOverlayManagerTest {
         ShadowLooper.idleMainLooper()
         assertFalse(manager.isTopScreenBlanked)
         assertTrue(manager.isBottomScreenBlanked)
+        verify { PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = false) }
 
         // Mode 2: Only Bottom -> top screen blanked, bottom screen unblanked
         manager.applyDisplayModeOverlays(2)
         ShadowLooper.idleMainLooper()
         assertTrue(manager.isTopScreenBlanked)
         assertFalse(manager.isBottomScreenBlanked)
+        verify { PrivilegedBridge.setBottomScreenBlanked(context, blank = false, showCoverWindow = false) }
         verify { PrivilegedBridge.setTopScreenBlanked(context, blank = true, showCoverWindow = false) }
 
         // Mode 0: Dual Screen -> both unblanked
@@ -202,6 +206,7 @@ class ScreenOverlayManagerTest {
         manager.onDeviceScreenInteractiveChanged(true)
         ShadowLooper.idleMainLooper()
         verify { mockRepository.reapplyTouchDisableForCurrentMode() }
+        verify { PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = true) }
         verify { PrivilegedBridge.setDisplayBrightness(context, ScreenOverlayManager.BOTTOM_DISPLAY_ID, -1.0f, false) }
     }
 

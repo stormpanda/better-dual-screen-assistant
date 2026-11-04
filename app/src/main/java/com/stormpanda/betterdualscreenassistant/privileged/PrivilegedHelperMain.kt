@@ -8,6 +8,7 @@ import android.content.pm.ApplicationInfo
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Point
 import android.hardware.display.DisplayManager
 import android.os.Binder
 import android.os.Bundle
@@ -67,8 +68,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SET_TOP_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 17
     const val TRANSACTION_GET_GAME_FPS = IBinder.FIRST_CALL_TRANSACTION + 18
     const val TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST = IBinder.FIRST_CALL_TRANSACTION + 19
+    const val TRANSACTION_SET_BOTTOM_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 20
 
-    const val HELPER_PROTOCOL_VERSION = 13
+    const val HELPER_PROTOCOL_VERSION = 14
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -304,6 +306,8 @@ object PrivilegedHelperMain {
         private val statusBarDisableToken = Binder()
         private var topDisplayContext: Context? = null
         private var topBootProgressBlankView: View? = null
+        private var bottomDisplayContext: Context? = null
+        private var bottomBootProgressBlankView: View? = null
 
         private val pServerBinder: IBinder? = try {
             getServiceMethod.invoke(null, "PServerBinder") as? IBinder
@@ -573,6 +577,7 @@ object PrivilegedHelperMain {
                     if (elapsedAfterRestart >= RESTART_GRACE_MS && clientBinder == null) {
                         Log.i(TAG, "App process $pkg is running with a new helper; exiting old helper")
                         setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
+                        setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
                         unregisterFpsListenerInternal()
                         exitHelperProcess()
                         return
@@ -809,6 +814,7 @@ object PrivilegedHelperMain {
                         unregisterFpsListenerInternal()
                         mainHandler.post {
                             setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
+                            setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
                         }
                         unlinkClientDeath()
                         reply?.writeNoException()
@@ -868,6 +874,15 @@ object PrivilegedHelperMain {
                     TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST -> {
                         val freeze = data.readInt() != 0
                         setStockProcessFrozenForBroadcastInternal(freeze)
+                        reply?.writeNoException()
+                        true
+                    }
+                    TRANSACTION_SET_BOTTOM_SCREEN_BLANKED -> {
+                        val blank = data.readInt() != 0
+                        val showCoverWindow = data.readInt() != 0
+                        mainHandler.post {
+                            setBottomScreenBlankedInternal(blank, showCoverWindow)
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -1324,9 +1339,10 @@ object PrivilegedHelperMain {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                     temporarilyUnfrozenStockPid = -1
                 }
-                // 0. Remove any helper top-screen blank cover window, re-enable status bar, and unregister FPS listener
+                // 0. Remove any helper screen blank cover windows, re-enable status bar, and unregister FPS listener
                 unregisterFpsListenerInternal()
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
+                setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
 
                 // 1. Restore top (0) and bottom (4) display brightness if blanked (< 0.005f)
                 val topCur = getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f }
@@ -2108,6 +2124,114 @@ object PrivilegedHelperMain {
             } else {
                 val existing = topBootProgressBlankView ?: return
                 topBootProgressBlankView = null
+                try {
+                    wm.removeViewImmediate(existing)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        private fun getOrCreateDisplay4Context(): Context? {
+            bottomDisplayContext?.let { return it }
+            return try {
+                try {
+                    Class.forName("android.view.ThreadedRenderer")
+                        .getMethod("disable", Boolean::class.javaPrimitiveType)
+                        .invoke(null, true)
+                } catch (_: Throwable) {
+                }
+                val atClass = Class.forName("android.app.ActivityThread")
+                val currentAt = atClass.getMethod("currentActivityThread").invoke(null)
+                    ?: atClass.getMethod("systemMain").invoke(null)
+                val sysCtx = (systemContext ?: atClass.getMethod("getSystemContext").invoke(currentAt) as? Context)
+                    ?: return null
+                try {
+                    sysCtx.applicationInfo?.let { appInfo ->
+                        appInfo.flags = appInfo.flags and ApplicationInfo.FLAG_HARDWARE_ACCELERATED.inv()
+                    }
+                } catch (_: Throwable) {
+                }
+                val dm = sysCtx.getSystemService(DisplayManager::class.java)
+                val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
+                    ?: return null
+                val ctx = sysCtx.createDisplayContext(display4)
+                bottomDisplayContext = ctx
+                ctx
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to obtain Display 4 context in helper", t)
+                null
+            }
+        }
+
+        internal fun createBottomCoverLayoutParams(width: Int, height: Int): WindowManager.LayoutParams {
+            // Never set FLAG_LAYOUT_NO_LIMITS on Display 4 (prevents WMS laying out at Display 0's 1920px width).
+            // Set fitInsetsTypes = 0 so DisplayPolicy applies zero navigation/gesture bar insets.
+            return WindowManager.LayoutParams(
+                width,
+                height,
+                2021, // TYPE_BOOT_PROGRESS (Layer 27, above TYPE_NAVIGATION_BAR Layer 24)
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR,
+                PixelFormat.OPAQUE
+            ).apply {
+                gravity = Gravity.CENTER
+                title = "secondaryScreenBottomLayout"
+                fitInsetsTypes = 0
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+
+        /**
+         * Covers the bottom screen (Display 4, `1240x1080`) with a `type = 2021` (`TYPE_BOOT_PROGRESS`,
+         * Layer 27 — above `TYPE_NAVIGATION_BAR` Layer 24, matching stock `ScreenUtil.d()`) solid black
+         * cover window when [blank] and [showCoverWindow] are true so the white gesture/swipe bar is
+         * completely hidden while the bottom screen is turned off.
+         */
+        private fun setBottomScreenBlankedInternal(blank: Boolean, showCoverWindow: Boolean) {
+            val ctx = getOrCreateDisplay4Context() ?: return
+            val wm = ctx.getSystemService(WindowManager::class.java) ?: return
+            if (blank && showCoverWindow) {
+                if (bottomBootProgressBlankView != null) return
+                val point = Point(1240, 1080)
+                try {
+                    val dm = ctx.getSystemService(DisplayManager::class.java)
+                    val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
+                    if (display4 != null) {
+                        @Suppress("DEPRECATION")
+                        display4.getRealSize(point)
+                    }
+                } catch (_: Throwable) {
+                }
+                val view = object : View(ctx) {
+                    override fun onAttachedToWindow() {
+                        super.onAttachedToWindow()
+                        @Suppress("DEPRECATION")
+                        systemUiVisibility = 4102 or
+                            SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                            SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                            SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    }
+
+                    override fun onDraw(canvas: Canvas) {
+                        canvas.drawColor(Color.BLACK)
+                    }
+                }.apply {
+                    setBackgroundColor(Color.BLACK)
+                }
+                val lp = createBottomCoverLayoutParams(point.x, point.y)
+                try {
+                    wm.addView(view, lp)
+                    bottomBootProgressBlankView = view
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Failed to attach type=2021 bottom blank cover window", t)
+                }
+            } else {
+                val existing = bottomBootProgressBlankView ?: return
+                bottomBootProgressBlankView = null
                 try {
                     wm.removeViewImmediate(existing)
                 } catch (_: Throwable) {

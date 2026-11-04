@@ -432,6 +432,7 @@ class ScreenOverlayManager(
                 }
                 if (isBottomScreenBlanked) {
                     bottomBlankView?.let { applyImmersiveFullscreen(it) }
+                    PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = true)
                     PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
                 }
             }
@@ -664,6 +665,7 @@ class ScreenOverlayManager(
                 savedBottomBrightnessLinear = cur
                 PrivilegedBridge.updateSavedBrightness(bottom = cur)
             }
+            PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = false)
             bottomBlankView?.let { stale ->
                 try {
                     wm.removeViewImmediate(stale)
@@ -678,12 +680,18 @@ class ScreenOverlayManager(
             try {
                 wm.addView(view, lp)
                 applyImmersiveFullscreen(view)
+                view.requestFocus()
                 bottomBlankView = view
                 ObjectAnimator.ofFloat(view, "alpha", 0f, 1f).apply {
                     duration = FADE_DURATION_MS
                     addListener(object : AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: Animator) {
                             if (isBottomScreenBlanked) {
+                                PrivilegedBridge.setBottomScreenBlanked(
+                                    context,
+                                    blank = true,
+                                    showCoverWindow = true
+                                )
                                 PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
                             }
                         }
@@ -692,9 +700,18 @@ class ScreenOverlayManager(
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to add bottom blank overlay", t)
+                if (isBottomScreenBlanked) {
+                    PrivilegedBridge.setBottomScreenBlanked(
+                        context,
+                        blank = true,
+                        showCoverWindow = true
+                    )
+                    PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
+                }
             }
         } else {
             isBottomScreenBlanked = false
+            PrivilegedBridge.setBottomScreenBlanked(context, blank = false, showCoverWindow = false)
             val restore = savedBottomBrightnessLinear
                 ?: (repository.bottomBrightness.value / 100f).coerceIn(0.01f, 1f)
             savedBottomBrightnessLinear = null
@@ -757,7 +774,8 @@ class ScreenOverlayManager(
         ).apply {
             gravity = Gravity.CENTER
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
-            title = "primaryScreenTopLayout"
+            title = if (displayId == TOP_DISPLAY_ID) "primaryScreenTopLayout" else "secondaryScreenBottomLayout"
+            fitInsetsTypes = 0
             layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }

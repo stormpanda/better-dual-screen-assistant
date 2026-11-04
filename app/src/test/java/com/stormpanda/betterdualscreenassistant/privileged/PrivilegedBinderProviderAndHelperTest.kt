@@ -466,6 +466,42 @@ class PrivilegedBinderProviderAndHelperTest {
         assertFalse(activeField.getBoolean(helperBinder))
     }
 
+    @Test
+    fun `HelperBinder bottom blank cover layout params use TYPE_BOOT_PROGRESS without FLAG_LAYOUT_NO_LIMITS`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val lp = helperBinder.createBottomCoverLayoutParams(1240, 1080)
+
+        assertEquals(1240, lp.width)
+        assertEquals(1080, lp.height)
+        assertEquals(2021, lp.type)
+        assertEquals(android.graphics.PixelFormat.OPAQUE, lp.format)
+        assertEquals(android.view.Gravity.CENTER, lp.gravity)
+        assertEquals(0, lp.fitInsetsTypes)
+        assertEquals(
+            0,
+            lp.flags and android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        )
+
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(1)
+            writeInt(1)
+        }
+        val reply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_SET_BOTTOM_SCREEN_BLANKED,
+                data,
+                reply,
+                0
+            )
+        )
+        reply.setDataPosition(0)
+        reply.readException()
+        data.recycle()
+        reply.recycle()
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

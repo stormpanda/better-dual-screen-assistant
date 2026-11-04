@@ -46,6 +46,12 @@ object PrivilegedBridge {
     @Volatile
     private var topScreenShowCoverWindow: Boolean = false
 
+    @Volatile
+    private var bottomScreenBlanked: Boolean = false
+
+    @Volatile
+    private var bottomScreenShowCoverWindow: Boolean = false
+
     private class PendingOsThemeRequest(
         val apply: Boolean,
         val resourceNames: Array<String>,
@@ -90,6 +96,9 @@ object PrivilegedBridge {
         registerClientWithHelper(binder)
         if (topScreenBlanked) {
             dispatchTopScreenBlankedToBinder(binder, topScreenBlanked, topScreenShowCoverWindow)
+        }
+        if (bottomScreenBlanked) {
+            dispatchBottomScreenBlankedToBinder(binder, bottomScreenBlanked, bottomScreenShowCoverWindow)
         }
         pendingOsThemeRequest?.let { req ->
             scope.launch {
@@ -381,6 +390,45 @@ object PrivilegedBridge {
             true
         } catch (t: Throwable) {
             Log.w(TAG, "Helper setTopScreenBlanked failed", t)
+            false
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    fun setBottomScreenBlanked(
+        context: Context,
+        blank: Boolean,
+        showCoverWindow: Boolean = blank
+    ) {
+        bottomScreenBlanked = blank
+        bottomScreenShowCoverWindow = showCoverWindow
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            if (dispatchBottomScreenBlankedToBinder(binder, blank, showCoverWindow)) {
+                return
+            }
+        }
+        ensureStarted(context)
+    }
+
+    private fun dispatchBottomScreenBlankedToBinder(
+        binder: IBinder,
+        blank: Boolean,
+        showCoverWindow: Boolean
+    ): Boolean {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            data.writeInt(if (blank) 1 else 0)
+            data.writeInt(if (showCoverWindow) 1 else 0)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_SET_BOTTOM_SCREEN_BLANKED, data, reply, 0)
+            reply.readException()
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper setBottomScreenBlanked failed", t)
             false
         } finally {
             data.recycle()

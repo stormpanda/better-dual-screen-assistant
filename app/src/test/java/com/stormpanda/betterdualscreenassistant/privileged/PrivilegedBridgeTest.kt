@@ -356,4 +356,44 @@ class PrivilegedBridgeTest {
                 it.contains("screencap -p -d 4630946883500138628")
         })
     }
+
+    @Test
+    fun `setBottomScreenBlanked dispatches helper transaction and replays on helper reconnect`() {
+        val recordedCalls = mutableListOf<Pair<Boolean, Boolean>>()
+        val helper1 = createMockHelperBinder { code, data, reply ->
+            if (code == PrivilegedHelperMain.TRANSACTION_SET_BOTTOM_SCREEN_BLANKED) {
+                data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                val blank = data.readInt() != 0
+                val showCover = data.readInt() != 0
+                recordedCalls.add(blank to showCover)
+                reply.writeNoException()
+            }
+        }
+        setHelperBinder(helper1)
+
+        PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = true)
+        assertEquals(listOf(true to true), recordedCalls)
+
+        // Reconnecting a new helper binder replays active bottom cover window state
+        val replayedCalls = mutableListOf<Pair<Boolean, Boolean>>()
+        val helper2 = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_REGISTER_CLIENT,
+                PrivilegedHelperMain.TRANSACTION_SHUTDOWN -> reply.writeNoException()
+                PrivilegedHelperMain.TRANSACTION_SET_BOTTOM_SCREEN_BLANKED -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    val blank = data.readInt() != 0
+                    val showCover = data.readInt() != 0
+                    replayedCalls.add(blank to showCover)
+                    reply.writeNoException()
+                }
+            }
+        }
+        PrivilegedBridge.onHelperBinderReceived(helper2)
+        assertEquals(listOf(true to true), replayedCalls)
+
+        // Reset state so subsequent tests start unblanked
+        PrivilegedBridge.setBottomScreenBlanked(context, blank = false, showCoverWindow = false)
+        assertEquals(listOf(true to true, false to false), replayedCalls)
+    }
 }
