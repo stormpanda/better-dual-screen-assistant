@@ -65,7 +65,7 @@ Inside the `578dp` Main Panel Card (`padding = 15dp`), `ScreenControlTab` arrang
 
 Inside the `578dp` Main Panel Card (`padding = 15dp`), `SystemSettingsTab` uses weighted rows and columns:
 - **Top Row (`weight = 7f`, `70%` height)**:
-  - **Top-Left (`weight = 4f`, `40%` width)**: `FrameRatePanelCard` containing the `60 FPS MODE` / `120 FPS MODE` pill button (`171dp × 48dp`), `CurrentFrameRateDisplay` (`150dp × 106dp`), and `CURRENT FPS` caption.
+  - **Top-Left (`weight = 4f`, `40%` width)**: `FrameRatePanelCard` containing the `60 HZ MODE` / `120 HZ MODE` pill button (`171dp × 48dp`), `CurrentFrameRateDisplay` (`150dp × 106dp`), and `CURRENT FPS` caption.
   - **Top-Right (`weight = 6f`, `60%` width, left spacer `@dimen/dp_15`)**: Quick Settings `TccPanelCard` hosting a `HorizontalPager` with a `2 × 4` grid of `TccButton` tiles (spaced by `@dimen/dp_15`) and `6dp` circular page indicator dots (`18dp` container height).
 - **Bottom Row (`weight = 3f`, `30%` height, top spacer `@dimen/dp_15`)**:
   - **TEMP Card** (`weight = 2f`, `20%` width)

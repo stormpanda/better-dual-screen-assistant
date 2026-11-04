@@ -35,7 +35,7 @@ Full functional and technical documentation is available in [`docs/`](docs/):
   - **Brightness Sliders**: Linked **Dual Screen**, **Top Screen**, **Bottom Screen** (with zero-lag hardware `setTemporaryBrightness` during drag and external SystemUI slider tracking), plus an optional **Stick LED** brightness slider (`0%–100%`).
   - **Volume Sliders**: Linked **Dual Screen**, **Top Screen** (`STREAM_MUSIC`), and **Bottom Screen** (`secondary_screen_volume_level`).
 - **Settings Tab (`Tab 1`)**:
-  - **Frame Rate Panel**: One-tap **`60 FPS MODE` / `120 FPS MODE`** toggle paired with a live native-canvas **`SurfaceFlinger` FPS readout**.
+  - **Frame Rate Panel**: One-tap **`60 HZ MODE` / `120 HZ MODE`** toggle paired with a live native-canvas **`SurfaceFlinger` FPS readout**.
   - **22 Customizable Quick Setting Tiles** in a paged `2 × 4` grid (swipeable by touch or **`L1` / `R1`** shoulder buttons):
     - **Stock AYN Toggles (10 — Enabled by default)**: *Focus Lock*, *Performance Mode*, *Fan Control* (Off/Quiet/Smart/Sport/Custom `35%–100%`), *Clear Memory*, *Controller Style* (Disconnect/Xbox/Odin), *Charging Separation*, *Vibration*, *Ambient Light*, *Force Landscape*, and *Theme Mode*.
     - **Android System Toggles (4 — Optional)**: *Wi-Fi*, *Bluetooth*, *Do Not Disturb*, and *Airplane Mode*.

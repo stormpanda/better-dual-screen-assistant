@@ -153,7 +153,7 @@ Contains 3 horizontal touch sliders (`TccSliderRow`):
 
 The **Settings** tab (`SystemSettingsTab` in `AssistantOverlayScreen.kt`) is divided into three sections:
 1. **Top-Left (`40%` width, `70%` height)**: **Frame Rate Panel Card**
-   - **Refresh Rate Mode Pill Button**: Toggles the top display between **`60 FPS MODE`** and **`120 FPS MODE`** (writes `min_refresh_rate` and `peak_refresh_rate` in `Settings.System`).
+   - **Refresh Rate Mode Pill Button**: Toggles the top display between **`60 HZ MODE`** and **`120 HZ MODE`** (writes `min_refresh_rate` and `peak_refresh_rate` in `Settings.System`).
    - **Live FPS Readout**: Custom native-canvas display (`CurrentFrameRateDisplay`, replicating stock `CurrentFrameRateView`) showing real-time rendered frames per second computed from `SurfaceFlinger` page-flip counts (`transaction 1013`), paired with a `CURRENT FPS` label.
 2. **Top-Right (`60%` width, `70%` height)**: **Paged Quick Settings Panel**
    - Displays enabled Quick Setting tiles in a **`2 × 4` grid** (up to 8 tiles per page) inside a `HorizontalPager` with page indicator dots at the bottom.

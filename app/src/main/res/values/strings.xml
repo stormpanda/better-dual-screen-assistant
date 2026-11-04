@@ -11,11 +11,11 @@
     <string name="fan_option_xbox_style">XBox Style</string>
     <string name="force_landscape_mode_text">Force Landscape</string>
     <string name="frame_rate_calibration_is_currently_underway">Currently undergoing frame rate calibration</string>
-    <string name="frame_rate_mode_120">120 FPS MODE</string>
-    <string name="frame_rate_mode_60">60 FPS MODE</string>
-    <string name="frame_rate_mode_90">90 FPS MODE</string>
+    <string name="frame_rate_mode_120">120 HZ MODE</string>
+    <string name="frame_rate_mode_60">60 HZ MODE</string>
+    <string name="frame_rate_mode_90">90 HZ MODE</string>
     <string name="frame_rate_mode_select">Frame Rate Mode</string>
-    <string name="frame_rate_mode_text">%1$d FPS MODE</string>
+    <string name="frame_rate_mode_text">%1$d HZ MODE</string>
     <string name="frame_rate_switch_failed">Frame rate switching failed</string>
     <string name="key_focus_mode_lock_on_lower_screen">Bottom screen</string>
     <string name="key_focus_mode_lock_on_upper_screen">Top screen</string>

@@ -874,7 +874,7 @@ private data class QuickSettingTileModel(
  * Replicates `system_set_layout.xml`, `frame_rate_panel_layout.xml`, `quick_settings_panel_layout.xml`,
  * and `hardware_info_panel_layout_2.xml`:
  * - Top 70% (`guideline11 = 0.7`):
- *   - Left 40% (`guideline12 = 0.4`): `FrameRatePanel` (`120 FPS MODE` pill + huge live FPS + `CURRENT FPS`)
+ *   - Left 40% (`guideline12 = 0.4`): `FrameRatePanel` (`120 HZ MODE` pill + huge live FPS + `CURRENT FPS`)
  *   - Right 60%: `QuickSettingsPanel` (2x4 paged tiles + `#8E84FF` dot indicator)
  * - Bottom 30%:
  *   - `0%..20%`: `CpuTempInfoComponent` (`TEMP` card)
@@ -1474,7 +1474,7 @@ private fun formatRingValue(value: Float): String {
 
 /**
  * Replicates `frame_rate_panel_layout.xml`, `FrameRateModeView.java`, and `CurrentFrameRateView.java`:
- * - Top 30% (`0%..30%`): Pill button `"120 FPS MODE"` / `"60 FPS MODE"` (`bg_120_frame_rate_mode` / `bg_60_frame_rate_mode`)
+ * - Top 30% (`0%..30%`): Pill button `"120 HZ MODE"` / `"60 HZ MODE"` (`bg_120_frame_rate_mode` / `bg_60_frame_rate_mode`)
  * - Middle 40% (`30%..70%`): Huge bold live FPS number + baseline-aligned `"FPS"`
  * - Bottom 30% (`70%..100%`): `"CURRENT FPS"` in `colors.tertiary`
  */
