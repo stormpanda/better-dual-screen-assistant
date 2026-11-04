@@ -8,6 +8,12 @@
 
 It preserves 1:1 visual and functional parity with the stock assistant while adding a gamepad-first **Top-Screen Companion Settings App**, **22 customizable & reorderable Quick Setting tiles** across three categories, **Screen Task Swapping**, **Stick LED Brightness control**, **Megingiard Theme Palettes & Live Sync**, **Android 13 Monet OS Theme Injection**, and a **sub-millisecond `UID 0` Binder Helper Daemon** with automatic uninstall/force-stop recovery.
 
+<p>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/stormpanda/better-dual-screen-assistant">
+    <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="54" />
+  </a>
+</p>
+
 ---
 
 ## Documentation Index
