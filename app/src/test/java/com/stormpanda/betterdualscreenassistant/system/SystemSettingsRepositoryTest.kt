@@ -91,29 +91,68 @@ class SystemSettingsRepositoryTest {
     fun `setDualScreenDisplayMode updates mode touch-disable property and saves-restores focus lock`() {
         val repo = SystemSettingsRepository(context)
 
-        // Lock focus to bottom screen (2) while in Dual Screen mode (0)
+        // Lock focus to bottom screen (2) while in Dual Screen mode (0):
+        // must ONLY update screen_focus_lock and leave Home and Back Focus Lock (enable_system_key_focus_lock) off (unset / 0)
         repo.setScreenFocusLock(2)
         assertEquals(2, repo.screenFocusLock.value)
         assertEquals(2, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_SCREEN_FOCUS_LOCK, -1))
-        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, -1))
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0))
 
-        // Switch to Only Top Screen (mode 1) -> saves focus lock = 2, forces focus lock to 1, disables bottom touch ("0,1")
+        // Switch to Only Top Screen (mode 1) -> saves focus lock = 2 & key focus lock = 0, forces single-screen override, disables bottom touch ("0,1")
         repo.setDualScreenDisplayMode(1)
         assertEquals(1, repo.dualScreenDisplayMode.value)
         assertEquals(1, repo.screenFocusLock.value)
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0))
         assertEquals("0,1", systemProps["sys.temp.disabled.touch"])
 
         // Switch to Only Bottom Screen (mode 2) -> forces focus lock to 2, disables top touch ("1,0")
         repo.setDualScreenDisplayMode(2)
         assertEquals(2, repo.dualScreenDisplayMode.value)
         assertEquals(2, repo.screenFocusLock.value)
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0))
         assertEquals("1,0", systemProps["sys.temp.disabled.touch"])
 
-        // Switch back to Dual Screen (mode 0) -> restores saved focus lock (2) and enables both touch panels ("0,0")
+        // Switch back to Dual Screen (mode 0) -> restores saved focus lock (2), restores Home and Back Focus Lock to 0, and enables both touch panels ("0,0")
         repo.setDualScreenDisplayMode(0)
         assertEquals(0, repo.dualScreenDisplayMode.value)
         assertEquals(2, repo.screenFocusLock.value)
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, -1))
         assertEquals("0,0", systemProps["sys.temp.disabled.touch"])
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `Home and Back Focus Lock stays disabled across refreshAll observer updates and external mode resets`() {
+        val repo = SystemSettingsRepository(context)
+        repo.register()
+
+        // 1. User has Home and Back Focus Lock OFF (0), sets Focus Mode to Top Screen (1)
+        Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0)
+        repo.setScreenFocusLock(1)
+        repo.refreshAll()
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, -1))
+
+        // 2. Long-press AYN button blanks bottom screen (mode 1) -> temporary single-screen override sets enable_system_key_focus_lock = 1
+        repo.setDualScreenDisplayMode(1)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, -1))
+
+        // 3. Even if dual_screen_display_mode is reset to 0 externally before restoreDualScreenFocusLock() runs,
+        //    refreshAll() restores the saved Dual-Screen value (0) instead of clobbering it with 1.
+        Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
+        repo.refreshAll()
+        assertEquals(0, repo.dualScreenDisplayMode.value)
+        assertEquals(1, repo.screenFocusLock.value)
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, -1))
+
+        // 4. Conversely, if the user explicitly enables Home and Back Focus Lock (1) in Thor Settings while in Dual-Screen mode,
+        //    entering and exiting single-screen mode preserves their enabled (1) preference.
+        Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
+        repo.refreshAll()
+        repo.setDualScreenDisplayMode(1)
+        repo.setDualScreenDisplayMode(0)
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, -1))
 
         repo.unregister()
     }

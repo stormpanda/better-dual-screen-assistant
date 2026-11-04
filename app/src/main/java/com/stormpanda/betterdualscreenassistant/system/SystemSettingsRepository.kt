@@ -98,6 +98,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_KNOWN_QUICK_TILES = "known_quick_tiles"
         const val PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK = "saved_dual_screen_focus_lock"
         const val PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK = "saved_enable_system_key_focus_lock"
+        const val PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE = "single_screen_focus_override_active"
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -147,6 +148,9 @@ class SystemSettingsRepository(private val context: Context) {
 
     @Volatile
     private var lastSelfBrightnessChangeElapsedMs: Long = 0L
+
+    @Volatile
+    private var isTransitioningDisplayMode: Boolean = false
 
     private fun isInSelfBrightnessGraceWindow(): Boolean {
         if (isSelfDraggingBrightness) return true
@@ -685,19 +689,22 @@ class SystemSettingsRepository(private val context: Context) {
         refreshMegingiardTheme: Boolean = true
     ) {
         val currentDisplayMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
-        val currentFocusLock = getInt(KEY_SCREEN_FOCUS_LOCK, 0)
+        var currentFocusLock = getInt(KEY_SCREEN_FOCUS_LOCK, 0)
         _dualScreenDisplayMode.value = currentDisplayMode
-        _screenFocusLock.value = currentFocusLock
-        if (currentDisplayMode == 0) {
-            val currentEnableKeyFocus = getInt(
-                KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-                if (currentFocusLock == 0) 0 else 1
-            )
-            prefs.edit()
-                .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, currentFocusLock)
-                .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, currentEnableKeyFocus)
-                .apply()
+        if (!isTransitioningDisplayMode && currentDisplayMode == 0) {
+            val overrideActive = prefs.getBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, false)
+            if (overrideActive) {
+                restoreDualScreenFocusLock()
+                currentFocusLock = _screenFocusLock.value
+            } else {
+                val currentEnableKeyFocus = getInt(KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0)
+                prefs.edit()
+                    .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, currentFocusLock)
+                    .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, currentEnableKeyFocus)
+                    .apply()
+            }
         }
+        _screenFocusLock.value = currentFocusLock
         _performanceMode.value = getInt(KEY_PERFORMANCE_MODE, 0)
         _fanMode.value = getInt(KEY_FAN_MODE, 4)
         _fanSpeed.value = getInt(KEY_FAN_SPEED, 50)
@@ -841,42 +848,53 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun setDualScreenDisplayMode(mode: Int) {
         val previousMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
-        if (previousMode == 0 && mode != 0) {
-            val currentFocusLock = getInt(KEY_SCREEN_FOCUS_LOCK, _screenFocusLock.value)
-            val currentEnableKeyFocus = getInt(
-                KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-                if (currentFocusLock == 0) 0 else 1
-            )
-            prefs.edit()
-                .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, currentFocusLock)
-                .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, currentEnableKeyFocus)
-                .apply()
-        }
-        PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_DISPLAY_MODE, mode)
-        _dualScreenDisplayMode.value = mode
-        when (mode) {
-            0 -> {
-                restoreDualScreenFocusLock()
-                val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
-                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
-                PrivilegedBridge.setPinScreenMode(context, 0)
+        isTransitioningDisplayMode = true
+        try {
+            if (previousMode == 0 && mode != 0) {
+                val overrideAlreadyActive =
+                    prefs.getBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, false)
+                if (!overrideAlreadyActive) {
+                    val currentFocusLock = getInt(KEY_SCREEN_FOCUS_LOCK, _screenFocusLock.value)
+                    val currentEnableKeyFocus = getInt(KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0)
+                    prefs.edit()
+                        .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, currentFocusLock)
+                        .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, currentEnableKeyFocus)
+                        .putBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, true)
+                        .apply()
+                }
             }
-            1 -> {
-                _touchLockEnabled.value = false
-                PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
-                PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
-                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
-                PrivilegedBridge.setPinScreenMode(context, 0)
-                _screenFocusLock.value = 1
+            when (mode) {
+                0 -> {
+                    restoreDualScreenFocusLock()
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
+                    _dualScreenDisplayMode.value = 0
+                    val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
+                    PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
+                    PrivilegedBridge.setPinScreenMode(context, 0)
+                }
+                1 -> {
+                    _touchLockEnabled.value = false
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_DISPLAY_MODE, 1)
+                    _dualScreenDisplayMode.value = 1
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
+                    PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
+                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    _screenFocusLock.value = 1
+                }
+                2 -> {
+                    _touchLockEnabled.value = false
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_DISPLAY_MODE, 2)
+                    _dualScreenDisplayMode.value = 2
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
+                    PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
+                    PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
+                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    _screenFocusLock.value = 2
+                }
             }
-            2 -> {
-                _touchLockEnabled.value = false
-                PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
-                PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
-                PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
-                PrivilegedBridge.setPinScreenMode(context, 0)
-                _screenFocusLock.value = 2
-            }
+        } finally {
+            isTransitioningDisplayMode = false
         }
     }
 
@@ -884,14 +902,17 @@ class SystemSettingsRepository(private val context: Context) {
         val restoredFocusLock = prefs.getInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, 0).coerceIn(0, 2)
         val restoredEnableKeyFocus = prefs.getInt(
             PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-            if (restoredFocusLock == 0) 0 else 1
-        )
+            0
+        ).coerceIn(0, 1)
         PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, restoredFocusLock)
         PrivilegedBridge.putSystemSettingInt(
             context,
             KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
             restoredEnableKeyFocus
         )
+        prefs.edit()
+            .putBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, false)
+            .apply()
         _screenFocusLock.value = restoredFocusLock
     }
 
@@ -919,18 +940,12 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setScreenFocusLock(mode: Int) {
-        val enableKeyFocus = if (mode == 0) 0 else 1
-        PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, mode)
-        PrivilegedBridge.putSystemSettingInt(
-            context,
-            KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-            enableKeyFocus
-        )
-        _screenFocusLock.value = mode
+        val normalized = mode.coerceIn(0, 2)
+        PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, normalized)
+        _screenFocusLock.value = normalized
         if (_dualScreenDisplayMode.value == 0) {
             prefs.edit()
-                .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, mode)
-                .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, enableKeyFocus)
+                .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, normalized)
                 .apply()
         }
     }
