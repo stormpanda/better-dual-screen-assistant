@@ -224,4 +224,19 @@ class ScreenOverlayManagerTest {
         ShadowLooper.idleMainLooper()
         verify(exactly = 1) { mockRepository.cleanMemory() }
     }
+
+    @Test
+    fun `performClearAllTasksWithToast invokes repository clearAllRecentTasks`() {
+        every { mockRepository.clearAllRecentTasks() } returns 3
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+
+        manager.performClearAllTasksWithToast()
+        ShadowLooper.idleMainLooper(300L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        verify(timeout = 1_500L, exactly = 1) { mockRepository.clearAllRecentTasks() }
+    }
 }

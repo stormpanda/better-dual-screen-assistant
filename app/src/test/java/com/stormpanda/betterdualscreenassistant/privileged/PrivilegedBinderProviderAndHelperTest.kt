@@ -502,6 +502,62 @@ class PrivilegedBinderProviderAndHelperTest {
         reply.recycle()
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_CLEAR_ALL_RECENT_TASKS invokes removeAllVisibleRecentTasks and counts clearable tasks`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var removeAllCalled = false
+
+        val fakeAtm = object {
+            @Suppress("unused")
+            fun getRecentTasks(maxNum: Int, flags: Int, userId: Int): List<android.app.ActivityManager.RecentTaskInfo> {
+                assertEquals(256, maxNum)
+                assertEquals(2, flags)
+                assertEquals(0, userId)
+                val appTask1 = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 101
+                    topActivity = android.content.ComponentName("com.example.game", "com.example.game.MainActivity")
+                }
+                val appTask2 = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 102
+                    topActivity = android.content.ComponentName("com.example.browser", "com.example.browser.MainActivity")
+                }
+                val bdsaTask = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 103
+                    topActivity = android.content.ComponentName(
+                        PrivilegedHelperMain.APP_PACKAGE_NAME,
+                        "${PrivilegedHelperMain.APP_PACKAGE_NAME}.MainActivity"
+                    )
+                }
+                return listOf(appTask1, appTask2, bdsaTask)
+            }
+
+            @Suppress("unused")
+            fun removeAllVisibleRecentTasks() {
+                removeAllCalled = true
+            }
+        }
+        helperBinder.activityTaskManagerOverride = fakeAtm
+
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val reply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_CLEAR_ALL_RECENT_TASKS,
+                data,
+                reply,
+                0
+            )
+        )
+        reply.setDataPosition(0)
+        reply.readException()
+        assertEquals(2, reply.readInt())
+        assertTrue(removeAllCalled)
+        data.recycle()
+        reply.recycle()
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

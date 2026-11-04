@@ -102,6 +102,7 @@ fun AssistantOverlayScreen(
     onOpenRecentsRequest: () -> Unit,
     onOpenEditRequest: () -> Unit = {},
     onCleanMemoryRequest: () -> Unit,
+    onClearAllTasksRequest: () -> Unit = {},
     onSwapScreensRequest: () -> Unit = {},
     onToggleTouchLockRequest: () -> Unit = {},
     onCaptureScreenshotRequest: (Int) -> Unit = {},
@@ -302,6 +303,7 @@ fun AssistantOverlayScreen(
                             onToggleChargingSeparation = { repository.toggleChargingSeparation() },
                             onToggleVibrate = { repository.toggleVibrate() },
                             onCleanMemory = onCleanMemoryRequest,
+                            onClearAllTasks = onClearAllTasksRequest,
                             onToggleAmbientLight = { repository.toggleAmbientLight() },
                             onToggleForceLandscape = { repository.toggleForceLandscape() },
                             onToggleWifi = { repository.toggleWifi() },
@@ -917,6 +919,7 @@ private fun SystemSettingsTab(
     onToggleChargingSeparation: () -> Unit,
     onToggleVibrate: () -> Unit,
     onCleanMemory: () -> Unit,
+    onClearAllTasks: () -> Unit,
     onToggleAmbientLight: () -> Unit,
     onToggleForceLandscape: () -> Unit,
     onToggleWifi: () -> Unit,
@@ -1219,6 +1222,17 @@ private fun SystemSettingsTab(
                             iconRes = R.drawable.ic_qs_prevent_home,
                             selected = preventAccidentalHome,
                             onClick = onTogglePreventAccidentalHome
+                        )
+                    )
+                }
+
+                QuickSettingTileId.CLEAR_ALL_TASKS -> {
+                    add(
+                        QuickSettingTileModel(
+                            label = "Clear All Tasks",
+                            iconRes = R.drawable.ic_qs_clear_tasks,
+                            selected = false,
+                            onClick = onClearAllTasks
                         )
                     )
                 }

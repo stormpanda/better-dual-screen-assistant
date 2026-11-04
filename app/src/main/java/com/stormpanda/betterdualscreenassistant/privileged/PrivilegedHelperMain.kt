@@ -69,8 +69,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_GET_GAME_FPS = IBinder.FIRST_CALL_TRANSACTION + 18
     const val TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST = IBinder.FIRST_CALL_TRANSACTION + 19
     const val TRANSACTION_SET_BOTTOM_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 20
+    const val TRANSACTION_CLEAR_ALL_RECENT_TASKS = IBinder.FIRST_CALL_TRANSACTION + 21
 
-    const val HELPER_PROTOCOL_VERSION = 14
+    const val HELPER_PROTOCOL_VERSION = 15
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -386,6 +387,7 @@ object PrivilegedHelperMain {
         internal var resolveStockPidOverride: (() -> Int)? = null
         internal var isPidStoppedOverride: ((Int) -> Boolean)? = null
         internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
+        internal var activityTaskManagerOverride: Any? = null
 
         private val stockFreezeLock = Any()
 
@@ -886,6 +888,12 @@ object PrivilegedHelperMain {
                         reply?.writeNoException()
                         true
                     }
+                    TRANSACTION_CLEAR_ALL_RECENT_TASKS -> {
+                        val clearedCount = clearAllRecentTasksInternal()
+                        reply?.writeNoException()
+                        reply?.writeInt(clearedCount)
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -1063,6 +1071,96 @@ object PrivilegedHelperMain {
                 }
             }
             return fallbackId
+        }
+
+        /**
+         * Closes all visible recent app tasks via `IActivityTaskManager.removeAllVisibleRecentTasks()`
+         * (the exact system call invoked by Android SystemUI Recents' "Clear all" button), returning
+         * the number of clearable recent tasks (`>= 0`) or `-1` on error.
+         */
+        private fun clearAllRecentTasksInternal(): Int {
+            val atm = activityTaskManagerOverride ?: activityTaskManagerProxy ?: return -1
+            return try {
+                val candidateTaskIds = queryClearableRecentTaskIds(atm)
+                val removeAllMethod = atm.javaClass.methods.firstOrNull { m ->
+                    m.name == "removeAllVisibleRecentTasks" && m.parameterTypes.isEmpty()
+                }
+                if (removeAllMethod != null) {
+                    removeAllMethod.invoke(atm)
+                    return candidateTaskIds.size
+                }
+                val removeTaskMethod = atm.javaClass.methods.firstOrNull { m ->
+                    m.name == "removeTask" &&
+                        m.parameterTypes.size == 1 &&
+                        m.parameterTypes[0] == Int::class.javaPrimitiveType
+                } ?: return -1
+                var removed = 0
+                for (taskId in candidateTaskIds) {
+                    val ok = removeTaskMethod.invoke(atm, taskId) as? Boolean ?: false
+                    if (ok) removed++
+                }
+                removed
+            } catch (t: Throwable) {
+                Log.w(TAG, "clearAllRecentTasksInternal failed", t)
+                -1
+            }
+        }
+
+        private fun queryClearableRecentTaskIds(atm: Any): List<Int> {
+            return try {
+                val getRecentMethod = atm.javaClass.methods.firstOrNull { m ->
+                    m.name == "getRecentTasks" && m.parameterTypes.size == 3
+                } ?: return emptyList()
+                // ActivityManager.RECENT_IGNORE_UNAVAILABLE == 2 (returns tasks visible in Recents)
+                val rawResult = getRecentMethod.invoke(atm, 256, 2, 0) ?: return emptyList()
+                val tasks: List<*> = when (rawResult) {
+                    is List<*> -> rawResult
+                    else -> {
+                        val getList = rawResult.javaClass.methods.firstOrNull { m ->
+                            m.name == "getList" && m.parameterTypes.isEmpty()
+                        }
+                        getList?.invoke(rawResult) as? List<*> ?: emptyList<Any?>()
+                    }
+                }
+                val ids = LinkedHashSet<Int>()
+                for (task in tasks) {
+                    if (task == null) continue
+                    try {
+                        val taskId = task.javaClass.getField("taskId").getInt(task)
+                        if (taskId <= 0) continue
+                        val topPkg = (task.javaClass.getField("topActivity").get(task)
+                            as? android.content.ComponentName)?.packageName
+                        val basePkg = try {
+                            (task.javaClass.getField("baseIntent").get(task) as? android.content.Intent)
+                                ?.component?.packageName
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        val pkg = topPkg ?: basePkg ?: ""
+                        if (pkg == APP_PACKAGE_NAME ||
+                            pkg == STOCK_PACKAGE_NAME ||
+                            pkg == SYSUI_PACKAGE
+                        ) {
+                            continue
+                        }
+                        val actType = try {
+                            val config = task.javaClass.getField("configuration").get(task)
+                            val winConfig = config?.javaClass?.getField("windowConfiguration")?.get(config)
+                            winConfig?.javaClass?.getMethod("getActivityType")?.invoke(winConfig) as? Int ?: 1
+                        } catch (_: Throwable) {
+                            1
+                        }
+                        if (actType != 0 && actType != 1) {
+                            continue
+                        }
+                        ids.add(taskId)
+                    } catch (_: Throwable) {
+                    }
+                }
+                ids.toList()
+            } catch (_: Throwable) {
+                emptyList()
+            }
         }
 
         private fun resolveInstalledApplicationInfo(pkg: String): ApplicationInfo? {

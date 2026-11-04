@@ -396,4 +396,26 @@ class PrivilegedBridgeTest {
         PrivilegedBridge.setBottomScreenBlanked(context, blank = false, showCoverWindow = false)
         assertEquals(listOf(true to true, false to false), replayedCalls)
     }
+
+    @Test
+    fun `clearAllRecentTasks delegates to helper binder or falls back to PServerClient shell`() {
+        val helper = createMockHelperBinder { code, data, reply ->
+            if (code == PrivilegedHelperMain.TRANSACTION_CLEAR_ALL_RECENT_TASKS) {
+                data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                reply.writeNoException()
+                reply.writeInt(4)
+            }
+        }
+        setHelperBinder(helper)
+        assertEquals(4, PrivilegedBridge.clearAllRecentTasks(context))
+
+        // Fallback to PServerClient when helper binder is absent
+        setHelperBinder(null)
+        pServerCommands.clear()
+        pServerResponder = { cmd ->
+            if (cmd.contains("dumpsys activity recents")) "CLEARED:2\n" else ""
+        }
+        assertEquals(2, PrivilegedBridge.clearAllRecentTasks(context))
+        assertTrue(pServerCommands.any { it.contains("am stack remove") })
+    }
 }

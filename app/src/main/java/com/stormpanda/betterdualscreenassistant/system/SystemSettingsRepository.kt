@@ -1764,6 +1764,10 @@ class SystemSettingsRepository(private val context: Context) {
         return PrivilegedBridge.swapDisplayTasks(context)
     }
 
+    fun clearAllRecentTasks(): Int {
+        return PrivilegedBridge.clearAllRecentTasks(context)
+    }
+
     fun toggleTouchLock(): Boolean {
         val next = !_touchLockEnabled.value
         _touchLockEnabled.value = next

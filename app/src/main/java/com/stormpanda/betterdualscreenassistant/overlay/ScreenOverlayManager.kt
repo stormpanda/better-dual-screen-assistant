@@ -252,6 +252,9 @@ class ScreenOverlayManager(
                         onCleanMemoryRequest = {
                             performCleanMemoryWithToast()
                         },
+                        onClearAllTasksRequest = {
+                            performClearAllTasksWithToast()
+                        },
                         onSwapScreensRequest = {
                             performSwapScreensWithToast()
                         },
@@ -449,6 +452,24 @@ class ScreenOverlayManager(
             }
             showBottomToast(message)
         }
+    }
+
+    fun performClearAllTasksWithToast() {
+        hideAssistantOverlay()
+        mainHandler.postDelayed({
+            Thread {
+                val clearedCount = repository.clearAllRecentTasks()
+                mainHandler.post {
+                    val message = when {
+                        clearedCount > 1 -> "Cleared $clearedCount recent apps"
+                        clearedCount == 1 -> "Cleared 1 recent app"
+                        clearedCount == 0 -> "Cleared recent apps"
+                        else -> "Failed to clear recent apps"
+                    }
+                    showBottomToast(message)
+                }
+            }.start()
+        }, 220L)
     }
 
     fun performSwapScreensWithToast() {

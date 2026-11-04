@@ -793,6 +793,49 @@ object PrivilegedBridge {
     }
 
     /**
+     * Closes all visible recent app tasks cleanly (matching Android Recents' "Clear all" action)
+     * without killing background services or live wallpapers.
+     * Returns the number of cleared tasks (`>= 0`) or `-1` on failure.
+     */
+    fun clearAllRecentTasks(context: Context): Int {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_CLEAR_ALL_RECENT_TASKS,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                val cleared = reply.readInt()
+                if (cleared >= 0) return cleared
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper clearAllRecentTasks failed, trying fallback", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        ensureStarted(context)
+        val script = """
+            count=0
+            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|com\.odin\.dualscreen\.assistant|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
+                am stack remove "${'$'}id" >/dev/null 2>&1 && count=${'$'}((count + 1))
+            done
+            echo "CLEARED:${'$'}count"
+        """.trimIndent()
+        val res = PServerClient.exec(script, wait = true)
+        if (res.isFailure) return -1
+        val out = res.getOrDefault("")
+        val match = Regex("""CLEARED:(\d+)""").find(out) ?: return -1
+        return match.groupValues[1].toIntOrNull() ?: 0
+    }
+
+    /**
      * Captures a screenshot of the Top screen (`targetMode == 0`), Bottom screen (`targetMode == 1`),
      * or Both screens (`targetMode == 2`) into `/sdcard/Pictures/Screenshots/` and notifies MediaScanner.
      */

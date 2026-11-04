@@ -39,6 +39,8 @@ class QuickSettingTileIdTest {
         assertTrue(QuickSettingTileId.CHARGING_SEPARATION !in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.WIFI in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.TOUCH_LOCK in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.CLEAR_ALL_TASKS in QuickSettingTileId.defaultDisabled)
+        assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLEAR_ALL_TASKS.category)
     }
 
     @Test

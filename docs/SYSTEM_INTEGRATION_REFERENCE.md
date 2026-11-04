@@ -100,7 +100,7 @@ Stored in `context.getSharedPreferences("better_dsa_prefs", Context.MODE_PRIVATE
 | `custom_accent_color` | `Long` | `0xFF3D5AFE` | User's saved custom HSV accent color (`0xFF000000..0xFFFFFFFF`). |
 | `inject_os_theme` | `Boolean` | `false` | Whether to inject the active theme's 60-color Monet palette into Android OS via `FabricatedOverlay`. |
 | `bottom_touch_locked` | `Boolean` | `false` | State of the **Bottom Touch Lock** Quick Setting tile. |
-| `qs_tile_order` | `String` | Comma-separated keys | Ordered list of all 22 `QuickSettingTileId` keys. Automatically appends any newly added enum entries on upgrade. |
+| `qs_tile_order` | `String` | Comma-separated keys | Ordered list of all 23 `QuickSettingTileId` keys. Automatically appends any newly added enum entries on upgrade. |
 | `qs_enabled_tiles` | `String` | 10 Stock AYN keys | Comma-separated list of currently enabled `QuickSettingTileId` keys. |
 
 ---

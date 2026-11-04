@@ -154,12 +154,14 @@ class GamepadScaffoldTouchNavigationTest {
         assertNotNull(findNodeWithTextOrNull(activity, "Enable / Disable Toggles"))
         assertNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
 
+        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId.entries.size
+
         // 2. Tap "Enable / Disable Toggles" via touch -> must open sub-menu, NOT jump back to General
         tapClickableNodeWithText(activity, "Enable / Disable Toggles")
         idleCompose(activity, 500)
         assertNotNull(
             "Enable / Disable sub-page header should be visible",
-            findNodeWithTextOrNull(activity, "Toggle Visibility (10 of 22 Active)")
+            findNodeWithTextOrNull(activity, "Toggle Visibility (10 of $totalTiles Active)")
         )
         assertNull(
             "Must not jump back to General tab when opening Enable / Disable Toggles via touch",
@@ -177,12 +179,12 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 450)
         tapClickableNodeWithText(activity, "Key Focus Lock")
         idleCompose(activity, 200)
-        assertNotNull(findNodeWithTextOrNull(activity, "Toggle Visibility (9 of 22 Active)"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Toggle Visibility (9 of $totalTiles Active)"))
 
         enterTouchMode(activity)
         activity.onBackPressedDispatcher.onBackPressed()
         idleCompose(activity, 450)
-        assertNotNull("Should return to Quick Toggles tab", findNodeWithTextOrNull(activity, "9 / 22 Active"))
+        assertNotNull("Should return to Quick Toggles tab", findNodeWithTextOrNull(activity, "9 / $totalTiles Active"))
         assertNull("Must not jump to General on system Back", findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
 
         // 5. Two-tap touch tile swap inside Quick Settings Layout must exit active grid mode after swap
@@ -212,7 +214,7 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 150)
         tapClickableNodeWithText(activity, "Confirm Reset to Default")
         idleCompose(activity, 250)
-        assertNotNull("Toggles should reset to 10 / 22 Active", findNodeWithTextOrNull(activity, "10 / 22 Active"))
+        assertNotNull("Toggles should reset to 10 / $totalTiles Active", findNodeWithTextOrNull(activity, "10 / $totalTiles Active"))
         assertNotNull(
             "Reset card should exit confirmation state after confirming in touch mode",
             findNodeWithTextOrNull(activity, "Reset Quick Toggles")
@@ -356,9 +358,10 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 100)
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 450)
+        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId.entries.size
         assertNotNull(
             "D-pad Down from Quick Settings Layout must focus Enable / Disable Toggles directly",
-            findNodeWithTextOrNull(activity, "Toggle Visibility (10 of 22 Active)")
+            findNodeWithTextOrNull(activity, "Toggle Visibility (10 of $totalTiles Active)")
         )
 
         // Back out of Enable / Disable sub-page, then switch to Appearance via R1 bumper

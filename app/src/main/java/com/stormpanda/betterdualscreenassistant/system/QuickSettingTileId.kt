@@ -195,6 +195,13 @@ enum class QuickSettingTileId(
         description = "Prevent accidental Home button presses during gameplay",
         iconRes = R.drawable.ic_qs_prevent_home,
         category = QuickSettingCategory.TOOLS
+    ),
+    CLEAR_ALL_TASKS(
+        key = "clear_all_tasks",
+        title = "Clear All Tasks",
+        description = "Close all recent app tasks cleanly without killing background services",
+        iconRes = R.drawable.ic_qs_clear_tasks,
+        category = QuickSettingCategory.TOOLS
     );
 
     fun descriptionFor(promotedToManager: Boolean): String =
