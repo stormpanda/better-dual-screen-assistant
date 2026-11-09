@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- Crisp 50x50 pixel-art dual-screen swap arrows matching Stock Retroid's 5px stroke weight -->
+    <!-- Top bar & Bottom bar -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M3,2H21V3H3ZM3,3H21V4H3ZM3,4H21V5H3ZM7,7H9V8H7ZM15,7H17V8H15ZM7,8H9V9H7ZM15,8H17V9H15ZM5,9H11V10H5ZM15,9H17V10H15ZM5,10H11V11H5ZM15,10H17V11H15ZM7,11H9V12H7ZM15,11H17V12H15ZM7,12H9V13H7ZM15,12H17V13H15ZM7,13H9V14H7ZM13,13H19V14H13ZM7,14H9V15H7ZM13,14H19V15H13ZM7,15H9V16H7ZM15,15H17V16H15ZM7,16H9V17H7ZM15,16H17V17H15ZM5,19H19V20H5ZM5,20H19V21H5ZM5,21H19V22H5Z" />
+        android:pathData="M5,0H45V5H5V0ZM5,45H45V50H5V45Z" />
+    <!-- Left UP pixel arrow -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,10H20V38H15V10ZM10,15H15V20H10V15ZM20,15H25V20H20V15ZM5,20H10V25H5V20ZM25,20H30V25H25V20Z" />
+    <!-- Right DOWN pixel arrow -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,12H35V40H30V12ZM25,30H30V35H25V30ZM35,30H40V35H35V30ZM20,25H25V30H20V25ZM40,25H45V30H40V25Z" />
 </vector>

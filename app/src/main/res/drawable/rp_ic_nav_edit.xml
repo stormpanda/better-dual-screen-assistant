@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Crisp 48x48 pixel-art sliders/edit icon matching Stock Retroid's 5px stroke weight -->
+    <!-- Top slider track + knob -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M17,3H21V4H17ZM15,4H21V5H15ZM14,5H19V6H14ZM13,6H18V7H13ZM12,7H17V8H12ZM11,8H16V9H11ZM10,9H15V10H10ZM9,10H14V11H9ZM8,11H13V12H8ZM7,12H12V13H7ZM6,13H11V14H6ZM6,14H10V15H6ZM4,16H8V17H4ZM4,17H8V18H4ZM4,18H8V19H4ZM3,19H8V20H3ZM3,20H5V21H3Z" />
+        android:pathData="M2,10H14V15H2V10ZM26,10H46V15H26V10ZM14,5H26V20H14V5Z" />
+    <!-- Bottom slider track + knob -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2,33H22V38H2V33ZM34,33H46V38H34V33ZM22,28H34V43H22V28Z" />
 </vector>

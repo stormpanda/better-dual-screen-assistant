@@ -257,10 +257,20 @@ class TelemetryMonitor(private val context: Context) {
                 }
 
                 val curGpuRaw = PrivilegedBridge.readSysfsLong(GPU_CUR_FREQ_PATH)
-                val gpuCurVal = if (gpuUnitStr == "GHz") {
-                    roundDiv(curGpuRaw, 1_000_000_000L)
+                val (gpuCurVal, dynamicGpuMaxVal, dynamicGpuUnitStr) = if (curGpuRaw >= 1_000_000_000L) {
+                    Triple(
+                        roundDiv(curGpuRaw, 1_000_000_000L),
+                        if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000_000L) else gpuMaxVal,
+                        "GHz"
+                    )
+                } else if (curGpuRaw >= 1_000_000L) {
+                    Triple(
+                        roundDiv(curGpuRaw, 1_000_000L),
+                        if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000L) else 680f,
+                        "MHz"
+                    )
                 } else {
-                    roundDiv(curGpuRaw, 1_000_000L)
+                    Triple(0f, gpuMaxVal, gpuUnitStr)
                 }
 
                 val currentNowUa = PrivilegedBridge.readSysfsLong(BATTERY_CURRENT_NOW_PATH)
@@ -278,8 +288,8 @@ class TelemetryMonitor(private val context: Context) {
                     cpuMaxFreqGhz = cpuMaxVal,
                     cpuUnit = cpuUnitStr,
                     gpuCurFreqMhz = gpuCurVal,
-                    gpuMaxFreqMhz = gpuMaxVal,
-                    gpuUnit = gpuUnitStr,
+                    gpuMaxFreqMhz = dynamicGpuMaxVal,
+                    gpuUnit = dynamicGpuUnitStr,
                     powerWatts = powerWatts.coerceIn(-20f, 25f),
                     ramUsedGb = usedRamGb,
                     ramTotalGb = totalRamGb

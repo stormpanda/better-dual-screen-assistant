@@ -23,6 +23,7 @@ import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 private const val LUMINANCE_CONTRAST_THRESHOLD = 0.45f
 private val DEFAULT_CONTRAST_DARK_TEXT = Color(0xFF121212)
 const val DEFAULT_MEGINGIARD_ACCENT_ARGB: Int = 0xFFCC0000.toInt()
+val RetroidPixelOrangeSwatch: Color = Color(0xFFFF760A)
 val RetroidPixelTealSwatch: Color = Color(0xFF03DAC5)
 
 enum class TccUiLook {
@@ -58,22 +59,46 @@ enum class TccUiLookPreference(
 
 val LocalTccUiLook = compositionLocalOf { TccUiLook.AYN }
 
-val TccPixelFontFamily: FontFamily = FontFamily(
-    Font(R.font.tcc_pixel, FontWeight.Normal),
-    Font(R.font.tcc_pixel, FontWeight.Medium),
-    Font(R.font.tcc_pixel, FontWeight.SemiBold),
-    Font(R.font.tcc_pixel, FontWeight.Bold)
+val TccPixelDisplayFontFamily: FontFamily = FontFamily(
+    Font(R.font.tcc_pixel_display, FontWeight.Normal),
+    Font(R.font.tcc_pixel_display, FontWeight.Medium),
+    Font(R.font.tcc_pixel_display, FontWeight.SemiBold),
+    Font(R.font.tcc_pixel_display, FontWeight.Bold)
 )
+
+val TccPixelLabelFontFamily: FontFamily = FontFamily(
+    Font(R.font.tcc_pixel_label, FontWeight.Normal),
+    Font(R.font.tcc_pixel_label, FontWeight.Medium),
+    Font(R.font.tcc_pixel_label, FontWeight.SemiBold),
+    Font(R.font.tcc_pixel_label, FontWeight.Bold)
+)
+
+val TccPixelFontFamily: FontFamily = TccPixelLabelFontFamily
 
 @Composable
 fun tccFontFamily(): FontFamily? =
-    if (LocalTccUiLook.current == TccUiLook.RETROID) TccPixelFontFamily else null
+    if (LocalTccUiLook.current == TccUiLook.RETROID) TccPixelLabelFontFamily else null
+
+@Composable
+fun tccDisplayFontFamily(): FontFamily? =
+    if (LocalTccUiLook.current == TccUiLook.RETROID) TccPixelDisplayFontFamily else null
 
 @Composable
 fun tccTextStyle(): TextStyle =
     if (LocalTccUiLook.current == TccUiLook.RETROID) {
         TextStyle(
-            fontFamily = TccPixelFontFamily,
+            fontFamily = TccPixelLabelFontFamily,
+            platformStyle = PlatformTextStyle(includeFontPadding = false)
+        )
+    } else {
+        TextStyle.Default
+    }
+
+@Composable
+fun tccDisplayTextStyle(): TextStyle =
+    if (LocalTccUiLook.current == TccUiLook.RETROID) {
+        TextStyle(
+            fontFamily = TccPixelDisplayFontFamily,
             platformStyle = PlatformTextStyle(includeFontPadding = false)
         )
     } else {
@@ -85,12 +110,16 @@ fun Color.contrastingContentColor(
     light: Color = Color.White
 ): Color = if (luminance() > LUMINANCE_CONTRAST_THRESHOLD) dark else light
 
+fun TccColorPalette.retroidContentOnAccent(): Color =
+    if (!isMegingiardStyle) onAccent else if (accent.luminance() > 0.30f) Color.Black else Color.White
+
 /**
  * Accent color presets adapted from Megingiard's `AppPalettes.accentPresets` (plus the default crimson).
  */
 val MegingiardAccentPresets: List<Color> = listOf(
     Color(0xFFCC0000), // Megingiard Default Crimson
     Color(0xFFFF5252), // Red
+    RetroidPixelOrangeSwatch, // Retroid Pixel Orange (#FF760A)
     Color(0xFFFF7043), // Deep Orange
     Color(0xFFFFA726), // Orange
     Color(0xFFFFCA28), // Amber
@@ -302,6 +331,42 @@ val PureBlackTccPalette = TccColorPalette(
     lightning = Color(0xFF03C82E)
 )
 
+val RpPixelLightTccPalette = TccColorPalette(
+    isDark = false,
+    isMegingiardStyle = false,
+    primaryBackground = Color(0xFFE6E6E6),
+    panelBackground = Color(0xFFFBFBFB),
+    panelBackgroundSelected = Color(0xFFD5D5D5),
+    primary = Color(0xFF1A1A1A),
+    secondary = Color(0xFF6E6E6E),
+    tertiary = Color(0xFF848484),
+    fourth = Color(0xFFE0E0E0),
+    fifth = Color(0xFFEBEBEB),
+    dialogBackground = Color(0xFFF5F5F5),
+    accent = RetroidPixelOrangeSwatch,
+    onAccent = Color.Black,
+    sliderFill = Color(0xFFCFCFCF),
+    lightning = Color(0xFF04AD29)
+)
+
+val RpPixelPureBlackTccPalette = TccColorPalette(
+    isDark = true,
+    isMegingiardStyle = false,
+    primaryBackground = Color(0xFF141414),
+    panelBackground = Color(0xFF000000),
+    panelBackgroundSelected = Color(0xFF3A3A3A),
+    primary = Color(0xFFF5F5F5),
+    secondary = Color(0xFF8C8C8C),
+    tertiary = Color(0xFF757575),
+    fourth = Color(0xFF2E2E2E),
+    fifth = Color(0xFF202020),
+    dialogBackground = Color(0xFF141414),
+    accent = RetroidPixelOrangeSwatch,
+    onAccent = Color.Black,
+    sliderFill = Color(0xFF303030),
+    lightning = Color(0xFF03C82E)
+)
+
 private fun buildMegingiardPalette(
     appBackground: Color,
     panelSurface: Color,
@@ -435,7 +500,8 @@ fun resolveTccPalette(
     systemDark: Boolean,
     customAccentArgb: Int = DEFAULT_MEGINGIARD_ACCENT_ARGB,
     syncedOption: AppThemeOption = AppThemeOption.MEGINGIARD,
-    syncedAccentArgb: Int? = null
+    syncedAccentArgb: Int? = null,
+    uiLook: TccUiLook = TccUiLook.AYN
 ): TccColorPalette {
     val effectiveOption = if (option == AppThemeOption.SYNC_MEGINGIARD) {
         syncedOption
@@ -447,11 +513,13 @@ fun resolveTccPalette(
     } else {
         Color(customAccentArgb)
     }
+    val stockDarkPalette = if (uiLook == TccUiLook.RETROID) RpPixelPureBlackTccPalette else PureBlackTccPalette
+    val stockLightPalette = if (uiLook == TccUiLook.RETROID) RpPixelLightTccPalette else LightTccPalette
 
     return when (effectiveOption) {
-        AppThemeOption.STOCK_SYSTEM -> if (systemDark) PureBlackTccPalette else LightTccPalette
-        AppThemeOption.STOCK_LIGHT -> LightTccPalette
-        AppThemeOption.STOCK_DARK -> PureBlackTccPalette
+        AppThemeOption.STOCK_SYSTEM -> if (systemDark) stockDarkPalette else stockLightPalette
+        AppThemeOption.STOCK_LIGHT -> stockLightPalette
+        AppThemeOption.STOCK_DARK -> stockDarkPalette
         AppThemeOption.MEGINGIARD_DARK -> megingiardDarkPalette(effectiveAccent)
         AppThemeOption.MEGINGIARD_DARK_OLED -> megingiardDarkOledPalette(effectiveAccent)
         AppThemeOption.MEGINGIARD, AppThemeOption.SYNC_MEGINGIARD -> MegingiardNorseForestPalette
@@ -592,15 +660,16 @@ fun TccTheme(
     val context = LocalContext.current
     val systemDark = isSystemInDarkTheme()
     val option = AppThemeOption.fromId(themeMode)
+    val resolvedUiLook = TccUiLookPreference.fromId(uiLookMode)
+        .resolve(DeviceProfile.current(context))
     val palette = resolveTccPalette(
         option = option,
         systemDark = systemDark,
         customAccentArgb = customAccentArgb,
         syncedOption = syncedMegingiardOption,
-        syncedAccentArgb = syncedMegingiardAccentArgb
+        syncedAccentArgb = syncedMegingiardAccentArgb,
+        uiLook = resolvedUiLook
     )
-    val resolvedUiLook = TccUiLookPreference.fromId(uiLookMode)
-        .resolve(DeviceProfile.current(context))
 
     CompositionLocalProvider(
         LocalTccColors provides palette,

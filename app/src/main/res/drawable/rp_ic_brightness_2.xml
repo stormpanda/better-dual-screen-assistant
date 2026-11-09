@@ -1,10 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:height="21dp"
+    android:width="21dp"
+    android:viewportWidth="21"
+    android:viewportHeight="21">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M11,2H13V3H11ZM11,3H13V4H11ZM4,4H6V5H4ZM11,4H13V5H11ZM18,4H20V5H18ZM4,5H6V6H4ZM18,5H20V6H18ZM8,7H16V8H8ZM7,8H17V9H7ZM7,9H17V10H7ZM7,10H17V11H7ZM2,11H5V12H2ZM7,11H17V12H7ZM19,11H22V12H19ZM2,12H5V13H2ZM7,12H17V13H7ZM19,12H22V13H19ZM7,13H17V14H7ZM7,14H17V15H7ZM7,15H17V16H7ZM8,16H16V17H8ZM4,18H6V19H4ZM18,18H20V19H18ZM4,19H6V20H4ZM11,19H13V20H11ZM18,19H20V20H18ZM11,20H13V21H11ZM11,21H13V22H11Z" />
+        android:fillColor="#ffffff"
+        android:pathData="M7 4H14V7H7V4Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M7 7L7 14L4 14L4 7L7 7Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M17 7L17 14L14 14L14 7L17 7Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M21 12L18 12L18 9L21 9L21 12Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M19 5L16 5L16 2L19 2L19 5Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M5 5L2 5L2 2L5 2L5 5Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M5 19L2 19L2 16L5 16L5 19Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M19 19L16 19L16 16L19 16L19 19Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M3 12L0 12L0 9L3 9L3 12Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M12 21L9 21L9 18L12 18L12 21Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M12 3L9 3L9 0L12 0L12 3Z"/>
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M7 14H14V17H7V14Z"/>
 </vector>

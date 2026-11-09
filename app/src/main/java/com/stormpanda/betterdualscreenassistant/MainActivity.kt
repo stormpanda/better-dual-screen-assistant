@@ -130,7 +130,7 @@ import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingCategory
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
-import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelCornerCutShape
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
@@ -140,6 +140,7 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
 import com.stormpanda.betterdualscreenassistant.ui.theme.contrastingContentColor
+import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
 import com.stormpanda.megingiard.settings.ThemeMode
@@ -1448,7 +1449,7 @@ private fun QuickTogglesVisualReorderCard(
 
             // Compact QuickSettingsPanel replica (2x4 paged grid + bottom page indicator)
             val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
-            val previewShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(16.dp)
+            val previewShape: Shape = RoundedCornerShape(16.dp)
             Column(
                 modifier = Modifier
                     .widthIn(max = 420.dp)
@@ -1592,9 +1593,9 @@ private fun ReorderableTccTile(
     val appColors = LocalAppColors.current
     val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
     val pixelFont = tccFontFamily()
-    val tileShape: Shape = if (isRetroidLook) PixelNotchedShape(6.dp) else CircleShape
-    val slotContainerShape: Shape = if (isRetroidLook) PixelNotchedShape(5.dp) else RoundedCornerShape(8.dp)
-    val badgeShape: Shape = if (isRetroidLook) PixelNotchedShape(3.dp) else RoundedCornerShape(5.dp)
+    val tileShape: Shape = if (isRetroidLook) PixelCornerCutShape(5.dp) else CircleShape
+    val slotContainerShape: Shape = if (isRetroidLook) RoundedCornerShape(8.dp) else RoundedCornerShape(8.dp)
+    val badgeShape: Shape = if (isRetroidLook) PixelCornerCutShape(2.dp) else RoundedCornerShape(5.dp)
     val interactionSource = remember { MutableInteractionSource() }
 
     val scale by animateFloatAsState(
@@ -1605,7 +1606,7 @@ private fun ReorderableTccTile(
 
     val iconTint = if (isGrabbed) {
         if (isRetroidLook) {
-            tccColors.accent.contrastingContentColor()
+            tccColors.retroidContentOnAccent()
         } else if (tccColors.isMegingiardStyle) {
             tccColors.onAccent
         } else if (tccColors.isDark) {

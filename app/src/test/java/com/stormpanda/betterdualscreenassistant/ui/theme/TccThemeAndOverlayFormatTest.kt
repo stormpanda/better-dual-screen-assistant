@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelCornerCutShape
 import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
 import com.stormpanda.betterdualscreenassistant.ui.overlay.formatCpuTemperature
 import org.junit.Assert.assertEquals
@@ -169,6 +170,51 @@ class TccThemeAndOverlayFormatTest {
         assertEquals("Auto (Retroid Pixel)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.RETROID_POCKET_DUO))
 
         assertTrue(RetroidPixelTealSwatch in MegingiardAccentPresets)
+        assertTrue(RetroidPixelOrangeSwatch in MegingiardAccentPresets)
+
+        // Stock Dark & Light switch between AYN and Retroid Pixel palettes based on uiLook
+        val aynStockDark = resolveTccPalette(
+            option = AppThemeOption.STOCK_DARK,
+            systemDark = true,
+            uiLook = TccUiLook.AYN
+        )
+        val retroidStockDark = resolveTccPalette(
+            option = AppThemeOption.STOCK_DARK,
+            systemDark = true,
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(PureBlackTccPalette, aynStockDark)
+        assertEquals(RpPixelPureBlackTccPalette, retroidStockDark)
+        assertEquals(Color(0xFF141414), retroidStockDark.primaryBackground)
+        assertEquals(Color.Black, retroidStockDark.panelBackground)
+        assertEquals(Color(0xFFFF760A), retroidStockDark.accent)
+        assertEquals(Color.Black, retroidStockDark.retroidContentOnAccent())
+
+        val retroidStockLight = resolveTccPalette(
+            option = AppThemeOption.STOCK_LIGHT,
+            systemDark = false,
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(RpPixelLightTccPalette, retroidStockLight)
+        assertEquals(Color(0xFFFF760A), retroidStockLight.accent)
+        assertEquals(Color.Black, retroidStockLight.retroidContentOnAccent())
+
+        // retroidContentOnAccent adapts contrast for dark vs bright Megingiard accents
+        val darkCrimsonMegingiard = resolveTccPalette(
+            option = AppThemeOption.MEGINGIARD_DARK,
+            systemDark = true,
+            customAccentArgb = 0xFFD50000.toInt(),
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(Color.White, darkCrimsonMegingiard.retroidContentOnAccent())
+
+        val orangeMegingiard = resolveTccPalette(
+            option = AppThemeOption.MEGINGIARD_DARK,
+            systemDark = true,
+            customAccentArgb = 0xFFFF760A.toInt(),
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(Color.Black, orangeMegingiard.retroidContentOnAccent())
 
         // Every AppThemeOption palette resolves cleanly regardless of UI Look (AYN or RETROID)
         for (look in TccUiLook.entries) {
@@ -176,7 +222,8 @@ class TccThemeAndOverlayFormatTest {
                 val palette = resolveTccPalette(
                     option = option,
                     systemDark = true,
-                    customAccentArgb = RetroidPixelTealSwatch.hashCode()
+                    customAccentArgb = RetroidPixelTealSwatch.hashCode(),
+                    uiLook = look
                 )
                 assertNotNull("$look x $option must produce valid palette", palette)
                 assertTrue(palette.panelBackground.alpha > 0f)
@@ -197,6 +244,15 @@ class TccThemeAndOverlayFormatTest {
             R.drawable.ic_task_manage,
             R.drawable.ic_system_set,
             R.drawable.ic_nav_edit,
+            R.drawable.ic_qs_swap_screens,
+            R.drawable.ic_dual_screen_display,
+            R.drawable.ic_just_screen_above,
+            R.drawable.ic_just_screen_below,
+            R.drawable.ic_fan_quiet_mode,
+            R.drawable.ic_fan_smart_mode,
+            R.drawable.ic_fan_sport_mode,
+            R.drawable.ic_fan_custom_mode,
+            R.drawable.ic_ban_on_use,
             R.drawable.ic_brightness_0,
             R.drawable.ic_brightness_1,
             R.drawable.ic_brightness_2,
@@ -226,9 +282,9 @@ class TccThemeAndOverlayFormatTest {
     }
 
     @Test
-    fun `PixelNotchedShape builds generic notched path and falls back to rectangle when notch is zero`() {
-        val density = Density(2f)
-        val notchedOutline = PixelNotchedShape(6.dp).createOutline(
+    fun `PixelNotchedShape and PixelCornerCutShape build pixel outlines and fall back to rectangle when zero`() {
+        val density = Density(1.33125f)
+        val notchedOutline = PixelNotchedShape(9.dp).createOutline(
             size = Size(120f, 80f),
             layoutDirection = LayoutDirection.Ltr,
             density = density
@@ -241,5 +297,19 @@ class TccThemeAndOverlayFormatTest {
             density = density
         )
         assertTrue(zeroOutline is Outline.Rectangle)
+
+        val cutOutline = PixelCornerCutShape(9.dp).createOutline(
+            size = Size(70f, 70f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(cutOutline is Outline.Generic)
+
+        val zeroCutOutline = PixelCornerCutShape(0.dp).createOutline(
+            size = Size(70f, 70f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(zeroCutOutline is Outline.Rectangle)
     }
 }

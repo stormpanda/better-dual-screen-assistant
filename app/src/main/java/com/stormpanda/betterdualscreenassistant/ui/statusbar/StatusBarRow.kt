@@ -61,14 +61,15 @@ import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayFontFamily
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayTextStyle
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
-import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
-import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Replicates `StatusBar` (`status_bar.xml`):
@@ -87,8 +88,9 @@ fun StatusBarRow(
     val context = LocalContext.current
     val colors = LocalTccColors.current
     val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
-    val pixelFont = tccFontFamily()
-    val pixelStyle = tccTextStyle()
+    val pixelFont = tccDisplayFontFamily()
+    val pixelStyle = tccDisplayTextStyle()
+    val statusFontSize = if (isRetroidLook) 20.5.sp else 15.sp
 
     var timeText by remember { mutableStateOf(formatCurrentTime(context)) }
     var batteryLevel by remember { mutableIntStateOf(100) }
@@ -222,7 +224,12 @@ fun StatusBarRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 15.dp, start = 15.dp, end = 15.dp),
+            .padding(
+                top = if (isRetroidLook) 34.5.dp else 15.dp,
+                bottom = if (isRetroidLook) 28.5.dp else 0.dp,
+                start = if (isRetroidLook) 14.dp else 15.dp,
+                end = if (isRetroidLook) 14.dp else 15.dp
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -233,12 +240,12 @@ fun StatusBarRow(
             Text(
                 text = timeText,
                 color = colors.primary,
-                fontSize = 15.sp,
+                fontSize = statusFontSize,
                 fontFamily = pixelFont,
                 style = pixelStyle,
                 fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold,
                 modifier = Modifier
-                    .padding(horizontal = 6.dp)
+                    .padding(horizontal = if (isRetroidLook) 0.dp else 6.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -271,7 +278,7 @@ fun StatusBarRow(
                     Text(
                         text = recordingElapsedText.ifEmpty { "00:00" },
                         color = Color.White,
-                        fontSize = 12.sp,
+                        fontSize = if (isRetroidLook) 15.sp else 12.sp,
                         fontFamily = pixelFont,
                         style = pixelStyle,
                         fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
@@ -282,14 +289,14 @@ fun StatusBarRow(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (isRetroidLook) 10.dp else 10.dp)
         ) {
             if (isBluetoothConnected) {
                 Image(
                     painter = painterResource(id = tccDrawable(R.drawable.ic_bluetooth)),
                     contentDescription = "Bluetooth",
                     colorFilter = ColorFilter.tint(colors.primary),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(if (isRetroidLook) 21.dp else 16.dp)
                 )
             }
 
@@ -297,7 +304,7 @@ fun StatusBarRow(
                 Text(
                     text = netSpeedText,
                     color = colors.primary,
-                    fontSize = 15.sp,
+                    fontSize = statusFontSize,
                     fontFamily = pixelFont,
                     style = pixelStyle,
                     fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
@@ -314,11 +321,18 @@ fun StatusBarRow(
                 Image(
                     painter = painterResource(id = tccDrawable(wifiRes)),
                     contentDescription = "Wi-Fi",
-                    colorFilter = ColorFilter.tint(
-                        color = colors.primary,
-                        blendMode = if (colors.isDark) BlendMode.Modulate else BlendMode.SrcIn
-                    ),
-                    modifier = Modifier.size(17.dp)
+                    colorFilter = if (isRetroidLook) {
+                        ColorFilter.tint(colors.primary)
+                    } else {
+                        ColorFilter.tint(
+                            color = colors.primary,
+                            blendMode = if (colors.isDark) BlendMode.Modulate else BlendMode.SrcIn
+                        )
+                    },
+                    modifier = Modifier.size(
+                        width = if (isRetroidLook) 28.dp else 17.dp,
+                        height = if (isRetroidLook) 21.5.dp else 17.dp
+                    )
                 )
             }
 
@@ -326,13 +340,16 @@ fun StatusBarRow(
                 BatteryIconCanvas(
                     level = batteryLevel,
                     isCharging = isCharging,
-                    modifier = Modifier.size(width = 25.dp, height = 14.dp)
+                    modifier = Modifier.size(
+                        width = if (isRetroidLook) 39.dp else 25.dp,
+                        height = if (isRetroidLook) 21.5.dp else 14.dp
+                    )
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(if (isRetroidLook) 7.dp else 4.dp))
                 Text(
                     text = "$batteryLevel%",
                     color = colors.primary,
-                    fontSize = 15.sp,
+                    fontSize = statusFontSize,
                     fontFamily = pixelFont,
                     style = pixelStyle,
                     fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
@@ -351,6 +368,76 @@ private fun BatteryIconCanvas(
     val colors = LocalTccColors.current
     val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
     Canvas(modifier = modifier) {
+        if (isRetroidLook) {
+            // Exact RP_PIXEL 4-bar segmented pixel battery with right-side positive terminal nub:
+            // Body: 49x29px at 1.33125x (37x21.8dp) with 4px (3dp) wall & 4x4px corner cutouts; right nub: 3x13px (2.25x9.8dp).
+            val wall = (3.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()
+            val nubW = (2.25.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()
+            val nubH = (9.8.dp.toPx()).roundToInt().coerceAtLeast(2).toFloat()
+            val bodyW = (size.width - nubW).coerceAtLeast(wall * 4f)
+            val bodyH = size.height
+
+            // Top & bottom horizontal walls (inset by `wall` on left & right for 1-step pixel corner cut)
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(wall, 0f),
+                size = Size((bodyW - wall * 2f).coerceAtLeast(0f), wall)
+            )
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(wall, bodyH - wall),
+                size = Size((bodyW - wall * 2f).coerceAtLeast(0f), wall)
+            )
+            // Left & right vertical walls (inset by `wall` on top & bottom)
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(0f, wall),
+                size = Size(wall, (bodyH - wall * 2f).coerceAtLeast(0f))
+            )
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(bodyW - wall, wall),
+                size = Size(wall, (bodyH - wall * 2f).coerceAtLeast(0f))
+            )
+            // Right-side positive terminal nub
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(bodyW, ((bodyH - nubH) * 0.5f).roundToInt().toFloat()),
+                size = Size(nubW, nubH)
+            )
+
+            // 4 vertical pixel bars filling left-to-right (matching stock_overlay_1.png white bars at 100%)
+            val clamped = level.coerceIn(0, 100)
+            val activeBars = when {
+                clamped <= 0 -> 0
+                clamped < 30 -> 1
+                clamped < 55 -> 2
+                clamped < 80 -> 3
+                else -> 4
+            }
+            val barColor = when {
+                isCharging && clamped < 100 -> colors.lightning
+                clamped <= 20 -> colors.error
+                else -> colors.primary
+            }
+            val innerPadX = (4.5.dp.toPx()).roundToInt().toFloat()
+            val innerPadY = (3.dp.toPx()).roundToInt().toFloat()
+            val availW = (bodyW - wall * 2f - innerPadX * 2f).coerceAtLeast(0f)
+            val barGap = (3.dp.toPx()).roundToInt().toFloat()
+            val barW = ((availW - barGap * 3f) / 4f).coerceAtLeast(1f)
+            val barH = (bodyH - wall * 2f - innerPadY * 2f).coerceAtLeast(1f)
+            val barTop = wall + innerPadY
+            val startX = wall + innerPadX
+            for (i in 0 until activeBars) {
+                drawRect(
+                    color = barColor,
+                    topLeft = Offset(startX + i * (barW + barGap), barTop),
+                    size = Size(barW, barH)
+                )
+            }
+            return@Canvas
+        }
+
         val strokeW = size.height * 0.10f
         val nubWidth = size.width * 0.07f
         val nubHeight = size.height * 0.45f
@@ -358,7 +445,7 @@ private fun BatteryIconCanvas(
         val bodyWidth = size.width - bodyLeft - strokeW * 0.5f
         val bodyHeight = size.height * 0.86f
         val top = (size.height - bodyHeight) / 2f
-        val corner = if (isRetroidLook) CornerRadius.Zero else CornerRadius(2f, 2f)
+        val corner = CornerRadius(2f, 2f)
 
         // Left nub
         drawRoundRect(

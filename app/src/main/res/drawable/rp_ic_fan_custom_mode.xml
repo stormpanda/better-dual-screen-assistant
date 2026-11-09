@@ -1,10 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- Outer 40x40 pixel rounded-square frame matching rp_ic_fan_smart_mode & rp_ic_fan_sport_mode -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M10,3H17V4H10ZM10,4H17V5H10ZM10,5H17V6H10ZM10,6H15V7H10ZM3,7H6V8H3ZM10,7H15V8H10ZM3,8H6V9H3ZM10,8H15V9H10ZM3,9H9V10H3ZM3,10H9V11H3ZM10,10H14V11H10ZM15,10H21V11H15ZM3,11H9V12H3ZM10,11H14V12H10ZM15,11H21V12H15ZM3,12H9V13H3ZM10,12H14V13H10ZM15,12H21V13H15ZM3,13H9V14H3ZM10,13H14V14H10ZM15,13H21V14H15ZM15,14H21V15H15ZM9,15H14V16H9ZM18,15H21V16H18ZM9,16H14V17H9ZM18,16H21V17H18ZM9,17H14V18H9ZM7,18H14V19H7ZM15,18H17V19H15ZM7,19H14V20H7ZM15,19H17V20H15ZM2,20H22V21H2ZM2,21H22V22H2ZM15,22H17V23H15Z" />
+        android:pathData="M8.16 39.9843L31.824 39.9843V35.9043H8.16V39.9843Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 4.07996L31.824 4.07996V0H8.16V4.07996Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08 31.8241L4.08 8.1601L0 8.1601L0 31.8241L4.08 31.8241Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M39.9842 31.8241L39.9842 8.1601L35.9042 8.1601L35.9042 31.8241L39.9842 31.8241Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 4.07996L4.08 4.07996V8.15996H8.16V4.07996Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 35.9042L4.08 35.9042V31.8242H8.16V35.9042Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042 4.07996L31.8242 4.07996V8.15996H35.9042V4.07996Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042 35.9042L31.8242 35.9042V31.8242H35.9042V35.9042Z"/>
+    <!-- Inner two pixel tuning sliders -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,14H15V17H9Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17,11H21V20H17Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M23,14H31V17H23Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,23H19V26H9Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M21,20H25V29H21Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M27,23H31V26H27Z"/>
 </vector>
