@@ -24,6 +24,7 @@ import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
+import com.stormpanda.betterdualscreenassistant.system.ScreenRecordingState
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.megingiard.update.UpdateManager
 import io.mockk.every
@@ -351,6 +352,76 @@ class AssistantForegroundServiceTest {
                 WindowRecomposerPolicy.setFactory(WindowRecomposerFactory.LifecycleAware)
             }
         } catch (_: Throwable) {
+        }
+    }
+
+    @Test
+    fun `createForegroundNotification includes chronometer and Stop Recording action while recording`() {
+        val activeState = ScreenRecordingState(
+            isRecording = true,
+            targetMode = 1,
+            startedElapsedRealtimeMs = 1_000L,
+            outputPath = "/sdcard/Movies/ScreenRecordings/test.mp4"
+        )
+        val notification = service.createForegroundNotification(
+            promoted = false,
+            recordingState = activeState
+        )
+
+        assertEquals(
+            "Recording Bottom screen — tap Stop to save",
+            notification.extras.getString(android.app.Notification.EXTRA_TEXT)
+        )
+        assertTrue(notification.extras.getBoolean(android.app.Notification.EXTRA_SHOW_CHRONOMETER))
+        assertEquals(1, notification.actions?.size ?: 0)
+        assertEquals("Stop Recording", notification.actions[0].title.toString())
+    }
+
+    @Test
+    fun `ACTION_STOP_RECORDING delegates to overlayManager performStopScreenRecordingWithToast`() {
+        mockkObject(PrivilegedBridge)
+        mockkObject(PServerClient)
+        try {
+            every { PrivilegedBridge.ensureInitialized(any()) } just runs
+            every { PrivilegedBridge.setReplaceStockPreferred(any()) } just runs
+            every { PServerClient.isReplaceStockPreferred(any()) } returns false
+
+            val stopIntent = Intent(context, AssistantForegroundService::class.java).apply {
+                action = AssistantForegroundService.ACTION_STOP_RECORDING
+            }
+            service.onStartCommand(stopIntent, 0, 1)
+
+            verify(exactly = 1) {
+                mockOverlayManager.performStopScreenRecordingWithToast("notification")
+            }
+        } finally {
+            unmockkAll()
+        }
+    }
+
+    @Test
+    fun `screen off broadcast auto-stops active recording via repository`() {
+        val recFlow = MutableStateFlow(
+            ScreenRecordingState(
+                isRecording = true,
+                targetMode = 0,
+                startedElapsedRealtimeMs = 100L,
+                outputPath = "/tmp/top.mp4"
+            )
+        )
+        every { mockRepository.screenRecordingState } returns recFlow
+
+        val receiverField = AssistantForegroundService::class.java.getDeclaredField("systemEventsReceiver").apply {
+            isAccessible = true
+        }
+        val receiver = receiverField.get(service) as android.content.BroadcastReceiver
+        receiver.onReceive(context, Intent(Intent.ACTION_SCREEN_OFF))
+
+        verify(timeout = 1_500L, atLeast = 1) {
+            mockRepository.stopScreenRecording("screen_off")
+        }
+        verify(exactly = 1) {
+            mockOverlayManager.onDeviceScreenInteractiveChanged(false)
         }
     }
 }

@@ -418,4 +418,82 @@ class PrivilegedBridgeTest {
         assertEquals(2, PrivilegedBridge.clearAllRecentTasks(context))
         assertTrue(pServerCommands.any { it.contains("am stack remove") })
     }
+
+    @Test
+    fun `startScreenRecording stopScreenRecording and getScreenRecordingState marshal Parcel fields accurately`() {
+        val testPath = "/sdcard/Movies/ScreenRecordings/ScreenRecord_Test_Bottom.mp4"
+        var capturedMode = -1
+        var capturedInternal = false
+        var capturedMic = false
+        var capturedFps = -1
+        var capturedStopReason = ""
+
+        val helper = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_START_SCREEN_RECORD -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    capturedMode = data.readInt()
+                    capturedInternal = data.readInt() != 0
+                    capturedMic = data.readInt() != 0
+                    capturedFps = data.readInt()
+                    val path = data.readString().orEmpty()
+                    reply.writeNoException()
+                    reply.writeInt(1)
+                    reply.writeInt(1)
+                    reply.writeInt(capturedMode)
+                    reply.writeLong(7777L)
+                    reply.writeString(path)
+                    reply.writeString("")
+                    reply.writeString("")
+                }
+                PrivilegedHelperMain.TRANSACTION_GET_SCREEN_RECORD_STATE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    reply.writeNoException()
+                    reply.writeInt(1)
+                    reply.writeInt(ScreenRecorderEngine.TARGET_BOTTOM)
+                    reply.writeLong(7777L)
+                    reply.writeString(testPath)
+                    reply.writeString("")
+                    reply.writeString("")
+                }
+                PrivilegedHelperMain.TRANSACTION_STOP_SCREEN_RECORD -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    capturedStopReason = data.readString().orEmpty()
+                    reply.writeNoException()
+                    reply.writeInt(0)
+                    reply.writeInt(0)
+                    reply.writeLong(0L)
+                    reply.writeString("")
+                    reply.writeString(testPath)
+                    reply.writeString(capturedStopReason)
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        val (started, startStatus) = PrivilegedBridge.startScreenRecording(
+            context = context,
+            targetMode = ScreenRecorderEngine.TARGET_BOTTOM,
+            includeInternalAudio = true,
+            includeMicAudio = true,
+            fps = 60,
+            outputPath = testPath
+        )
+        assertTrue(started)
+        assertEquals(ScreenRecorderEngine.TARGET_BOTTOM, capturedMode)
+        assertTrue(capturedInternal)
+        assertTrue(capturedMic)
+        assertEquals(60, capturedFps)
+        assertTrue(startStatus.isRecording)
+        assertEquals(testPath, startStatus.outputPath)
+
+        val queried = PrivilegedBridge.getScreenRecordingState()
+        assertTrue(queried.isRecording)
+        assertEquals(7777L, queried.startedElapsedRealtimeMs)
+
+        val stopped = PrivilegedBridge.stopScreenRecording(context, reason = "user")
+        assertFalse(stopped.isRecording)
+        assertEquals(testPath, stopped.lastCompletedPath)
+        assertEquals("user", stopped.lastStopReason)
+    }
 }

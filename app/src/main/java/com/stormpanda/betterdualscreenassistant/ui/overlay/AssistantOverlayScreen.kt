@@ -2,6 +2,7 @@ package com.stormpanda.betterdualscreenassistant.ui.overlay
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
@@ -34,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,7 +67,9 @@ import com.stormpanda.betterdualscreenassistant.ui.components.HardwareRingGauge
 import com.stormpanda.betterdualscreenassistant.ui.components.HorizontalSlidingBar
 import com.stormpanda.betterdualscreenassistant.ui.components.SliderKind
 import com.stormpanda.betterdualscreenassistant.ui.components.TccButton
+import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogFpsSelectorRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogOption
+import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogToggleRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccOptionDialog
 import com.stormpanda.betterdualscreenassistant.ui.components.TccRadioCheckIndicator
 import com.stormpanda.betterdualscreenassistant.ui.statusbar.StatusBarRow
@@ -76,6 +80,7 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
@@ -90,7 +95,20 @@ private enum class ActiveDialog {
     THEME_MODE,
     TRIGGER_MODE,
     SCREENSHOT,
+    SCREEN_RECORD,
     CLOSE_BOTTOM_TIP
+}
+
+internal fun formatRecordingElapsedSeconds(totalSeconds: Long): String {
+    val clamped = totalSeconds.coerceAtLeast(0L)
+    val hours = clamped / 3600L
+    val mins = (clamped % 3600L) / 60L
+    val secs = clamped % 60L
+    return if (hours > 0L) {
+        String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
+    } else {
+        String.format(Locale.US, "%02d:%02d", mins, secs)
+    }
 }
 
 @Composable
@@ -106,6 +124,8 @@ fun AssistantOverlayScreen(
     onSwapScreensRequest: () -> Unit = {},
     onToggleTouchLockRequest: () -> Unit = {},
     onCaptureScreenshotRequest: (Int) -> Unit = {},
+    onStartScreenRecordingRequest: (Int) -> Unit = {},
+    onStopScreenRecordingRequest: () -> Unit = {},
     onDismissOverlayRequest: () -> Unit
 ) {
     val themeMode by repository.themeMode.collectAsState()
@@ -144,6 +164,27 @@ fun AssistantOverlayScreen(
     val keyMapperEnabled by repository.keyMapperEnabled.collectAsState()
     val keepScreenOn by repository.keepScreenOn.collectAsState()
     val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
+    val screenRecordInternalAudio by repository.screenRecordInternalAudio.collectAsState()
+    val screenRecordMicAudio by repository.screenRecordMicAudio.collectAsState()
+    val screenRecordFps by repository.screenRecordFps.collectAsState()
+    val screenRecordingState by repository.screenRecordingState.collectAsState()
+
+    var recordingElapsedSeconds by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(screenRecordingState.isRecording, screenRecordingState.startedElapsedRealtimeMs) {
+        if (!screenRecordingState.isRecording) {
+            recordingElapsedSeconds = 0L
+            return@LaunchedEffect
+        }
+        while (isActive) {
+            val elapsedMs = (SystemClock.elapsedRealtime() - screenRecordingState.startedElapsedRealtimeMs)
+                .coerceAtLeast(0L)
+            recordingElapsedSeconds = elapsedMs / 1000L
+            delay(500L)
+        }
+    }
+    val recordingElapsedText = remember(recordingElapsedSeconds) {
+        formatRecordingElapsedSeconds(recordingElapsedSeconds)
+    }
 
     val dualBrightness by repository.dualBrightness.collectAsState()
     val topBrightness by repository.topBrightness.collectAsState()
@@ -206,7 +247,10 @@ fun AssistantOverlayScreen(
             // 3. NavigationBar (paddingHorizontal = 15dp, marginBottom = 15dp)
             Column(modifier = Modifier.fillMaxSize()) {
                 StatusBarRow(
-                    onTimeClick = onCleanMemoryRequest
+                    onTimeClick = onCleanMemoryRequest,
+                    isRecording = screenRecordingState.isRecording,
+                    recordingElapsedText = recordingElapsedText,
+                    onStopRecordingClick = onStopScreenRecordingRequest
                 )
 
                 Box(
@@ -295,11 +339,14 @@ fun AssistantOverlayScreen(
                             keyMapperEnabled = keyMapperEnabled,
                             keepScreenOn = keepScreenOn,
                             preventAccidentalHome = preventAccidentalHome,
+                            isRecordingScreen = screenRecordingState.isRecording,
+                            recordingElapsedText = recordingElapsedText,
                             quickTileOrder = quickTileOrder,
                             disabledQuickTiles = disabledQuickTiles,
                             onToggleRefreshRate = { repository.toggleRefreshRate() },
                             onToggleTempUnit = { repository.toggleTempFahrenheit() },
                             onOpenDialog = { dialog -> activeDialog = dialog },
+                            onStopScreenRecording = onStopScreenRecordingRequest,
                             onToggleChargingSeparation = { repository.toggleChargingSeparation() },
                             onToggleVibrate = { repository.toggleVibrate() },
                             onCleanMemory = onCleanMemoryRequest,
@@ -664,6 +711,66 @@ fun AssistantOverlayScreen(
                         onDismiss = { activeDialog = ActiveDialog.NONE }
                     )
                 }
+
+                ActiveDialog.SCREEN_RECORD -> {
+                    val options = listOf(
+                        TccDialogOption(
+                            id = 0,
+                            label = "Top Screen",
+                            iconRes = R.drawable.ic_just_screen_above
+                        ),
+                        TccDialogOption(
+                            id = 1,
+                            label = "Bottom Screen",
+                            iconRes = R.drawable.ic_just_screen_below
+                        ),
+                        TccDialogOption(
+                            id = 2,
+                            label = "Both Screens",
+                            iconRes = R.drawable.ic_dual_screen_display
+                        )
+                    )
+                    TccOptionDialog(
+                        title = "Record Screen",
+                        options = options,
+                        selectedId = -1,
+                        onSelectOption = { selected ->
+                            activeDialog = ActiveDialog.NONE
+                            onStartScreenRecordingRequest(selected)
+                        },
+                        onDismiss = { activeDialog = ActiveDialog.NONE },
+                        footerContent = {
+                            TccDialogToggleRow(
+                                label = "Internal Game Audio",
+                                checked = screenRecordInternalAudio,
+                                onCheckedChange = { repository.setScreenRecordInternalAudio(it) }
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(1.dp)
+                                    .background(colors.fourth)
+                            )
+                            TccDialogToggleRow(
+                                label = "Microphone",
+                                checked = screenRecordMicAudio,
+                                onCheckedChange = { repository.setScreenRecordMicAudio(it) }
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(1.dp)
+                                    .background(colors.fourth)
+                            )
+                            TccDialogFpsSelectorRow(
+                                selectedFps = screenRecordFps,
+                                onSelectFps = { repository.setScreenRecordFps(it) }
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -911,11 +1018,14 @@ private fun SystemSettingsTab(
     keyMapperEnabled: Boolean,
     keepScreenOn: Boolean,
     preventAccidentalHome: Boolean,
+    isRecordingScreen: Boolean,
+    recordingElapsedText: String,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     onToggleRefreshRate: () -> Unit,
     onToggleTempUnit: () -> Unit,
     onOpenDialog: (ActiveDialog) -> Unit,
+    onStopScreenRecording: () -> Unit,
     onToggleChargingSeparation: () -> Unit,
     onToggleVibrate: () -> Unit,
     onCleanMemory: () -> Unit,
@@ -1151,6 +1261,28 @@ private fun SystemSettingsTab(
                             iconRes = R.drawable.ic_qs_screenshot,
                             selected = false,
                             onClick = { onOpenDialog(ActiveDialog.SCREENSHOT) }
+                        )
+                    )
+                }
+
+                QuickSettingTileId.SCREEN_RECORD -> {
+                    val tileLabel = if (isRecordingScreen) {
+                        "Stop (${recordingElapsedText.ifEmpty { "00:00" }})"
+                    } else {
+                        "Screen Record"
+                    }
+                    add(
+                        QuickSettingTileModel(
+                            label = tileLabel,
+                            iconRes = R.drawable.ic_qs_screen_record,
+                            selected = isRecordingScreen,
+                            onClick = {
+                                if (isRecordingScreen) {
+                                    onStopScreenRecording()
+                                } else {
+                                    onOpenDialog(ActiveDialog.SCREEN_RECORD)
+                                }
+                            }
                         )
                     )
                 }

@@ -558,6 +558,114 @@ class PrivilegedBinderProviderAndHelperTest {
         reply.recycle()
     }
 
+    @Test
+    fun `HelperBinder screen recording transactions start query stop and auto-finalize on shutdown`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val mockRecorder = mockk<ScreenRecorderEngine>()
+        var activeStatus = ScreenRecorderEngine.Status()
+
+        every { mockRecorder.startRecording(any()) } answers {
+            val cfg = firstArg<ScreenRecorderEngine.Config>()
+            activeStatus = ScreenRecorderEngine.Status(
+                isRecording = true,
+                targetMode = cfg.targetMode,
+                startedElapsedRealtimeMs = 12345L,
+                outputPath = cfg.outputPath
+            )
+            true
+        }
+        every { mockRecorder.getStatus() } answers { activeStatus }
+        every { mockRecorder.stopRecording(any()) } answers {
+            val reason = firstArg<String>()
+            val completed = activeStatus.outputPath
+            activeStatus = ScreenRecorderEngine.Status(
+                isRecording = false,
+                targetMode = 0,
+                startedElapsedRealtimeMs = 0L,
+                outputPath = "",
+                lastCompletedPath = completed,
+                lastStopReason = reason
+            )
+            activeStatus
+        }
+        helperBinder.screenRecorderOverride = mockRecorder
+
+        // 1. Start recording (Both Screens, Internal + Mic audio, 60 FPS)
+        val outPath = "/sdcard/Movies/ScreenRecordings/ScreenRecord_Test_Both.mp4"
+        val startData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(ScreenRecorderEngine.TARGET_BOTH)
+            writeInt(1)
+            writeInt(1)
+            writeInt(60)
+            writeString(outPath)
+        }
+        val startReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_START_SCREEN_RECORD,
+                startData,
+                startReply,
+                0
+            )
+        )
+        startReply.setDataPosition(0)
+        startReply.readException()
+        assertEquals(1, startReply.readInt())
+        assertEquals(1, startReply.readInt()) // isRecording
+        assertEquals(ScreenRecorderEngine.TARGET_BOTH, startReply.readInt())
+        assertEquals(12345L, startReply.readLong())
+        assertEquals(outPath, startReply.readString())
+        startData.recycle()
+        startReply.recycle()
+
+        // 2. Query active recording state
+        val queryData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val queryReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_GET_SCREEN_RECORD_STATE,
+                queryData,
+                queryReply,
+                0
+            )
+        )
+        queryReply.setDataPosition(0)
+        queryReply.readException()
+        assertEquals(1, queryReply.readInt())
+        assertEquals(ScreenRecorderEngine.TARGET_BOTH, queryReply.readInt())
+        queryData.recycle()
+        queryReply.recycle()
+
+        // 3. Helper shutdown automatically finalizes active recording before exiting
+        var exited = false
+        helperBinder.exitProcessOverride = { exited = true }
+        val shutdownData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val shutdownReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_SHUTDOWN,
+                shutdownData,
+                shutdownReply,
+                0
+            )
+        )
+        shutdownReply.setDataPosition(0)
+        shutdownReply.readException()
+        shutdownData.recycle()
+        shutdownReply.recycle()
+
+        assertFalse(activeStatus.isRecording)
+        assertEquals(outPath, activeStatus.lastCompletedPath)
+        assertEquals("shutdown", activeStatus.lastStopReason)
+        ShadowLooper.idleMainLooper(100L, TimeUnit.MILLISECONDS)
+        assertTrue(exited)
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

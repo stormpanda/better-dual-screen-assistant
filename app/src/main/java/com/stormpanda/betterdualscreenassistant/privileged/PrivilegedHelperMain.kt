@@ -70,8 +70,11 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST = IBinder.FIRST_CALL_TRANSACTION + 19
     const val TRANSACTION_SET_BOTTOM_SCREEN_BLANKED = IBinder.FIRST_CALL_TRANSACTION + 20
     const val TRANSACTION_CLEAR_ALL_RECENT_TASKS = IBinder.FIRST_CALL_TRANSACTION + 21
+    const val TRANSACTION_START_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 22
+    const val TRANSACTION_STOP_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 23
+    const val TRANSACTION_GET_SCREEN_RECORD_STATE = IBinder.FIRST_CALL_TRANSACTION + 24
 
-    const val HELPER_PROTOCOL_VERSION = 15
+    const val HELPER_PROTOCOL_VERSION = 18
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -114,11 +117,19 @@ object PrivilegedHelperMain {
     @JvmStatic
     fun main(args: Array<String>) {
         try {
+            try {
+                val vmRuntimeClass = Class.forName("dalvik.system.VMRuntime")
+                val runtime = vmRuntimeClass.getDeclaredMethod("getRuntime").invoke(null)
+                vmRuntimeClass.getDeclaredMethod("setHiddenApiExemptions", Array<String>::class.java)
+                    .invoke(runtime, arrayOf("L"))
+            } catch (_: Throwable) {
+            }
             if (Looper.myLooper() == null) {
                 Looper.prepareMainLooper()
             }
             val mainHandler = Handler(Looper.getMainLooper())
-            val binder = HelperBinder( null, mainHandler)
+            val sysCtx = createSystemContextOnLooperThread()
+            val binder = HelperBinder(sysCtx, mainHandler)
             val bundle = Bundle().apply {
                 putBinder(EXTRA_BINDER, binder)
             }
@@ -127,6 +138,31 @@ object PrivilegedHelperMain {
             Looper.loop()
         } catch (t: Throwable) {
             Log.e(TAG, "PrivilegedHelperMain fatal error", t)
+        }
+    }
+
+    internal fun createSystemContextOnLooperThread(): Context? {
+        return try {
+            try {
+                Class.forName("android.view.ThreadedRenderer")
+                    .getMethod("disable", Boolean::class.javaPrimitiveType)
+                    .invoke(null, true)
+            } catch (_: Throwable) {
+            }
+            val atClass = Class.forName("android.app.ActivityThread")
+            val currentAt = atClass.getMethod("currentActivityThread").invoke(null)
+                ?: atClass.getMethod("systemMain").invoke(null)
+            val sysCtx = atClass.getMethod("getSystemContext").invoke(currentAt) as? Context
+            try {
+                sysCtx?.applicationInfo?.let { appInfo ->
+                    appInfo.flags = appInfo.flags and ApplicationInfo.FLAG_HARDWARE_ACCELERATED.inv()
+                }
+            } catch (_: Throwable) {
+            }
+            sysCtx
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to initialize system context on looper thread", t)
+            null
         }
     }
 
@@ -388,6 +424,9 @@ object PrivilegedHelperMain {
         internal var isPidStoppedOverride: ((Int) -> Boolean)? = null
         internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
+        internal var screenRecorderOverride: ScreenRecorderEngine? = null
+
+        private var screenRecorderInstance: ScreenRecorderEngine? = null
 
         private val stockFreezeLock = Any()
 
@@ -666,6 +705,7 @@ object PrivilegedHelperMain {
         }
 
         private fun exitHelperProcess() {
+            stopScreenRecordIfActiveInternal("helper_exit")
             val hook = exitProcessOverride
             if (hook != null) {
                 hook()
@@ -814,6 +854,7 @@ object PrivilegedHelperMain {
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
                         unregisterFpsListenerInternal()
+                        stopScreenRecordIfActiveInternal("shutdown")
                         mainHandler.post {
                             setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
                             setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
@@ -892,6 +933,48 @@ object PrivilegedHelperMain {
                         val clearedCount = clearAllRecentTasksInternal()
                         reply?.writeNoException()
                         reply?.writeInt(clearedCount)
+                        true
+                    }
+                    TRANSACTION_START_SCREEN_RECORD -> {
+                        val targetMode = data.readInt()
+                        val includeInternalAudio = data.readInt() != 0
+                        val includeMicAudio = data.readInt() != 0
+                        val fps = data.readInt()
+                        val outputPath = data.readString() ?: ""
+                        val callingToken = Binder.clearCallingIdentity()
+                        val (started, status) = try {
+                            val ok = startScreenRecordInternal(
+                                targetMode = targetMode,
+                                includeInternalAudio = includeInternalAudio,
+                                includeMicAudio = includeMicAudio,
+                                fps = fps,
+                                outputPath = outputPath
+                            )
+                            ok to getScreenRecordStatusInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (started) 1 else 0)
+                        writeScreenRecordStatusToParcel(reply, status)
+                        true
+                    }
+                    TRANSACTION_STOP_SCREEN_RECORD -> {
+                        val reason = data.readString()?.takeIf { it.isNotBlank() } ?: "user"
+                        val callingToken = Binder.clearCallingIdentity()
+                        val status = try {
+                            stopScreenRecordInternal(reason)
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        writeScreenRecordStatusToParcel(reply, status)
+                        true
+                    }
+                    TRANSACTION_GET_SCREEN_RECORD_STATE -> {
+                        val status = getScreenRecordStatusInternal()
+                        reply?.writeNoException()
+                        writeScreenRecordStatusToParcel(reply, status)
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)
@@ -1437,7 +1520,8 @@ object PrivilegedHelperMain {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                     temporarilyUnfrozenStockPid = -1
                 }
-                // 0. Remove any helper screen blank cover windows, re-enable status bar, and unregister FPS listener
+                // 0. Finalize any active screen recording, remove cover windows, re-enable status bar, and unregister FPS listener
+                stopScreenRecordIfActiveInternal("restore_stock")
                 unregisterFpsListenerInternal()
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
                 setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
@@ -2121,26 +2205,40 @@ object PrivilegedHelperMain {
             return -1
         }
 
+        private fun resolveSystemContext(): Context? {
+            systemContext?.let { return it }
+            return try {
+                val atClass = Class.forName("android.app.ActivityThread")
+                val existingAt = atClass.getMethod("currentActivityThread").invoke(null)
+                if (existingAt != null) {
+                    return atClass.getMethod("getSystemContext").invoke(existingAt) as? Context
+                }
+                if (Looper.myLooper() != null) {
+                    createSystemContextOnLooperThread()
+                } else {
+                    var resolved: Context? = null
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    mainHandler.post {
+                        try {
+                            resolved = createSystemContextOnLooperThread()
+                        } finally {
+                            latch.countDown()
+                        }
+                    }
+                    latch.await(1500L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    resolved
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to resolve system context in helper", t)
+                null
+            }
+        }
+
         private fun getOrCreateDisplay0Context(): Context? {
             topDisplayContext?.let { return it }
+            val callingToken = Binder.clearCallingIdentity()
             return try {
-                try {
-                    Class.forName("android.view.ThreadedRenderer")
-                        .getMethod("disable", Boolean::class.javaPrimitiveType)
-                        .invoke(null, true)
-                } catch (_: Throwable) {
-                }
-                val atClass = Class.forName("android.app.ActivityThread")
-                val currentAt = atClass.getMethod("currentActivityThread").invoke(null)
-                    ?: atClass.getMethod("systemMain").invoke(null)
-                val sysCtx = (systemContext ?: atClass.getMethod("getSystemContext").invoke(currentAt) as? Context)
-                    ?: return null
-                try {
-                    sysCtx.applicationInfo?.let { appInfo ->
-                        appInfo.flags = appInfo.flags and ApplicationInfo.FLAG_HARDWARE_ACCELERATED.inv()
-                    }
-                } catch (_: Throwable) {
-                }
+                val sysCtx = resolveSystemContext() ?: return null
                 val dm = sysCtx.getSystemService(DisplayManager::class.java)
                 val display0 = dm?.getDisplay(0)
                 val ctx = if (display0 != null) sysCtx.createDisplayContext(display0) else sysCtx
@@ -2149,6 +2247,8 @@ object PrivilegedHelperMain {
             } catch (t: Throwable) {
                 Log.w(TAG, "Failed to obtain Display 0 context in helper", t)
                 null
+            } finally {
+                Binder.restoreCallingIdentity(callingToken)
             }
         }
 
@@ -2231,24 +2331,9 @@ object PrivilegedHelperMain {
 
         private fun getOrCreateDisplay4Context(): Context? {
             bottomDisplayContext?.let { return it }
+            val callingToken = Binder.clearCallingIdentity()
             return try {
-                try {
-                    Class.forName("android.view.ThreadedRenderer")
-                        .getMethod("disable", Boolean::class.javaPrimitiveType)
-                        .invoke(null, true)
-                } catch (_: Throwable) {
-                }
-                val atClass = Class.forName("android.app.ActivityThread")
-                val currentAt = atClass.getMethod("currentActivityThread").invoke(null)
-                    ?: atClass.getMethod("systemMain").invoke(null)
-                val sysCtx = (systemContext ?: atClass.getMethod("getSystemContext").invoke(currentAt) as? Context)
-                    ?: return null
-                try {
-                    sysCtx.applicationInfo?.let { appInfo ->
-                        appInfo.flags = appInfo.flags and ApplicationInfo.FLAG_HARDWARE_ACCELERATED.inv()
-                    }
-                } catch (_: Throwable) {
-                }
+                val sysCtx = resolveSystemContext() ?: return null
                 val dm = sysCtx.getSystemService(DisplayManager::class.java)
                 val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
                     ?: return null
@@ -2258,6 +2343,8 @@ object PrivilegedHelperMain {
             } catch (t: Throwable) {
                 Log.w(TAG, "Failed to obtain Display 4 context in helper", t)
                 null
+            } finally {
+                Binder.restoreCallingIdentity(callingToken)
             }
         }
 
@@ -2335,6 +2422,84 @@ object PrivilegedHelperMain {
                 } catch (_: Throwable) {
                 }
             }
+        }
+
+        private fun getOrCreateScreenRecorder(): ScreenRecorderEngine {
+            screenRecorderOverride?.let { return it }
+            val existing = screenRecorderInstance
+            if (existing != null) return existing
+            return ScreenRecorderEngine(
+                contextProvider = { systemContext ?: getOrCreateDisplay0Context() },
+                displayManagerProxy = displayManagerProxy
+            ).also {
+                screenRecorderInstance = it
+            }
+        }
+
+        private fun startScreenRecordInternal(
+            targetMode: Int,
+            includeInternalAudio: Boolean,
+            includeMicAudio: Boolean,
+            fps: Int,
+            outputPath: String
+        ): Boolean {
+            return try {
+                getOrCreateScreenRecorder().startRecording(
+                    ScreenRecorderEngine.Config(
+                        targetMode = targetMode,
+                        includeInternalAudio = includeInternalAudio,
+                        includeMicAudio = includeMicAudio,
+                        fps = fps,
+                        outputPath = outputPath
+                    )
+                )
+            } catch (t: Throwable) {
+                Log.e(TAG, "startScreenRecordInternal failed", t)
+                false
+            }
+        }
+
+        private fun stopScreenRecordInternal(reason: String): ScreenRecorderEngine.Status {
+            return try {
+                getOrCreateScreenRecorder().stopRecording(reason)
+            } catch (t: Throwable) {
+                Log.e(TAG, "stopScreenRecordInternal($reason) failed", t)
+                ScreenRecorderEngine.Status()
+            }
+        }
+
+        private fun stopScreenRecordIfActiveInternal(reason: String) {
+            val recorder = screenRecorderOverride ?: screenRecorderInstance ?: return
+            try {
+                if (recorder.getStatus().isRecording) {
+                    recorder.stopRecording(reason)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "stopScreenRecordIfActiveInternal($reason) failed", t)
+            }
+        }
+
+        private fun getScreenRecordStatusInternal(): ScreenRecorderEngine.Status {
+            val recorder = screenRecorderOverride ?: screenRecorderInstance
+                ?: return ScreenRecorderEngine.Status()
+            return try {
+                recorder.getStatus()
+            } catch (_: Throwable) {
+                ScreenRecorderEngine.Status()
+            }
+        }
+
+        private fun writeScreenRecordStatusToParcel(
+            reply: Parcel?,
+            status: ScreenRecorderEngine.Status
+        ) {
+            if (reply == null) return
+            reply.writeInt(if (status.isRecording) 1 else 0)
+            reply.writeInt(status.targetMode)
+            reply.writeLong(status.startedElapsedRealtimeMs)
+            reply.writeString(status.outputPath)
+            reply.writeString(status.lastCompletedPath)
+            reply.writeString(status.lastStopReason)
         }
     }
 }

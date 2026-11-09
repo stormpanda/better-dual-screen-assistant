@@ -26,6 +26,7 @@ import android.provider.Settings
 import androidx.compose.ui.graphics.toArgb
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.privileged.ScreenRecorderEngine
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.DEFAULT_MEGINGIARD_ACCENT_ARGB
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
@@ -36,6 +37,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
+
+data class ScreenRecordingState(
+    val isRecording: Boolean = false,
+    val targetMode: Int = 0,
+    val startedElapsedRealtimeMs: Long = 0L,
+    val outputPath: String = "",
+    val lastCompletedPath: String = "",
+    val lastStopReason: String = ""
+)
 
 /**
  * Reactive repository for all AYN Thor dual-screen, performance, fan, controller,
@@ -99,6 +109,9 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK = "saved_dual_screen_focus_lock"
         const val PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK = "saved_enable_system_key_focus_lock"
         const val PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE = "single_screen_focus_override_active"
+        const val PREF_SCREEN_RECORD_INTERNAL_AUDIO = "screen_record_internal_audio"
+        const val PREF_SCREEN_RECORD_MIC_AUDIO = "screen_record_mic_audio"
+        const val PREF_SCREEN_RECORD_FPS = "screen_record_fps"
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -338,6 +351,27 @@ class SystemSettingsRepository(private val context: Context) {
     private val _disabledQuickTiles = MutableStateFlow(readSavedDisabledQuickTiles())
     val disabledQuickTiles: StateFlow<Set<QuickSettingTileId>> = _disabledQuickTiles.asStateFlow()
 
+    private val _screenRecordInternalAudio = MutableStateFlow(
+        prefs.getBoolean(PREF_SCREEN_RECORD_INTERNAL_AUDIO, true)
+    )
+    val screenRecordInternalAudio: StateFlow<Boolean> = _screenRecordInternalAudio.asStateFlow()
+
+    private val _screenRecordMicAudio = MutableStateFlow(
+        prefs.getBoolean(PREF_SCREEN_RECORD_MIC_AUDIO, false)
+    )
+    val screenRecordMicAudio: StateFlow<Boolean> = _screenRecordMicAudio.asStateFlow()
+
+    private val _screenRecordFps = MutableStateFlow(
+        if (prefs.getInt(PREF_SCREEN_RECORD_FPS, 60) <= 30) 30 else 60
+    )
+    val screenRecordFps: StateFlow<Int> = _screenRecordFps.asStateFlow()
+
+    private val _screenRecordingState = MutableStateFlow(ScreenRecordingState())
+    val screenRecordingState: StateFlow<ScreenRecordingState> = _screenRecordingState.asStateFlow()
+
+    @Volatile
+    private var lastScannedRecordingPath: String = ""
+
     // Refresh Rate: 60 or 120
     private val _refreshRate = MutableStateFlow(readRefreshRate())
     val refreshRate: StateFlow<Int> = _refreshRate.asStateFlow()
@@ -487,6 +521,18 @@ class SystemSettingsRepository(private val context: Context) {
             }
             PREF_DISABLED_QUICK_TILES -> {
                 _disabledQuickTiles.value = readSavedDisabledQuickTiles()
+            }
+            PREF_SCREEN_RECORD_INTERNAL_AUDIO -> {
+                _screenRecordInternalAudio.value =
+                    prefs.getBoolean(PREF_SCREEN_RECORD_INTERNAL_AUDIO, true)
+            }
+            PREF_SCREEN_RECORD_MIC_AUDIO -> {
+                _screenRecordMicAudio.value =
+                    prefs.getBoolean(PREF_SCREEN_RECORD_MIC_AUDIO, false)
+            }
+            PREF_SCREEN_RECORD_FPS -> {
+                _screenRecordFps.value =
+                    if (prefs.getInt(PREF_SCREEN_RECORD_FPS, 60) <= 30) 30 else 60
             }
         }
     }
@@ -2177,6 +2223,87 @@ class SystemSettingsRepository(private val context: Context) {
             Settings.System.getInt(contentResolver, key, defaultValue)
         } catch (_: Throwable) {
             defaultValue
+        }
+    }
+
+    fun setScreenRecordInternalAudio(enabled: Boolean) {
+        _screenRecordInternalAudio.value = enabled
+        prefs.edit().putBoolean(PREF_SCREEN_RECORD_INTERNAL_AUDIO, enabled).apply()
+    }
+
+    fun setScreenRecordMicAudio(enabled: Boolean) {
+        _screenRecordMicAudio.value = enabled
+        prefs.edit().putBoolean(PREF_SCREEN_RECORD_MIC_AUDIO, enabled).apply()
+    }
+
+    fun setScreenRecordFps(fps: Int) {
+        val normalized = if (fps <= 30) 30 else 60
+        _screenRecordFps.value = normalized
+        prefs.edit().putInt(PREF_SCREEN_RECORD_FPS, normalized).apply()
+    }
+
+    fun startScreenRecording(
+        targetMode: Int,
+        outputPath: String = ScreenRecorderEngine.buildOutputFilePath(targetMode = targetMode)
+    ): Boolean {
+        val normalizedTarget = targetMode.coerceIn(
+            ScreenRecorderEngine.TARGET_TOP,
+            ScreenRecorderEngine.TARGET_BOTH
+        )
+        val (started, helperStatus) = PrivilegedBridge.startScreenRecording(
+            context = context,
+            targetMode = normalizedTarget,
+            includeInternalAudio = _screenRecordInternalAudio.value,
+            includeMicAudio = _screenRecordMicAudio.value,
+            fps = _screenRecordFps.value,
+            outputPath = outputPath
+        )
+        applyHelperRecordingStatus(helperStatus)
+        return started
+    }
+
+    fun stopScreenRecording(reason: String = "user"): ScreenRecordingState {
+        val helperStatus = PrivilegedBridge.stopScreenRecording(context = context, reason = reason)
+        return applyHelperRecordingStatus(helperStatus)
+    }
+
+    fun syncScreenRecordingStateFromHelper(): ScreenRecordingState {
+        val helperStatus = PrivilegedBridge.getScreenRecordingState()
+        return applyHelperRecordingStatus(helperStatus)
+    }
+
+    private fun applyHelperRecordingStatus(
+        helperStatus: PrivilegedBridge.ScreenRecordHelperStatus
+    ): ScreenRecordingState {
+        val updated = ScreenRecordingState(
+            isRecording = helperStatus.isRecording,
+            targetMode = helperStatus.targetMode,
+            startedElapsedRealtimeMs = helperStatus.startedElapsedRealtimeMs,
+            outputPath = helperStatus.outputPath,
+            lastCompletedPath = helperStatus.lastCompletedPath,
+            lastStopReason = helperStatus.lastStopReason
+        )
+        _screenRecordingState.value = updated
+        if (!updated.isRecording &&
+            updated.lastCompletedPath.isNotEmpty() &&
+            updated.lastCompletedPath != lastScannedRecordingPath
+        ) {
+            lastScannedRecordingPath = updated.lastCompletedPath
+            scanRecordedVideoFile(updated.lastCompletedPath)
+        }
+        return updated
+    }
+
+    private fun scanRecordedVideoFile(path: String) {
+        if (path.isBlank()) return
+        try {
+            android.media.MediaScannerConnection.scanFile(
+                context.applicationContext,
+                arrayOf(path),
+                arrayOf("video/mp4"),
+                null
+            )
+        } catch (_: Throwable) {
         }
     }
 }

@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.drawable.Icon
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
@@ -19,6 +20,7 @@ import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
+import com.stormpanda.betterdualscreenassistant.system.ScreenRecordingState
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import kotlinx.coroutines.CoroutineScope
@@ -28,7 +30,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AssistantForegroundService : Service() {
 
@@ -43,6 +47,7 @@ class AssistantForegroundService : Service() {
         const val ACTION_SHOW_MODE = "com.stormpanda.betterdualscreenassistant.action.SHOW_MODE"
         const val ACTION_SHOW_SETTINGS = "com.stormpanda.betterdualscreenassistant.action.SHOW_SETTINGS"
         const val ACTION_HIDE_OVERLAY = "com.stormpanda.betterdualscreenassistant.action.HIDE_OVERLAY"
+        const val ACTION_STOP_RECORDING = "com.stormpanda.betterdualscreenassistant.action.STOP_RECORDING"
         const val ACTION_TCC_KEY = "com.stormpanda.betterdualscreenassistant.action.TCC_KEY"
         const val EXTRA_KEY_ACTION_DOWN = "key_action_down"
         const val EXTRA_IS_LONG_PRESS = "isLongPress"
@@ -91,11 +96,16 @@ class AssistantForegroundService : Service() {
     private val preOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_SCREEN_ON -> {
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                }
                 Intent.ACTION_SCREEN_OFF,
                 Intent.ACTION_SHUTDOWN,
                 "android.intent.action.REBOOT" -> {
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                    stopActiveRecordingOnPowerTransition(
+                        if (intent.action == Intent.ACTION_SCREEN_OFF) "screen_off" else "shutdown"
+                    )
                 }
             }
         }
@@ -130,6 +140,7 @@ class AssistantForegroundService : Service() {
                     handleTccButtonEvent(keyActionDown = keyActionDown, isLongPress = isLongPress)
                 }
                 Intent.ACTION_SCREEN_OFF -> {
+                    stopActiveRecordingOnPowerTransition("screen_off")
                     overlayManager.onDeviceScreenInteractiveChanged(false)
                 }
                 Intent.ACTION_SCREEN_ON,
@@ -184,8 +195,27 @@ class AssistantForegroundService : Service() {
             }
         }
         serviceScope.launch {
-            repository.promotedToManager.collectLatest { promoted ->
-                updateForegroundNotification(promoted)
+            combine(
+                repository.promotedToManager,
+                repository.screenRecordingState
+            ) { promoted, recState ->
+                promoted to recState
+            }.collectLatest { (promoted, recState) ->
+                updateForegroundNotification(promoted, recState)
+                if (recState.isRecording) {
+                    while (true) {
+                        delay(2_000L)
+                        val synced = withContext(Dispatchers.IO) {
+                            repository.syncScreenRecordingStateFromHelper()
+                        }
+                        if (!synced.isRecording) {
+                            if (synced.lastStopReason == "low_storage") {
+                                overlayManager.showBottomToast("Recording saved (stopped: low storage)")
+                            }
+                            break
+                        }
+                    }
+                }
             }
         }
 
@@ -239,6 +269,7 @@ class AssistantForegroundService : Service() {
             ACTION_SHOW_MODE -> overlayManager.showAssistantOverlay(initialTab = 0)
             ACTION_SHOW_SETTINGS -> overlayManager.showAssistantOverlay(initialTab = 1)
             ACTION_HIDE_OVERLAY -> overlayManager.hideAssistantOverlay()
+            ACTION_STOP_RECORDING -> overlayManager.performStopScreenRecordingWithToast("notification")
             ACTION_TCC_KEY -> {
                 val keyActionDown = intent.getBooleanExtra(EXTRA_KEY_ACTION_DOWN, false)
                 val isLongPress = intent.getBooleanExtra(EXTRA_IS_LONG_PRESS, false)
@@ -362,12 +393,26 @@ class AssistantForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    internal fun updateForegroundNotification(promoted: Boolean) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm?.notify(NOTIFICATION_ID, createForegroundNotification(promoted))
+    private fun stopActiveRecordingOnPowerTransition(reason: String) {
+        if (!::repository.isInitialized) return
+        if (!repository.screenRecordingState.value.isRecording) return
+        serviceScope.launch(Dispatchers.IO) {
+            repository.stopScreenRecording(reason)
+        }
     }
 
-    internal fun createForegroundNotification(promoted: Boolean = false): Notification {
+    internal fun updateForegroundNotification(
+        promoted: Boolean,
+        recordingState: ScreenRecordingState = ScreenRecordingState()
+    ) {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm?.notify(NOTIFICATION_ID, createForegroundNotification(promoted, recordingState))
+    }
+
+    internal fun createForegroundNotification(
+        promoted: Boolean = false,
+        recordingState: ScreenRecordingState = ScreenRecordingState()
+    ): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         val channelTitle = if (promoted) {
             "Dual Screen Manager Service"
@@ -400,12 +445,50 @@ class AssistantForegroundService : Service() {
         )
 
         val appTitleRes = if (promoted) R.string.app_name_manager else R.string.app_name
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(appTitleRes))
-            .setContentText("Ready for TCC button & dual-screen controls")
-            .setSmallIcon(R.drawable.ic_dual_screen_display)
+            .setSmallIcon(
+                if (recordingState.isRecording) {
+                    R.drawable.ic_qs_screen_record
+                } else {
+                    R.drawable.ic_dual_screen_display
+                }
+            )
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .build()
+
+        if (recordingState.isRecording) {
+            val targetName = when (recordingState.targetMode) {
+                0 -> "Top"
+                1 -> "Bottom"
+                else -> "Both"
+            }
+            val elapsedMs = (SystemClock.elapsedRealtime() - recordingState.startedElapsedRealtimeMs)
+                .coerceAtLeast(0L)
+            val stopIntent = Intent(this, AssistantForegroundService::class.java).apply {
+                action = ACTION_STOP_RECORDING
+            }
+            val stopPendingIntent = PendingIntent.getService(
+                this,
+                1,
+                stopIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder
+                .setContentText("Recording $targetName screen — tap Stop to save")
+                .setUsesChronometer(true)
+                .setWhen(System.currentTimeMillis() - elapsedMs)
+                .addAction(
+                    Notification.Action.Builder(
+                        Icon.createWithResource(this, R.drawable.ic_qs_screen_record),
+                        "Stop Recording",
+                        stopPendingIntent
+                    ).build()
+                )
+        } else {
+            builder.setContentText("Ready for TCC button & dual-screen controls")
+        }
+
+        return builder.build()
     }
 }

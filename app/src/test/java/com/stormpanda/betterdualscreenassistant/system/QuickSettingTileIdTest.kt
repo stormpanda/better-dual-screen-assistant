@@ -39,7 +39,12 @@ class QuickSettingTileIdTest {
         assertTrue(QuickSettingTileId.CHARGING_SEPARATION !in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.WIFI in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.TOUCH_LOCK in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.SCREENSHOT in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.SCREEN_RECORD in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CLEAR_ALL_TASKS in QuickSettingTileId.defaultDisabled)
+        assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.SCREEN_RECORD.category)
+        assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title)
+        assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title)
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLEAR_ALL_TASKS.category)
     }
 

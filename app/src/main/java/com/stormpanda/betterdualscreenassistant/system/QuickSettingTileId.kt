@@ -154,6 +154,13 @@ enum class QuickSettingTileId(
         iconRes = R.drawable.ic_qs_screenshot,
         category = QuickSettingCategory.TOOLS
     ),
+    SCREEN_RECORD(
+        key = "screen_record",
+        title = "Screen Record",
+        description = "Record video and audio of the Top, Bottom, or Both screens",
+        iconRes = R.drawable.ic_qs_screen_record,
+        category = QuickSettingCategory.TOOLS
+    ),
     TRIGGER_MODE(
         key = "trigger_mode",
         title = "Trigger Mode",

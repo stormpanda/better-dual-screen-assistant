@@ -8,6 +8,8 @@
     *;
 }
 -keep class com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain$* { *; }
+-keep class com.stormpanda.betterdualscreenassistant.privileged.ScreenRecorderEngine { *; }
+-keep class com.stormpanda.betterdualscreenassistant.privileged.ScreenRecorderEngine$* { *; }
 
 # Keep AssistantForegroundService class name (targeted explicitly via shell `am start-foreground-service`
 # and `Intent.setClassName` from PrivilegedHelperMain's persistent supervisor)

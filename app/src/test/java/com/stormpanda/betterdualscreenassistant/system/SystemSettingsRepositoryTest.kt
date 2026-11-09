@@ -24,6 +24,15 @@ class SystemSettingsRepositoryTest {
 
     private lateinit var context: Context
     private val systemProps = mutableMapOf<String, String>()
+    private var simulatedRecActive = false
+    private var simulatedRecTarget = 0
+    private var simulatedRecStartMs = 0L
+    private var simulatedRecOutputPath = ""
+    private var simulatedRecCompletedPath = ""
+    private var simulatedRecStopReason = ""
+    private var lastCapturedRecFps = 0
+    private var lastCapturedRecInternal = false
+    private var lastCapturedRecMic = false
 
     @Before
     fun setUp() {
@@ -33,6 +42,15 @@ class SystemSettingsRepositoryTest {
             .clear()
             .commit()
         systemProps.clear()
+        simulatedRecActive = false
+        simulatedRecTarget = 0
+        simulatedRecStartMs = 0L
+        simulatedRecOutputPath = ""
+        simulatedRecCompletedPath = ""
+        simulatedRecStopReason = ""
+        lastCapturedRecFps = 0
+        lastCapturedRecInternal = false
+        lastCapturedRecMic = false
 
         val helper = mockk<IBinder>(relaxed = true)
         every { helper.isBinderAlive } returns true
@@ -64,6 +82,49 @@ class SystemSettingsRepositoryTest {
                     PrivilegedHelperMain.TRANSACTION_GET_BRIGHTNESS -> {
                         reply.writeNoException()
                         reply.writeFloatArray(floatArrayOf(0.5f, 0.0f, 1.0f, 0.5f))
+                    }
+                    PrivilegedHelperMain.TRANSACTION_START_SCREEN_RECORD -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        simulatedRecTarget = data.readInt()
+                        lastCapturedRecInternal = data.readInt() != 0
+                        lastCapturedRecMic = data.readInt() != 0
+                        lastCapturedRecFps = data.readInt()
+                        simulatedRecOutputPath = data.readString() ?: ""
+                        simulatedRecActive = true
+                        simulatedRecStartMs = 5_000L
+                        reply.writeNoException()
+                        reply.writeInt(1)
+                        reply.writeInt(1)
+                        reply.writeInt(simulatedRecTarget)
+                        reply.writeLong(simulatedRecStartMs)
+                        reply.writeString(simulatedRecOutputPath)
+                        reply.writeString(simulatedRecCompletedPath)
+                        reply.writeString(simulatedRecStopReason)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_STOP_SCREEN_RECORD -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        simulatedRecStopReason = data.readString() ?: "user"
+                        simulatedRecActive = false
+                        simulatedRecCompletedPath = simulatedRecOutputPath
+                        simulatedRecOutputPath = ""
+                        simulatedRecStartMs = 0L
+                        reply.writeNoException()
+                        reply.writeInt(0)
+                        reply.writeInt(simulatedRecTarget)
+                        reply.writeLong(0L)
+                        reply.writeString("")
+                        reply.writeString(simulatedRecCompletedPath)
+                        reply.writeString(simulatedRecStopReason)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_GET_SCREEN_RECORD_STATE -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        reply.writeNoException()
+                        reply.writeInt(if (simulatedRecActive) 1 else 0)
+                        reply.writeInt(simulatedRecTarget)
+                        reply.writeLong(simulatedRecStartMs)
+                        reply.writeString(simulatedRecOutputPath)
+                        reply.writeString(simulatedRecCompletedPath)
+                        reply.writeString(simulatedRecStopReason)
                     }
                     else -> {
                         reply.writeNoException()
@@ -557,5 +618,50 @@ class SystemSettingsRepositoryTest {
         )
 
         repo.unregister()
+    }
+
+    @Test
+    fun `screen recording preferences persist and start-stop-sync update screenRecordingState`() {
+        val repo = SystemSettingsRepository(context)
+        assertTrue(repo.screenRecordInternalAudio.value)
+        assertFalse(repo.screenRecordMicAudio.value)
+        assertEquals(60, repo.screenRecordFps.value)
+        assertFalse(repo.screenRecordingState.value.isRecording)
+
+        repo.setScreenRecordInternalAudio(false)
+        repo.setScreenRecordMicAudio(true)
+        repo.setScreenRecordFps(24) // clamps to 30
+        assertFalse(repo.screenRecordInternalAudio.value)
+        assertTrue(repo.screenRecordMicAudio.value)
+        assertEquals(30, repo.screenRecordFps.value)
+
+        // Verify persistence across new repository instance
+        val reloaded = SystemSettingsRepository(context)
+        assertFalse(reloaded.screenRecordInternalAudio.value)
+        assertTrue(reloaded.screenRecordMicAudio.value)
+        assertEquals(30, reloaded.screenRecordFps.value)
+
+        val started = reloaded.startScreenRecording(targetMode = 99, outputPath = "/tmp/test_both.mp4")
+        assertTrue(started)
+        assertFalse(lastCapturedRecInternal)
+        assertTrue(lastCapturedRecMic)
+        assertEquals(30, lastCapturedRecFps)
+        assertTrue(reloaded.screenRecordingState.value.isRecording)
+        assertEquals(2, reloaded.screenRecordingState.value.targetMode)
+        assertEquals("/tmp/test_both.mp4", reloaded.screenRecordingState.value.outputPath)
+
+        // Verify syncScreenRecordingStateFromHelper reflects live helper state on a fresh instance
+        val synced = repo.syncScreenRecordingStateFromHelper()
+        assertTrue(synced.isRecording)
+        assertEquals(2, synced.targetMode)
+        assertEquals("/tmp/test_both.mp4", synced.outputPath)
+
+        val stoppedState = reloaded.stopScreenRecording("user")
+        assertFalse(stoppedState.isRecording)
+        assertEquals("/tmp/test_both.mp4", stoppedState.lastCompletedPath)
+        assertEquals("user", stoppedState.lastStopReason)
+
+        repo.unregister()
+        reloaded.unregister()
     }
 }

@@ -264,6 +264,12 @@ class ScreenOverlayManager(
                         onCaptureScreenshotRequest = { targetMode ->
                             performScreenshotWithToast(targetMode)
                         },
+                        onStartScreenRecordingRequest = { targetMode ->
+                            performStartScreenRecording(targetMode)
+                        },
+                        onStopScreenRecordingRequest = {
+                            performStopScreenRecordingWithToast()
+                        },
                         onOpenEditRequest = {
                             openMainActivityOnTopScreen()
                         },
@@ -521,6 +527,38 @@ class ScreenOverlayManager(
                 }
             }.start()
         }, 280L)
+    }
+
+    fun performStartScreenRecording(targetMode: Int) {
+        hideAssistantOverlay()
+        mainHandler.postDelayed({
+            Thread {
+                val ok = repository.startScreenRecording(targetMode)
+                if (!ok) {
+                    val stopReason = repository.screenRecordingState.value.lastStopReason
+                    mainHandler.post {
+                        if (stopReason == "low_storage") {
+                            showBottomToast("Insufficient storage (<250 MB) to start recording")
+                        } else {
+                            showBottomToast("Failed to start screen recording")
+                        }
+                    }
+                }
+            }.start()
+        }, 280L)
+    }
+
+    fun performStopScreenRecordingWithToast(reason: String = "user") {
+        Thread {
+            val state = repository.stopScreenRecording(reason)
+            mainHandler.post {
+                if (state.lastCompletedPath.isNotEmpty()) {
+                    showBottomToast("Saved recording to Movies/ScreenRecordings")
+                } else {
+                    showBottomToast("Screen recording stopped")
+                }
+            }
+        }.start()
     }
 
     fun openMainActivityOnTopScreen() {

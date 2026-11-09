@@ -113,9 +113,10 @@ object PrivilegedBridge {
             val appCtx = context.applicationContext
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 try {
-                    com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+                    val repo = com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
                         .getInstance(appCtx)
-                        .refreshDisplayBrightness()
+                    repo.refreshDisplayBrightness()
+                    repo.syncScreenRecordingStateFromHelper()
                 } catch (_: Throwable) {
                 }
             }
@@ -1010,5 +1011,150 @@ object PrivilegedBridge {
             }
         }
         PServerClient.setStockProcessFrozenForBroadcastFallback(freeze)
+    }
+
+    data class ScreenRecordHelperStatus(
+        val isRecording: Boolean = false,
+        val targetMode: Int = 0,
+        val startedElapsedRealtimeMs: Long = 0L,
+        val outputPath: String = "",
+        val lastCompletedPath: String = "",
+        val lastStopReason: String = ""
+    )
+
+    private fun readScreenRecordHelperStatusFromParcel(reply: Parcel): ScreenRecordHelperStatus {
+        val isRecording = reply.readInt() != 0
+        val targetMode = reply.readInt()
+        val startedElapsedRealtimeMs = reply.readLong()
+        val outputPath = reply.readString() ?: ""
+        val lastCompletedPath = reply.readString() ?: ""
+        val lastStopReason = reply.readString() ?: ""
+        return ScreenRecordHelperStatus(
+            isRecording = isRecording,
+            targetMode = targetMode,
+            startedElapsedRealtimeMs = startedElapsedRealtimeMs,
+            outputPath = outputPath,
+            lastCompletedPath = lastCompletedPath,
+            lastStopReason = lastStopReason
+        )
+    }
+
+    /**
+     * Starts hardware screen recording inside [PrivilegedHelperMain].
+     * Returns a pair of `(startedOk, currentHelperStatus)`.
+     */
+    fun startScreenRecording(
+        context: Context,
+        targetMode: Int,
+        includeInternalAudio: Boolean,
+        includeMicAudio: Boolean,
+        fps: Int,
+        outputPath: String
+    ): Pair<Boolean, ScreenRecordHelperStatus> {
+        var binder = helperBinder
+        if (binder == null || !binder.isBinderAlive) {
+            ensureStarted(context)
+            var waitedMs = 0L
+            while ((binder == null || !binder.isBinderAlive) && waitedMs < 1200L) {
+                try {
+                    Thread.sleep(60L)
+                } catch (_: InterruptedException) {
+                    break
+                }
+                waitedMs += 60L
+                binder = helperBinder
+            }
+        }
+        val activeBinder = binder
+        if (activeBinder != null && activeBinder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeInt(targetMode)
+                data.writeInt(if (includeInternalAudio) 1 else 0)
+                data.writeInt(if (includeMicAudio) 1 else 0)
+                data.writeInt(fps)
+                data.writeString(outputPath)
+                activeBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_START_SCREEN_RECORD,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                val started = reply.readInt() != 0
+                val status = readScreenRecordHelperStatusFromParcel(reply)
+                return started to status
+            } catch (t: Throwable) {
+                Log.e(TAG, "Helper startScreenRecording failed", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        ensureStarted(context)
+        return false to ScreenRecordHelperStatus()
+    }
+
+    /**
+     * Stops and finalizes any active screen recording inside [PrivilegedHelperMain].
+     */
+    fun stopScreenRecording(
+        context: Context? = null,
+        reason: String = "user"
+    ): ScreenRecordHelperStatus {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeString(reason)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_STOP_SCREEN_RECORD,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                return readScreenRecordHelperStatusFromParcel(reply)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Helper stopScreenRecording($reason) failed", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        context?.let { ensureStarted(it) }
+        return ScreenRecordHelperStatus()
+    }
+
+    /**
+     * Queries the current screen recording status from [PrivilegedHelperMain] without spawning
+     * any threads or processes if disconnected.
+     */
+    fun getScreenRecordingState(): ScreenRecordHelperStatus {
+        val binder = helperBinder ?: return ScreenRecordHelperStatus()
+        if (!binder.isBinderAlive) return ScreenRecordHelperStatus()
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            binder.transact(
+                PrivilegedHelperMain.TRANSACTION_GET_SCREEN_RECORD_STATE,
+                data,
+                reply,
+                0
+            )
+            reply.readException()
+            readScreenRecordHelperStatusFromParcel(reply)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper getScreenRecordingState failed", t)
+            ScreenRecordHelperStatus()
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
     }
 }

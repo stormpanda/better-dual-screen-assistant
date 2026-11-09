@@ -714,7 +714,8 @@ fun TccOptionDialog(
     onSelectAccentColor: ((Color) -> Unit)? = null,
     showOsThemeToggle: Boolean = false,
     injectOsThemeEnabled: Boolean = false,
-    onToggleInjectOsTheme: ((Boolean) -> Unit)? = null
+    onToggleInjectOsTheme: ((Boolean) -> Unit)? = null,
+    footerContent: (@Composable () -> Unit)? = null
 ) {
     val colors = LocalTccColors.current
 
@@ -818,7 +819,7 @@ fun TccOptionDialog(
                         )
                     }
 
-                    if (index < options.lastIndex || (showCustomFanSlider && selectedId == 6) || accentPresets.isNotEmpty() || showOsThemeToggle) {
+                    if (index < options.lastIndex || (showCustomFanSlider && selectedId == 6) || accentPresets.isNotEmpty() || showOsThemeToggle || footerContent != null) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -953,6 +954,124 @@ fun TccOptionDialog(
                         text = "${customFanSpeed.coerceIn(35, 100)}%",
                         color = colors.primary,
                         fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (footerContent != null) {
+                footerContent()
+            }
+        }
+    }
+}
+
+@Composable
+fun TccDialogToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTccColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            color = colors.primary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
+
+        val trackColor = if (checked) colors.accent else colors.fourth
+        val thumbColor = if (checked) {
+            if (colors.isMegingiardStyle) colors.onAccent else Color.White
+        } else {
+            colors.secondary
+        }
+        Box(
+            modifier = Modifier
+                .width(38.dp)
+                .height(20.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(trackColor)
+                .then(
+                    if (!checked) {
+                        Modifier.border(1.dp, colors.tertiary, RoundedCornerShape(10.dp))
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(horizontal = 2.dp),
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(thumbColor)
+            )
+        }
+    }
+}
+
+@Composable
+fun TccDialogFpsSelectorRow(
+    selectedFps: Int,
+    onSelectFps: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTccColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "Frame Rate",
+            color = colors.primary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
+
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(colors.fourth)
+                .padding(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf(30, 60).forEach { fpsOption ->
+                val isSelected = (if (selectedFps <= 30) 30 else 60) == fpsOption
+                val pillBg = if (isSelected) colors.accent else Color.Transparent
+                val pillFg = if (isSelected) {
+                    if (colors.isMegingiardStyle) colors.onAccent else Color.White
+                } else {
+                    colors.secondary
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(pillBg)
+                        .clickable { onSelectFps(fpsOption) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$fpsOption FPS",
+                        color = pillFg,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
