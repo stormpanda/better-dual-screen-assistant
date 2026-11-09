@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.WindowManager
 import androidx.test.core.app.ApplicationProvider
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
@@ -37,6 +38,8 @@ class ScreenOverlayManagerTest {
 
     @Before
     fun setUp() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         mockRepository = mockk(relaxed = true)
         mockTelemetryMonitor = mockk(relaxed = true)
@@ -46,12 +49,15 @@ class ScreenOverlayManagerTest {
         every { PrivilegedBridge.setDisplayBrightness(any(), any(), any(), any()) } just runs
         every { PrivilegedBridge.setTopScreenBlanked(any(), any(), any()) } just runs
         every { PrivilegedBridge.setBottomScreenBlanked(any(), any(), any()) } just runs
+        every { PrivilegedBridge.setBacklightPower(any(), any(), any()) } just runs
         every { PrivilegedBridge.updateSavedBrightness(any(), any()) } just runs
         every { PrivilegedBridge.setSystemProperty(any(), any()) } just runs
     }
 
     @After
     fun tearDown() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         unmockkAll()
     }
 
@@ -238,5 +244,48 @@ class ScreenOverlayManagerTest {
         manager.performClearAllTasksWithToast()
         ShadowLooper.idleMainLooper(300L, java.util.concurrent.TimeUnit.MILLISECONDS)
         verify(timeout = 1_500L, exactly = 1) { mockRepository.clearAllRecentTasks() }
+    }
+
+    @Test
+    fun `Retroid Pocket Duo blanks via panel backlight sysfs without cover window or negative brightness`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+
+        val method = ScreenOverlayManager::class.java.getDeclaredMethod(
+            "createBlankOverlayLayoutParams",
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        val retroidBottomLp = method.invoke(manager, 2, 1280, 960) as WindowManager.LayoutParams
+        assertEquals(0, retroidBottomLp.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+
+        // Mode 1: Only Top -> blanks panel 1 via sysfs, leaves panel 0 unblanked
+        manager.applyDisplayModeOverlays(1)
+        ShadowLooper.idleMainLooper()
+        assertFalse(manager.isTopScreenBlanked)
+        assertTrue(manager.isBottomScreenBlanked)
+        verify { PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = true) }
+        verify(exactly = 0) { PrivilegedBridge.setBottomScreenBlanked(any(), any(), any()) }
+        verify(exactly = 0) { PrivilegedBridge.setDisplayBrightness(any(), any(), -1.0f, any()) }
+
+        // Mode 2: Only Bottom -> blanks panel 0 via sysfs, unblanks panel 1
+        manager.applyDisplayModeOverlays(2)
+        ShadowLooper.idleMainLooper()
+        assertTrue(manager.isTopScreenBlanked)
+        assertFalse(manager.isBottomScreenBlanked)
+        verify { PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = true) }
+        verify { PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = false) }
+
+        // Interactive wake re-asserts backlight power on blanked panel
+        manager.onDeviceScreenInteractiveChanged(true)
+        ShadowLooper.idleMainLooper()
+        verify { mockRepository.reapplyTouchDisableForCurrentMode() }
+        verify(atLeast = 2) { PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = true) }
     }
 }

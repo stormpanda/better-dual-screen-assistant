@@ -1,9 +1,21 @@
 package com.stormpanda.betterdualscreenassistant.ui.theme
 
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
+import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
 import com.stormpanda.betterdualscreenassistant.ui.overlay.formatCpuTemperature
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -139,5 +151,95 @@ class TccThemeAndOverlayFormatTest {
 
         assertEquals("100℃", formatCpuTemperature(100f, useFahrenheit = false))
         assertEquals("212℉", formatCpuTemperature(100f, useFahrenheit = true))
+    }
+
+    @Test
+    fun `TccUiLookPreference resolves Auto per DeviceProfile and works orthogonally with all themes`() {
+        assertEquals(TccUiLookPreference.AUTO, TccUiLookPreference.fromId(0))
+        assertEquals(TccUiLookPreference.AYN, TccUiLookPreference.fromId(1))
+        assertEquals(TccUiLookPreference.RETROID, TccUiLookPreference.fromId(2))
+        assertEquals(TccUiLookPreference.AUTO, TccUiLookPreference.fromId(999))
+
+        assertEquals(TccUiLook.AYN, TccUiLookPreference.AUTO.resolve(DeviceProfile.AYN_THOR))
+        assertEquals(TccUiLook.RETROID, TccUiLookPreference.AUTO.resolve(DeviceProfile.RETROID_POCKET_DUO))
+        assertEquals(TccUiLook.AYN, TccUiLookPreference.AYN.resolve(DeviceProfile.RETROID_POCKET_DUO))
+        assertEquals(TccUiLook.RETROID, TccUiLookPreference.RETROID.resolve(DeviceProfile.AYN_THOR))
+
+        assertEquals("Auto (AYN Smooth)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.AYN_THOR))
+        assertEquals("Auto (Retroid Pixel)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.RETROID_POCKET_DUO))
+
+        assertTrue(RetroidPixelTealSwatch in MegingiardAccentPresets)
+
+        // Every AppThemeOption palette resolves cleanly regardless of UI Look (AYN or RETROID)
+        for (look in TccUiLook.entries) {
+            for (option in AppThemeOption.entries) {
+                val palette = resolveTccPalette(
+                    option = option,
+                    systemDark = true,
+                    customAccentArgb = RetroidPixelTealSwatch.hashCode()
+                )
+                assertNotNull("$look x $option must produce valid palette", palette)
+                assertTrue(palette.panelBackground.alpha > 0f)
+            }
+        }
+    }
+
+    @Test
+    fun `retroidPixelDrawableOrNull maps all quick setting navigation and status icons to rp_ic resources`() {
+        for (tile in QuickSettingTileId.entries) {
+            val mapped = retroidPixelDrawableOrNull(tile.iconRes)
+            assertNotNull("Missing rp_ic_* mapping for ${tile.name}", mapped)
+            assertNotEquals(tile.iconRes, mapped)
+        }
+
+        val additionalIcons = listOf(
+            R.drawable.ic_screen_control,
+            R.drawable.ic_task_manage,
+            R.drawable.ic_system_set,
+            R.drawable.ic_nav_edit,
+            R.drawable.ic_brightness_0,
+            R.drawable.ic_brightness_1,
+            R.drawable.ic_brightness_2,
+            R.drawable.ic_volume_0,
+            R.drawable.ic_volume_1,
+            R.drawable.ic_volume_2,
+            R.drawable.ic_volume_3,
+            R.drawable.ic_status_wifi_0,
+            R.drawable.ic_status_wifi_1,
+            R.drawable.ic_status_wifi_2,
+            R.drawable.ic_status_wifi_3,
+            R.drawable.ic_headset,
+            R.drawable.ic_temp,
+            R.drawable.ic_fan_normal,
+            R.drawable.ic_tip
+        )
+        for (resId in additionalIcons) {
+            val mapped = retroidPixelDrawableOrNull(resId)
+            assertNotNull("Expected rp_ic_* mapping for resId=$resId", mapped)
+            assertNotEquals(resId, mapped)
+        }
+
+        // Preserved multi-color theme preview icons stay untouched
+        assertNull(retroidPixelDrawableOrNull(R.drawable.ic_qs_system_theme))
+        assertNull(retroidPixelDrawableOrNull(R.drawable.ic_qs_light_theme))
+        assertNull(retroidPixelDrawableOrNull(R.drawable.ic_qs_dark_theme))
+    }
+
+    @Test
+    fun `PixelNotchedShape builds generic notched path and falls back to rectangle when notch is zero`() {
+        val density = Density(2f)
+        val notchedOutline = PixelNotchedShape(6.dp).createOutline(
+            size = Size(120f, 80f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(notchedOutline is Outline.Generic)
+
+        val zeroOutline = PixelNotchedShape(0.dp).createOutline(
+            size = Size(120f, 80f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(zeroOutline is Outline.Rectangle)
     }
 }

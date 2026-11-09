@@ -666,6 +666,53 @@ class PrivilegedBinderProviderAndHelperTest {
         assertTrue(exited)
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_SET_BACKLIGHT_POWER writes allowlisted panels and restoreDisplayAndStockAssistant resets both panels`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val writes = mutableListOf<Pair<Int, Boolean>>()
+        helperBinder.backlightWriteOverride = { panelIndex, blanked ->
+            writes.add(panelIndex to blanked)
+        }
+
+        fun sendBacklightTx(panelIndex: Int, blanked: Boolean) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeInt(panelIndex)
+                writeInt(if (blanked) 1 else 0)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SET_BACKLIGHT_POWER,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+        }
+
+        sendBacklightTx(panelIndex = 1, blanked = true)
+        sendBacklightTx(panelIndex = 0, blanked = false)
+        // Out-of-range panel indices are ignored safely
+        sendBacklightTx(panelIndex = -1, blanked = true)
+        sendBacklightTx(panelIndex = 2, blanked = true)
+
+        assertEquals(listOf(1 to true, 0 to false), writes)
+
+        // Uninstall recovery resets both panel0 and panel1 bl_power to false ("0")
+        writes.clear()
+        val restoreMethod = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredMethod("restoreDisplayAndStockAssistant").apply { isAccessible = true }
+        restoreMethod.invoke(helperBinder)
+
+        assertTrue(writes.contains(0 to false))
+        assertTrue(writes.contains(1 to false))
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

@@ -101,6 +101,8 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -121,18 +123,25 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingCategory
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.RetroidPixelTealSwatch
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
+import com.stormpanda.betterdualscreenassistant.ui.theme.contrastingContentColor
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
 import com.stormpanda.megingiard.settings.ThemeMode
 import com.stormpanda.megingiard.ui.AppColors
 import com.stormpanda.megingiard.ui.AppPalettes
@@ -203,6 +212,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val themeModeId by repo.themeMode.collectAsState()
+            val uiLookMode by repo.uiLookMode.collectAsState()
             val customAccentArgb by repo.customAccentArgb.collectAsState()
             val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
             val syncedMegingiardAccentArgb by repo.syncedMegingiardAccentArgb.collectAsState()
@@ -228,6 +238,7 @@ class MainActivity : ComponentActivity() {
 
             TccTheme(
                 themeMode = themeModeId,
+                uiLookMode = uiLookMode,
                 customAccentArgb = customAccentArgb,
                 syncedMegingiardOption = syncedMegingiardOption,
                 syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
@@ -325,7 +336,7 @@ class MainActivity : ComponentActivity() {
         } catch (_: UnsupportedOperationException) {
             Display.DEFAULT_DISPLAY
         }
-        if (currentDisplayId != ScreenOverlayManager.BOTTOM_DISPLAY_ID) {
+        if (currentDisplayId != DeviceProfile.current(this).bottomDisplayId) {
             AssistantForegroundService.startService(
                 this,
                 AssistantForegroundService.ACTION_SHOW_OVERLAY
@@ -491,8 +502,15 @@ private enum class ThemeSourceOption(
 ) {
     STOCK("Stock AYN"),
     SYNC_MEGINGIARD("Sync with Megingiard"),
-    CUSTOM_PALETTE("Custom Palette")
+    CUSTOM_PALETTE("Custom Palette");
+
+    fun displayNameFor(profile: DeviceProfile): String = when {
+        this == STOCK && profile == DeviceProfile.RETROID_POCKET_DUO -> "Stock Retroid"
+        else -> displayName
+    }
 }
+
+private val BdsaAccentPresets: List<Color> = AppPalettes.accentPresets + RetroidPixelTealSwatch
 
 private val StockThemeOptions = listOf(
     AppThemeOption.STOCK_SYSTEM,
@@ -515,10 +533,12 @@ private val MegingiardThemeOptions = listOf(
 @Composable
 private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val context = LocalContext.current
+    val profile = remember(context) { DeviceProfile.current(context) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val themeModeId by repo.themeMode.collectAsState()
+    val uiLookMode by repo.uiLookMode.collectAsState()
     val selectedTheme = AppThemeOption.fromId(themeModeId)
     val customAccentArgb by repo.customAccentArgb.collectAsState()
     val injectSystemTheme by repo.injectOsTheme.collectAsState()
@@ -572,7 +592,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     var customSwatchColorArgb by rememberSaveable { mutableIntStateOf(customAccentArgb) }
 
     LaunchedEffect(customAccentArgb) {
-        if (Color(customAccentArgb) !in AppPalettes.accentPresets) {
+        if (Color(customAccentArgb) !in BdsaAccentPresets) {
             customSwatchColorArgb = customAccentArgb
         }
     }
@@ -749,6 +769,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                     when (selectedCategory) {
                                         LauncherCategory.GENERAL -> {
                                             GeneralSettingsTabContent(
+                                                profile = profile,
                                                 updateAvailable = updateAvailable,
                                                 latestReleaseInfo = latestReleaseInfo,
                                                 stockDisabled = stockDisabled,
@@ -803,6 +824,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 
                                         LauncherCategory.QUICK_TOGGLES -> {
                                             QuickTogglesSettingsTabContent(
+                                                profile = profile,
                                                 quickTileOrder = quickTileOrder,
                                                 disabledQuickTiles = disabledQuickTiles,
                                                 onMoveActiveTile = { fromIndex, toIndex ->
@@ -822,7 +844,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 
                                         LauncherCategory.APPEARANCE -> {
                                             AppearanceSettingsTabContent(
+                                                profile = profile,
                                                 selectedTheme = selectedTheme,
+                                                uiLookMode = uiLookMode,
                                                 customAccentArgb = customAccentArgb,
                                                 customSwatchColorArgb = customSwatchColorArgb,
                                                 injectSystemTheme = injectSystemTheme,
@@ -830,6 +854,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 isMegingiardAvailable = isMegingiardAvailable,
                                                 promotedToManager = promotedToManager,
                                                 onSelectTheme = { repo.setThemeMode(it.id) },
+                                                onSetUiLookMode = { repo.setUiLookMode(it) },
                                                 onSelectAccentColor = { repo.setCustomAccentArgb(it) },
                                                 onOpenCustomAccent = {
                                                     subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
@@ -860,6 +885,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                         LauncherCategory.DIAGNOSTICS -> {
                                             if (BuildConfig.DEBUG) {
                                                 DiagnosticsSettingsTabContent(
+                                                    profile = profile,
                                                     helperConnected = helperConnected,
                                                     pServerAvailable = pServerAvailable,
                                                     stockDisabled = stockDisabled,
@@ -913,6 +939,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                     )
                                 ) {
                                     EnableDisableTogglesSubPageContent(
+                                        profile = profile,
                                         quickTileOrder = quickTileOrder,
                                         disabledQuickTiles = disabledQuickTiles,
                                         promotedToManager = promotedToManager,
@@ -956,6 +983,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 
 @Composable
 private fun GeneralSettingsTabContent(
+    profile: DeviceProfile,
     updateAvailable: Boolean,
     latestReleaseInfo: AppReleaseInfo?,
     stockDisabled: Boolean,
@@ -982,6 +1010,11 @@ private fun GeneralSettingsTabContent(
         if (promotedToManager) R.string.app_name_manager else R.string.app_name
     )
     val roleLower = if (promotedToManager) "manager" else "assistant"
+    val physicalButtonLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
+        "physical TCC button"
+    } else {
+        "physical AYN button"
+    }
 
     if (updateAvailable && latestReleaseInfo != null) {
         GamepadActionCard(
@@ -998,9 +1031,9 @@ private fun GeneralSettingsTabContent(
     GamepadToggleCard(
         title = "Replace Stock Assistant",
         description = if (stockDisabled) {
-            "Stock DualScreenAssistant is suppressed; physical AYN button opens $appDisplayName"
+            "Stock DualScreenAssistant is suppressed; $physicalButtonLabel opens $appDisplayName"
         } else {
-            "Stock DualScreenAssistant is currently active; enable to take over the physical AYN button"
+            "Stock DualScreenAssistant is currently active; enable to take over the $physicalButtonLabel"
         },
         checked = stockDisabled,
         icon = Icons.Rounded.Layers,
@@ -1049,13 +1082,15 @@ private fun GeneralSettingsTabContent(
         onCheckedChange = onToggleShowSwapScreensButton
     )
 
-    GamepadToggleCard(
-        title = "Show Stick LED Brightness Slider",
-        description = "Add a 4th brightness slider in the Mode tab to control joystick & ambient LED brightness",
-        checked = showLedBrightnessSlider,
-        icon = Icons.Rounded.Tune,
-        onCheckedChange = onToggleShowLedBrightnessSlider
-    )
+    if (profile.supportsAmbientLight) {
+        GamepadToggleCard(
+            title = "Show Stick LED Brightness Slider",
+            description = "Add a 4th brightness slider in the Mode tab to control joystick & ambient LED brightness",
+            checked = showLedBrightnessSlider,
+            icon = Icons.Rounded.Tune,
+            onCheckedChange = onToggleShowLedBrightnessSlider
+        )
+    }
 
     GamepadToggleCard(
         title = "Confirm Before Turning Off Bottom Screen",
@@ -1080,6 +1115,7 @@ private fun GeneralSettingsTabContent(
 
 @Composable
 private fun QuickTogglesSettingsTabContent(
+    profile: DeviceProfile,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     onMoveActiveTile: (fromIndex: Int, toIndex: Int) -> Unit,
@@ -1087,14 +1123,31 @@ private fun QuickTogglesSettingsTabContent(
     onResetDefaults: () -> Unit,
     onGridActiveChanged: (Boolean) -> Unit
 ) {
-    val activeTiles = remember(quickTileOrder, disabledQuickTiles) {
-        quickTileOrder.filter { it !in disabledQuickTiles }
+    val supportedTiles = remember(profile) { QuickSettingTileId.supportedEntries(profile) }
+    val supportedSet = remember(supportedTiles) { supportedTiles.toSet() }
+    val activeTiles = remember(quickTileOrder, disabledQuickTiles, supportedSet) {
+        quickTileOrder.filter { it in supportedSet && it !in disabledQuickTiles }
     }
-    val totalCount = QuickSettingTileId.entries.size
+    val totalCount = supportedTiles.size
     val activeCount = activeTiles.size
-    val isModified = remember(quickTileOrder, disabledQuickTiles) {
-        quickTileOrder != QuickSettingTileId.defaultOrder ||
-            disabledQuickTiles != QuickSettingTileId.defaultDisabled
+    val supportedDefaultOrder = remember(profile) {
+        QuickSettingTileId.defaultOrder.filter { it.isSupportedOn(profile) }
+    }
+    val supportedDefaultDisabled = remember(profile) {
+        QuickSettingTileId.defaultDisabled.filter { it.isSupportedOn(profile) }.toSet()
+    }
+    val supportedDisabled = remember(disabledQuickTiles, supportedSet) {
+        disabledQuickTiles.intersect(supportedSet)
+    }
+    val isModified = remember(
+        quickTileOrder,
+        supportedDisabled,
+        supportedSet,
+        supportedDefaultOrder,
+        supportedDefaultDisabled
+    ) {
+        quickTileOrder.filter { it in supportedSet } != supportedDefaultOrder ||
+            supportedDisabled != supportedDefaultDisabled
     }
 
     QuickTogglesVisualReorderCard(
@@ -1106,12 +1159,12 @@ private fun QuickTogglesSettingsTabContent(
 
     GamepadActionCard(
         title = "Enable / Disable Toggles",
-        description = "Configure Stock AYN toggles, Android System toggles, and Tools",
+        description = "Configure ${QuickSettingCategory.STOCK_AYN.titleFor(profile)}, Android System toggles, and Tools",
         icon = Icons.Rounded.Checklist,
         trailingContent = {
             GamepadPill(
                 text = "$activeCount / $totalCount Active",
-                isAccent = disabledQuickTiles != QuickSettingTileId.defaultDisabled
+                isAccent = supportedDisabled != supportedDefaultDisabled
             )
         },
         onClick = onOpenEnableDisableSubPage
@@ -1394,21 +1447,25 @@ private fun QuickTogglesVisualReorderCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Compact QuickSettingsPanel replica (2x4 paged grid + bottom page indicator)
+            val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+            val previewShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(16.dp)
             Column(
                 modifier = Modifier
                     .widthIn(max = 420.dp)
                     .fillMaxWidth()
                     .height(if (pageCount > 1) 174.dp else 160.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(previewShape)
                     .background(tccColors.panelBackground)
                     .border(
                         width = if (isGridActive) 1.5.dp else 1.dp,
                         color = if (isGridActive) {
                             appColors.accent.copy(alpha = 0.65f)
+                        } else if (isRetroidLook) {
+                            tccColors.fourth
                         } else {
                             appColors.onSurface.copy(alpha = 0.10f)
                         },
-                        shape = RoundedCornerShape(16.dp)
+                        shape = previewShape
                     )
                     .padding(top = 12.dp, bottom = if (pageCount > 1) 8.dp else 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1500,7 +1557,7 @@ private fun QuickTogglesVisualReorderCard(
                                 Box(
                                     modifier = Modifier
                                         .size(5.dp)
-                                        .clip(CircleShape)
+                                        .clip(if (isRetroidLook) RectangleShape else CircleShape)
                                         .background(if (isSelected) tccColors.accent else tccColors.secondary)
                                         .focusProperties { canFocus = false }
                                         .clickable {
@@ -1533,6 +1590,11 @@ private fun ReorderableTccTile(
 ) {
     val tccColors = LocalTccColors.current
     val appColors = LocalAppColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val pixelFont = tccFontFamily()
+    val tileShape: Shape = if (isRetroidLook) PixelNotchedShape(6.dp) else CircleShape
+    val slotContainerShape: Shape = if (isRetroidLook) PixelNotchedShape(5.dp) else RoundedCornerShape(8.dp)
+    val badgeShape: Shape = if (isRetroidLook) PixelNotchedShape(3.dp) else RoundedCornerShape(5.dp)
     val interactionSource = remember { MutableInteractionSource() }
 
     val scale by animateFloatAsState(
@@ -1542,7 +1604,9 @@ private fun ReorderableTccTile(
     )
 
     val iconTint = if (isGrabbed) {
-        if (tccColors.isMegingiardStyle) {
+        if (isRetroidLook) {
+            tccColors.accent.contrastingContentColor()
+        } else if (tccColors.isMegingiardStyle) {
             tccColors.onAccent
         } else if (tccColors.isDark) {
             Color.White
@@ -1562,7 +1626,7 @@ private fun ReorderableTccTile(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(8.dp))
+            .clip(slotContainerShape)
             .background(
                 when {
                     isGrabbed -> appColors.accent.copy(alpha = 0.18f)
@@ -1572,9 +1636,9 @@ private fun ReorderableTccTile(
             )
             .then(
                 if (isGrabbed) {
-                    Modifier.border(2.dp, appColors.accent, RoundedCornerShape(8.dp))
+                    Modifier.border(2.dp, appColors.accent, slotContainerShape)
                 } else if (isCursorSelected) {
-                    Modifier.border(1.5.dp, appColors.accent.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
+                    Modifier.border(1.5.dp, appColors.accent.copy(alpha = 0.85f), slotContainerShape)
                 } else {
                     Modifier
                 }
@@ -1599,9 +1663,19 @@ private fun ReorderableTccTile(
                 Box(
                     modifier = Modifier
                         .size(35.dp)
-                        .clip(CircleShape)
+                        .clip(tileShape)
                         .then(
-                            if (isGrabbed) {
+                            if (isRetroidLook) {
+                                if (isGrabbed) {
+                                    Modifier
+                                        .background(tccColors.accent)
+                                        .border(1.dp, tccColors.accent, tileShape)
+                                } else {
+                                    Modifier
+                                        .background(tccColors.fifth)
+                                        .border(1.dp, tccColors.fourth, tileShape)
+                                }
+                            } else if (isGrabbed) {
                                 if (tccColors.isMegingiardStyle) {
                                     Modifier.background(tccColors.accent)
                                 } else if (tccColors.isDark) {
@@ -1636,7 +1710,7 @@ private fun ReorderableTccTile(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .clip(RoundedCornerShape(5.dp))
+                        .clip(badgeShape)
                         .background(
                             if (isGrabbed || isCursorSelected) {
                                 appColors.accent
@@ -1656,7 +1730,8 @@ private fun ReorderableTccTile(
                         },
                         fontSize = 8.5.sp,
                         lineHeight = 9.5.sp,
-                        fontWeight = FontWeight.Bold
+                        fontFamily = pixelFont,
+                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                     )
                 }
             }
@@ -1675,8 +1750,16 @@ private fun ReorderableTccTile(
                     color = textColor,
                     fontSize = 10.sp,
                     lineHeight = 11.sp,
-                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                    fontWeight = if (isCursorSelected || isGrabbed) FontWeight.SemiBold else FontWeight.Normal,
+                    fontFamily = pixelFont,
+                    style = TextStyle(
+                        fontFamily = pixelFont,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    ),
+                    fontWeight = if (!isRetroidLook && (isCursorSelected || isGrabbed)) {
+                        FontWeight.SemiBold
+                    } else {
+                        FontWeight.Normal
+                    },
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -1688,28 +1771,31 @@ private fun ReorderableTccTile(
 
 @Composable
 private fun EnableDisableTogglesSubPageContent(
+    profile: DeviceProfile,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     promotedToManager: Boolean,
     onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit
 ) {
-    val totalCount = QuickSettingTileId.entries.size
-    val enabledCount = totalCount - disabledQuickTiles.size
+    val supportedTiles = remember(profile) { QuickSettingTileId.supportedEntries(profile) }
+    val supportedSet = remember(supportedTiles) { supportedTiles.toSet() }
+    val totalCount = supportedTiles.size
+    val enabledCount = supportedTiles.count { it !in disabledQuickTiles }
 
     GamepadInfoBox(
         text = "Toggle Visibility ($enabledCount of $totalCount Active)",
-        description = "Stock AYN toggles are enabled by default; Android System toggles and Tools are disabled by default. At least 1 toggle must remain enabled."
+        description = "${QuickSettingCategory.STOCK_AYN.titleFor(profile)} are enabled by default; Android System toggles and Tools are disabled by default. At least 1 toggle must remain enabled."
     )
 
     var isFirstItem = true
     QuickSettingCategory.entries.forEach { category ->
-        val categoryTiles = remember(quickTileOrder, category) {
-            quickTileOrder.filter { it.category == category }
+        val categoryTiles = remember(quickTileOrder, category, supportedSet) {
+            quickTileOrder.filter { it in supportedSet && it.category == category }
         }
         val activeInCategory = categoryTiles.count { it !in disabledQuickTiles }
 
         GamepadSectionHeader(
-            text = "${category.title} ($activeInCategory / ${categoryTiles.size})"
+            text = "${category.titleFor(profile)} ($activeInCategory / ${categoryTiles.size})"
         )
 
         categoryTiles.forEach { tile ->
@@ -1721,7 +1807,7 @@ private fun EnableDisableTogglesSubPageContent(
             } else {
                 Modifier
             }
-            val tileDescription = tile.descriptionFor(promotedToManager)
+            val tileDescription = tile.descriptionFor(promotedToManager, profile)
             GamepadToggleCard(
                 title = tile.title,
                 description = if (!canToggle) {
@@ -1743,7 +1829,9 @@ private fun EnableDisableTogglesSubPageContent(
 
 @Composable
 private fun AppearanceSettingsTabContent(
+    profile: DeviceProfile,
     selectedTheme: AppThemeOption,
+    uiLookMode: Int,
     customAccentArgb: Int,
     customSwatchColorArgb: Int,
     injectSystemTheme: Boolean,
@@ -1751,10 +1839,16 @@ private fun AppearanceSettingsTabContent(
     isMegingiardAvailable: Boolean,
     promotedToManager: Boolean,
     onSelectTheme: (AppThemeOption) -> Unit,
+    onSetUiLookMode: (Int) -> Unit,
     onSelectAccentColor: (Int) -> Unit,
     onOpenCustomAccent: () -> Unit,
     onToggleInjectSystemTheme: (Boolean) -> Unit
 ) {
+    val stockVendorLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) "Stock Retroid" else "Stock AYN"
+    val stockVendorName = if (profile == DeviceProfile.RETROID_POCKET_DUO) "Retroid" else "AYN"
+    val selectedUiLookPref = TccUiLookPreference.fromId(uiLookMode)
+    val uiLookOptions = TccUiLookPreference.entries
+
     val availableSources = remember(isMegingiardAvailable) {
         if (isMegingiardAvailable) {
             listOf(
@@ -1814,11 +1908,11 @@ private fun AppearanceSettingsTabContent(
     GamepadChoiceCard(
         title = "Theme Source",
         description = if (isMegingiardAvailable) {
-            "Choose between Stock AYN themes, live Megingiard sync, or standalone custom palettes"
+            "Choose between $stockVendorLabel themes, live Megingiard sync, or standalone custom palettes"
         } else {
-            "Choose between Stock AYN themes or standalone custom palettes"
+            "Choose between $stockVendorLabel themes or standalone custom palettes"
         },
-        selectedText = activeSource.displayName,
+        selectedText = activeSource.displayNameFor(profile),
         icon = Icons.Rounded.Palette,
         onPrevious = {
             applyThemeSource(availableSources.cycle(activeSource, BumperDirection.PREV))
@@ -1833,7 +1927,7 @@ private fun AppearanceSettingsTabContent(
         ThemeSourceOption.STOCK -> {
             GamepadChoiceCard(
                 title = "Stock Theme Mode",
-                description = "Select the built-in AYN Dual Screen Assistant appearance",
+                description = "Select the built-in $stockVendorName Dual Screen Assistant appearance",
                 selectedText = effectiveSelectedTheme.displayName,
                 icon = Icons.Rounded.ColorLens,
                 onPrevious = {
@@ -1881,13 +1975,13 @@ private fun AppearanceSettingsTabContent(
         val accentColor = Color(customAccentArgb)
         val customSwatchColor = Color(customSwatchColorArgb)
         val isCustomAccent =
-            customAccentArgb == customSwatchColorArgb && accentColor !in AppPalettes.accentPresets
+            customAccentArgb == customSwatchColorArgb && accentColor !in BdsaAccentPresets
 
         GamepadColorPaletteCard(
             title = "Accent Color",
             description = "Choose a preset highlight color for ${effectiveSelectedTheme.displayName}",
             icon = Icons.Rounded.FormatColorFill,
-            paletteColors = AppPalettes.accentPresets,
+            paletteColors = BdsaAccentPresets,
             selectedColor = accentColor,
             onColorSelected = { onSelectAccentColor(it.toArgb()) }
         )
@@ -1905,6 +1999,19 @@ private fun AppearanceSettingsTabContent(
             onClick = onOpenCustomAccent
         )
     }
+
+    GamepadChoiceCard(
+        title = "Overlay UI Look",
+        description = "Use either the smooth AYN style or pixel-art Retroid style across all themes",
+        selectedText = selectedUiLookPref.displayNameFor(profile),
+        icon = Icons.Rounded.Layers,
+        onPrevious = {
+            onSetUiLookMode(uiLookOptions.cycle(selectedUiLookPref, BumperDirection.PREV).id)
+        },
+        onNext = {
+            onSetUiLookMode(uiLookOptions.cycle(selectedUiLookPref, BumperDirection.NEXT).id)
+        }
+    )
 
     GamepadToggleCard(
         title = "Inject Theme Colors into OS",
@@ -2139,6 +2246,7 @@ private fun UpdatesSettingsTabContent(
 
 @Composable
 private fun DiagnosticsSettingsTabContent(
+    profile: DeviceProfile,
     helperConnected: Boolean,
     pServerAvailable: Boolean,
     stockDisabled: Boolean,
@@ -2163,7 +2271,7 @@ private fun DiagnosticsSettingsTabContent(
 
     GamepadActionCard(
         title = "PServerBinder Root Service",
-        description = "AYN Thor firmware root command execution service in ServiceManager",
+        description = "${profile.displayName} firmware root command execution service in ServiceManager",
         icon = Icons.Rounded.DeveloperBoard,
         trailingContent = {
             GamepadPill(
@@ -2176,7 +2284,7 @@ private fun DiagnosticsSettingsTabContent(
 
     GamepadActionCard(
         title = "Stock DualScreenAssistant Process",
-        description = "Ephemeral SIGSTOP suppression of com.odin.dualscreen.assistant",
+        description = "Ephemeral SIGSTOP suppression of ${profile.stockAssistantPackage}",
         icon = Icons.Rounded.Layers,
         trailingContent = {
             GamepadPill(
@@ -2214,8 +2322,8 @@ private fun DiagnosticsSettingsTabContent(
     GamepadSectionHeader(text = "DEVICE & BUILD")
 
     GamepadInfoBox(
-        text = "AYN Thor Display Topology",
-        description = "Top Screen (displayId = 0): 1920×1080 • Bottom Screen (displayId = 4): 1240×1080 (369 dpi)"
+        text = "${profile.displayName} Display Topology",
+        description = "Top Screen (displayId = ${profile.topDisplayId}): 1920×1080 • Bottom Screen (displayId = ${profile.bottomDisplayId}): ${profile.bottomFallbackWidth}×${profile.bottomFallbackHeight} (${profile.bottomFallbackDensityDpi} dpi)"
     )
 
     GamepadActionCard(

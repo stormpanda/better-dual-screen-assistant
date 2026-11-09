@@ -21,12 +21,16 @@ class VendorServicesTest {
 
     @Before
     fun setUp() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         setCachedFanProvider(null)
     }
 
     @After
     fun tearDown() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         setCachedFanProvider(null)
     }
 
@@ -230,5 +234,87 @@ class VendorServicesTest {
         assertEquals(2, homePressCount)
         otherKeyData.recycle()
         otherKeyReply.recycle()
+    }
+
+    @Test
+    fun `Retroid Pocket Duo sends displayId 2 to OverviewProxyClient and registers HOME plus BACK in MappingServiceClient`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+
+        val overviewClient = OverviewProxyClient(context)
+        var capturedDisplayId = -1
+        val fakeOverviewBinder = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (code == 6) {
+                    data.enforceInterface(OverviewProxyClient.descriptorForSdk())
+                    capturedDisplayId = data.readInt()
+                    data.readString()
+                    reply?.writeNoException()
+                    return true
+                }
+                return false
+            }
+        }
+        OverviewProxyClient::class.java.getDeclaredField("overviewBinder").apply {
+            isAccessible = true
+            set(overviewClient, fakeOverviewBinder)
+        }
+        overviewClient.toggleRecentAppsOnBottomScreen()
+        assertEquals(2, capturedDisplayId)
+        assertEquals(
+            "com.android.systemui.shared.recents.ILauncherProxy",
+            OverviewProxyClient.descriptorForSdk(36)
+        )
+        assertEquals(
+            "com.android.systemui.shared.recents.IOverviewProxy",
+            OverviewProxyClient.descriptorForSdk(33)
+        )
+
+        var interceptCount = 0
+        val mappingClient = MappingServiceClient(context) {
+            interceptCount++
+            true
+        }
+        var registeredIds: Array<String>? = null
+        val fakeMappingServer = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                data.enforceInterface(MappingServiceClient.MAPPING_DESCRIPTOR)
+                if (code == MappingServiceClient.TRANSACTION_REGISTER_INPUT_LISTENER) {
+                    data.readStrongBinder()
+                    registeredIds = data.createStringArray()
+                    reply?.writeNoException()
+                    return true
+                }
+                return false
+            }
+        }
+        MappingServiceClient::class.java.getDeclaredMethod("registerKeyListener", IBinder::class.java).apply {
+            isAccessible = true
+            invoke(mappingClient, fakeMappingServer)
+        }
+        assertArrayEquals(arrayOf("HOME", "BACK"), registeredIds)
+
+        val listenerBinder = MappingServiceClient::class.java.getDeclaredField("keyListenerBinder").apply {
+            isAccessible = true
+        }.get(mappingClient) as IBinder
+
+        val backDownData = Parcel.obtain().apply {
+            writeInterfaceToken(MappingServiceClient.LISTENER_DESCRIPTOR)
+            writeInt(1)
+            writeString("BACK")
+            writeInt(1)
+            writeInt(0)
+            writeInt(0)
+            writeInt(1)
+            writeInt(158)
+            writeInt(1)
+        }
+        val backDownReply = Parcel.obtain()
+        assertTrue(listenerBinder.transact(IBinder.FIRST_CALL_TRANSACTION, backDownData, backDownReply, 0))
+        backDownReply.setDataPosition(0)
+        backDownReply.readException()
+        assertEquals(1, backDownReply.readInt())
+        assertEquals(1, interceptCount)
+        backDownData.recycle()
+        backDownReply.recycle()
     }
 }

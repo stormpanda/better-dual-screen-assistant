@@ -59,7 +59,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
@@ -82,6 +86,9 @@ fun StatusBarRow(
 ) {
     val context = LocalContext.current
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val pixelFont = tccFontFamily()
+    val pixelStyle = tccTextStyle()
 
     var timeText by remember { mutableStateOf(formatCurrentTime(context)) }
     var batteryLevel by remember { mutableIntStateOf(100) }
@@ -227,7 +234,9 @@ fun StatusBarRow(
                 text = timeText,
                 color = colors.primary,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
+                fontFamily = pixelFont,
+                style = pixelStyle,
+                fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold,
                 modifier = Modifier
                     .padding(horizontal = 6.dp)
                     .clickable(
@@ -240,7 +249,7 @@ fun StatusBarRow(
             if (isRecording) {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(if (isRetroidLook) 4.dp else 10.dp))
                         .background(Color(0xFFE53935))
                         .then(
                             if (onStopRecordingClick != null) {
@@ -256,14 +265,16 @@ fun StatusBarRow(
                     Box(
                         modifier = Modifier
                             .size(7.dp)
-                            .clip(CircleShape)
+                            .clip(if (isRetroidLook) RoundedCornerShape(0.dp) else CircleShape)
                             .background(Color.White)
                     )
                     Text(
                         text = recordingElapsedText.ifEmpty { "00:00" },
                         color = Color.White,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontFamily = pixelFont,
+                        style = pixelStyle,
+                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                     )
                 }
             }
@@ -287,7 +298,9 @@ fun StatusBarRow(
                     text = netSpeedText,
                     color = colors.primary,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    fontFamily = pixelFont,
+                    style = pixelStyle,
+                    fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                 )
             }
 
@@ -320,7 +333,9 @@ fun StatusBarRow(
                     text = "$batteryLevel%",
                     color = colors.primary,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    fontFamily = pixelFont,
+                    style = pixelStyle,
+                    fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                 )
             }
         }
@@ -334,10 +349,8 @@ private fun BatteryIconCanvas(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
     Canvas(modifier = modifier) {
-        // Replicates BatteryView.a rotated 90 degrees clockwise:
-        // Left nub, outer body frame in primaryColor, fill from right to left in secondaryColor
-        // (interpolated towards red below 50%), and green lightning bolt on top when charging.
         val strokeW = size.height * 0.10f
         val nubWidth = size.width * 0.07f
         val nubHeight = size.height * 0.45f
@@ -345,7 +358,7 @@ private fun BatteryIconCanvas(
         val bodyWidth = size.width - bodyLeft - strokeW * 0.5f
         val bodyHeight = size.height * 0.86f
         val top = (size.height - bodyHeight) / 2f
-        val corner = CornerRadius(2f, 2f)
+        val corner = if (isRetroidLook) CornerRadius.Zero else CornerRadius(2f, 2f)
 
         // Left nub
         drawRoundRect(

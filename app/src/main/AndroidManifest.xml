@@ -23,6 +23,12 @@
     <queries>
         <package android:name="com.odin.mapping" />
         <package android:name="com.odin.gameassistant" />
+        <package android:name="com.odin.dualscreen.assistant" />
+        <package android:name="com.rp.mapping" />
+        <package android:name="com.rp.gameassistant" />
+        <package android:name="com.rp.settings" />
+        <package android:name="com.retroidpocket.dualscreen.assistant" />
+        <package android:name="com.retroidpocket.gamelauncher" />
         <package android:name="com.stormpanda.megingiard" />
         <package android:name="com.stormpanda.megingiard.debug" />
         <provider android:authorities="com.stormpanda.megingiard.provider;com.stormpanda.megingiard.debug.provider" />

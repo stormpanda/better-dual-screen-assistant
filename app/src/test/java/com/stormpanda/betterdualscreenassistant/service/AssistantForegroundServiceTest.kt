@@ -23,6 +23,7 @@ import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
 import com.stormpanda.betterdualscreenassistant.system.ScreenRecordingState
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
@@ -62,6 +63,8 @@ class AssistantForegroundServiceTest {
 
     @Before
     fun setUp() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         PServerClient.setReplaceStockPreferred(context, true)
 
@@ -87,6 +90,8 @@ class AssistantForegroundServiceTest {
 
     @After
     fun tearDown() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         val instanceField = AssistantForegroundService::class.java.getDeclaredField("instance").apply {
             isAccessible = true
         }
@@ -423,5 +428,27 @@ class AssistantForegroundServiceTest {
         verify(exactly = 1) {
             mockOverlayManager.onDeviceScreenInteractiveChanged(false)
         }
+    }
+
+    @Test
+    fun `long press TCC button wakes blanked bottom screen only on Retroid Pocket Duo`() {
+        displayModeFlow.value = 1
+
+        // 1. On AYN Thor, long-pressing while bottom screen is already blanked stays in mode 1 (does not wake)
+        DeviceProfile.testOverride = DeviceProfile.AYN_THOR
+        service.handleTccButtonEvent(keyActionDown = true, isLongPress = true)
+        verify(exactly = 0) { mockOverlayManager.wakeBottomScreen() }
+        service.handleTccButtonEvent(keyActionDown = false, isLongPress = false)
+
+        // 2. On Retroid Pocket Duo, long-pressing while bottom screen is blanked wakes bottom screen
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        service.handleTccButtonEvent(keyActionDown = true, isLongPress = true)
+        assertTrue(getBooleanField("longPressConsumed"))
+        verify(exactly = 1) { mockOverlayManager.wakeBottomScreen() }
+
+        // Subsequent key-up is consumed without toggling overlay
+        service.handleTccButtonEvent(keyActionDown = false, isLongPress = false)
+        assertFalse(getBooleanField("longPressConsumed"))
+        verify(exactly = 0) { mockOverlayManager.toggleAssistantOverlay() }
     }
 }

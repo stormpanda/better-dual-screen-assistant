@@ -22,7 +22,20 @@ enum class QuickSettingCategory(
         title = "Tools",
         description = "Dual-screen multi-tasking utilities and AYN hardware tools (off by default)",
         enabledByDefault = false
-    )
+    );
+
+    fun titleFor(profile: DeviceProfile): String = when {
+        this == STOCK_AYN && profile == DeviceProfile.RETROID_POCKET_DUO -> "Stock Retroid Toggles"
+        else -> title
+    }
+
+    fun descriptionFor(profile: DeviceProfile): String = when {
+        this == STOCK_AYN && profile == DeviceProfile.RETROID_POCKET_DUO ->
+            "Built-in Retroid Dual Screen Assistant quick settings (on by default)"
+        this == TOOLS && profile == DeviceProfile.RETROID_POCKET_DUO ->
+            "Dual-screen multi-tasking utilities and Retroid hardware tools (off by default)"
+        else -> description
+    }
 }
 
 /**
@@ -211,17 +224,29 @@ enum class QuickSettingTileId(
         category = QuickSettingCategory.TOOLS
     );
 
-    fun descriptionFor(promotedToManager: Boolean): String =
-        if (promotedToManager && this == THEME_MODE) {
+    fun isSupportedOn(profile: DeviceProfile): Boolean =
+        this != AMBIENT_LIGHT || profile.supportsAmbientLight
+
+    fun descriptionFor(
+        promotedToManager: Boolean,
+        profile: DeviceProfile = DeviceProfile.AYN_THOR
+    ): String = when {
+        promotedToManager && this == THEME_MODE ->
             "Switch manager overlay and system theme palette"
-        } else {
-            description
-        }
+        this == CONTROLLER_STYLE && profile == DeviceProfile.RETROID_POCKET_DUO ->
+            "Switch between Xbox, ${profile.standardControllerLabel}, or Disabled gamepad button layout"
+        this == KEY_MAPPER && profile == DeviceProfile.RETROID_POCKET_DUO ->
+            "Toggle Retroid screen key mapping (Key Adapter)"
+        else -> description
+    }
 
     companion object {
         val defaultOrder: List<QuickSettingTileId> = entries.toList()
         val defaultDisabled: Set<QuickSettingTileId> =
             entries.filter { !it.enabledByDefault }.toSet()
+
+        fun supportedEntries(profile: DeviceProfile): List<QuickSettingTileId> =
+            entries.filter { it.isSupportedOn(profile) }
 
         fun fromKey(key: String): QuickSettingTileId? =
             entries.firstOrNull { it.key == key }

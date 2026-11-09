@@ -48,11 +48,53 @@ class TelemetryMonitor(private val context: Context) {
         private const val CPU_MAX_FREQ_PATH = "/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_max_freq"
         private const val GPU_CUR_FREQ_PATH = "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq"
         private const val GPU_MAX_FREQ_PATH = "/sys/class/kgsl/kgsl-3d0/devfreq/max_freq"
-        private const val THERMAL_CPU_PATH = "/sys/devices/virtual/thermal/thermal_zone48/temp"
+        private const val DEFAULT_THERMAL_CPU_PATH = "/sys/devices/virtual/thermal/thermal_zone48/temp"
+        private const val DEFAULT_THERMAL_CPU_TYPE_PATH = "/sys/devices/virtual/thermal/thermal_zone48/type"
         private const val BATTERY_CURRENT_NOW_PATH = "/sys/class/power_supply/battery/current_now"
         private const val BATTERY_VOLTAGE_NOW_PATH = "/sys/class/power_supply/battery/voltage_now"
         internal const val ACCURATE_FPS_POLL_INTERVAL_MS = 500L
         internal const val LEGACY_FPS_POLL_INTERVAL_MS = 1500L
+
+        @Volatile
+        private var cachedCpuThermalPath: String? = null
+
+        internal fun resetThermalPathCacheForTesting() {
+            cachedCpuThermalPath = null
+        }
+
+        internal fun resolveCpuThermalPath(): String {
+            cachedCpuThermalPath?.let { return it }
+
+            // Fast path for AYN Thor (`kalama`, where thermal_zone48 is `cpuss-0-usr`)
+            val defaultType = PrivilegedBridge.readSysfsFile(DEFAULT_THERMAL_CPU_TYPE_PATH).lowercase()
+            if (defaultType.contains("cpu")) {
+                cachedCpuThermalPath = DEFAULT_THERMAL_CPU_PATH
+                return DEFAULT_THERMAL_CPU_PATH
+            }
+
+            // Probe Retroid Pocket Duo (`sun` -> thermal_zone7 `cpuss-0`, thermal_zone4 `cpuss-1`) and remaining zones
+            val candidateZones = buildList {
+                add(7)
+                add(4)
+                for (i in 0..64) {
+                    if (i != 7 && i != 4 && i != 48) add(i)
+                }
+            }
+            for (zone in candidateZones) {
+                val typePath = "/sys/devices/virtual/thermal/thermal_zone$zone/type"
+                val typeStr = PrivilegedBridge.readSysfsFile(typePath).lowercase()
+                if (typeStr.startsWith("cpuss") || typeStr.startsWith("cpu-") || typeStr == "cpu") {
+                    val tempPath = "/sys/devices/virtual/thermal/thermal_zone$zone/temp"
+                    if (PrivilegedBridge.readSysfsLong(tempPath) > 0L) {
+                        cachedCpuThermalPath = tempPath
+                        return tempPath
+                    }
+                }
+            }
+
+            cachedCpuThermalPath = DEFAULT_THERMAL_CPU_PATH
+            return DEFAULT_THERMAL_CPU_PATH
+        }
 
         /**
          * The AYN Thor top AMOLED panel (`1080x1920`, MIPI-DSI Command Mode, `port=131`) generates
@@ -65,7 +107,11 @@ class TelemetryMonitor(private val context: Context) {
         internal const val TOP_PANEL_TE_CLOCK_RATIO = 118.412f / 120f
         private const val VSYNC_CEILING_RAMP_FRACTION = 110f / 120f
 
-        internal fun normalizeGameFpsForPanel(rawFps: Float, nominalPeakRate: Float): Int {
+        internal fun normalizeGameFpsForPanel(
+            rawFps: Float,
+            nominalPeakRate: Float,
+            teClockRatio: Float = TOP_PANEL_TE_CLOCK_RATIO
+        ): Int {
             if (!rawFps.isFinite() || rawFps <= 0f) return 0
             val peakInt = nominalPeakRate.roundToInt().coerceAtLeast(1)
             val nominalPeak = peakInt.toFloat()
@@ -73,7 +119,7 @@ class TelemetryMonitor(private val context: Context) {
             // Top VSYNC-ceiling ramp ([110..118.412] -> [110..120] in 120Hz mode, or
             // [55..59.206] -> [55..60] in 60Hz mode) so 0 missed VSYNCs reports full peak FPS
             // while 1, 2, 3... missed VSYNCs step down smoothly without dead numbers.
-            val physicalPeak = nominalPeak * TOP_PANEL_TE_CLOCK_RATIO
+            val physicalPeak = nominalPeak * teClockRatio
             val ceilingRampStart = nominalPeak * VSYNC_CEILING_RAMP_FRACTION
             if (rawFps > ceilingRampStart && physicalPeak > ceilingRampStart) {
                 val progress = ((rawFps - ceilingRampStart) / (physicalPeak - ceilingRampStart))
@@ -88,7 +134,7 @@ class TelemetryMonitor(private val context: Context) {
             // [55..59.206] -> [55..60] and clamp [59.206..60.0] to 60 so both report 60 without
             // pushing a 60.0f wall-clock game up to 61.
             if (nominalPeak >= 115f && rawFps > 55f && rawFps <= 60f) {
-                val halfPhysical = 60f * TOP_PANEL_TE_CLOCK_RATIO
+                val halfPhysical = 60f * teClockRatio
                 val progress = ((rawFps - 55f) / (halfPhysical - 55f)).coerceIn(0f, 1f)
                 val calibrated = 55f + progress * 5f
                 return calibrated.roundToInt().coerceIn(0, peakInt)
@@ -191,12 +237,14 @@ class TelemetryMonitor(private val context: Context) {
                 ramTotalGb = totalRamGb
             )
 
+            val cpuThermalPath = resolveCpuThermalPath()
+
             // Replicate stock CpuRingView / GpuRingView / PwrRingView / RamRingView onAttachedToWindow
             // postDelayed(..., 500L) before starting the first animated progress update
             delay(500L)
 
             while (isActive) {
-                val tempRaw = PrivilegedBridge.readSysfsLong(THERMAL_CPU_PATH)
+                val tempRaw = PrivilegedBridge.readSysfsLong(cpuThermalPath)
                 val cpuTemp = if (tempRaw > 1000L) tempRaw / 1000f else tempRaw.toFloat()
 
                 val fanPercent = (FanControlClient.getSpeedPercentage() * 100f).toInt().coerceIn(0, 100)
@@ -269,9 +317,10 @@ class TelemetryMonitor(private val context: Context) {
 
     internal fun sampleAccurateGameFps(): Int {
         val peakRate = readPeakRefreshRate()
+        val teClockRatio = DeviceProfile.current(context).topPanelTeClockRatio
         val helperFps = PrivilegedBridge.getGameFps()
         if (helperFps.isFinite() && helperFps >= 0f) {
-            return normalizeGameFpsForPanel(helperFps, peakRate)
+            return normalizeGameFpsForPanel(helperFps, peakRate, teClockRatio)
         }
         val flips = PrivilegedBridge.getSurfaceFlingerFlips()
         val now = SystemClock.elapsedRealtime()
@@ -286,7 +335,7 @@ class TelemetryMonitor(private val context: Context) {
             return 0
         }
         val rawFps = ((flips - prevFlips) * 1000f) / (now - prevTime).toFloat()
-        return normalizeGameFpsForPanel(rawFps, peakRate)
+        return normalizeGameFpsForPanel(rawFps, peakRate, teClockRatio)
     }
 
     internal fun sampleFps(): Int {

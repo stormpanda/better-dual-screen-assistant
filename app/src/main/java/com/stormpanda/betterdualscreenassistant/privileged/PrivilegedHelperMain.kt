@@ -22,6 +22,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -42,7 +43,8 @@ import java.nio.charset.StandardCharsets
 object PrivilegedHelperMain {
     private const val TAG = "PrivilegedHelperMain"
     const val APP_PACKAGE_NAME = "com.stormpanda.betterdualscreenassistant"
-    const val STOCK_PACKAGE_NAME = "com.odin.dualscreen.assistant"
+    const val STOCK_PACKAGE_NAME = DeviceProfile.ODIN_STOCK_ASSISTANT_PACKAGE
+    const val RETROID_STOCK_PACKAGE_NAME = DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE
     const val AUTHORITY = "com.stormpanda.betterdualscreenassistant.privileged"
     const val METHOD_REGISTER_BINDER = "register_binder"
     const val EXTRA_BINDER = "binder"
@@ -73,8 +75,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_START_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 22
     const val TRANSACTION_STOP_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 23
     const val TRANSACTION_GET_SCREEN_RECORD_STATE = IBinder.FIRST_CALL_TRANSACTION + 24
+    const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
 
-    const val HELPER_PROTOCOL_VERSION = 18
+    const val HELPER_PROTOCOL_VERSION = 19
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -425,6 +428,33 @@ object PrivilegedHelperMain {
         internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
+        internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
+
+        @Volatile
+        private var panel0BacklightBlanked: Boolean = false
+
+        @Volatile
+        private var panel1BacklightBlanked: Boolean = false
+
+        private fun resolveActiveDeviceProfile(): DeviceProfile {
+            val sysDetected = DeviceProfile.detectFromSystem()
+            if (sysDetected == DeviceProfile.RETROID_POCKET_DUO) {
+                return DeviceProfile.RETROID_POCKET_DUO
+            }
+            if (getApplicationInfoInternal(RETROID_STOCK_PACKAGE_NAME) != null) {
+                return DeviceProfile.RETROID_POCKET_DUO
+            }
+            return sysDetected
+        }
+
+        private fun resolveStockPackageInternal(): String =
+            resolveActiveDeviceProfile().stockAssistantPackage
+
+        private fun resolveBottomDisplayIdInternal(): Int =
+            resolveActiveDeviceProfile().bottomDisplayId
+
+        private fun isStockAssistantPackage(pkg: String): Boolean =
+            pkg == STOCK_PACKAGE_NAME || pkg == RETROID_STOCK_PACKAGE_NAME
 
         private var screenRecorderInstance: ScreenRecorderEngine? = null
 
@@ -977,6 +1007,13 @@ object PrivilegedHelperMain {
                         writeScreenRecordStatusToParcel(reply, status)
                         true
                     }
+                    TRANSACTION_SET_BACKLIGHT_POWER -> {
+                        val panelIndex = data.readInt()
+                        val blanked = data.readInt() != 0
+                        setBacklightPowerInternal(panelIndex, blanked)
+                        reply?.writeNoException()
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -1077,6 +1114,7 @@ object PrivilegedHelperMain {
 
         private fun swapDisplayTasksInternal(): Boolean {
             val atm = activityTaskManagerProxy ?: return false
+            val bottomDisplayId = resolveBottomDisplayIdInternal()
             return try {
                 val getTasksMethod = atm.javaClass.getMethod(
                     "getAllRootTaskInfosOnDisplay",
@@ -1088,19 +1126,19 @@ object PrivilegedHelperMain {
                     Int::class.javaPrimitiveType
                 )
                 val topTasks = getTasksMethod.invoke(atm, 0) as? List<*> ?: emptyList<Any?>()
-                val bottomTasks = getTasksMethod.invoke(atm, 4) as? List<*> ?: emptyList<Any?>()
+                val bottomTasks = getTasksMethod.invoke(atm, bottomDisplayId) as? List<*> ?: emptyList<Any?>()
 
                 val topTaskId = findTopStandardTaskId(topTasks)
                 val bottomTaskId = findTopStandardTaskId(bottomTasks)
 
                 when {
                     topTaskId > 0 && bottomTaskId > 0 -> {
-                        moveTaskMethod.invoke(atm, topTaskId, 4)
+                        moveTaskMethod.invoke(atm, topTaskId, bottomDisplayId)
                         moveTaskMethod.invoke(atm, bottomTaskId, 0)
                         true
                     }
                     topTaskId > 0 -> {
-                        moveTaskMethod.invoke(atm, topTaskId, 4)
+                        moveTaskMethod.invoke(atm, topTaskId, bottomDisplayId)
                         true
                     }
                     bottomTaskId > 0 -> {
@@ -1127,7 +1165,7 @@ object PrivilegedHelperMain {
                             ?: continue
                     val pkg = topActivity.packageName
                     if (pkg == APP_PACKAGE_NAME ||
-                        pkg == STOCK_PACKAGE_NAME ||
+                        isStockAssistantPackage(pkg) ||
                         pkg == SYSUI_PACKAGE
                     ) {
                         continue
@@ -1221,7 +1259,7 @@ object PrivilegedHelperMain {
                         }
                         val pkg = topPkg ?: basePkg ?: ""
                         if (pkg == APP_PACKAGE_NAME ||
-                            pkg == STOCK_PACKAGE_NAME ||
+                            isStockAssistantPackage(pkg) ||
                             pkg == SYSUI_PACKAGE
                         ) {
                             continue
@@ -1406,7 +1444,7 @@ object PrivilegedHelperMain {
                 val raw = File("/proc/$pid/cmdline").readBytes()
                 val end = raw.indexOf(0.toByte()).let { if (it >= 0) it else raw.size }
                 val cmdline = String(raw, 0, end, StandardCharsets.UTF_8).trim()
-                cmdline == STOCK_PACKAGE_NAME
+                isStockAssistantPackage(cmdline)
             } catch (_: Throwable) {
                 false
             }
@@ -1418,6 +1456,7 @@ object PrivilegedHelperMain {
             if (cached > 0 && doesPidMatchStockPackage(cached)) {
                 return cached
             }
+            val stockPkg = resolveStockPackageInternal()
             val am = activityManagerProxy
             if (am != null) {
                 try {
@@ -1425,7 +1464,7 @@ object PrivilegedHelperMain {
                     val procs = am.javaClass.getMethod("getRunningAppProcesses")
                         .invoke(am) as? List<ActivityManager.RunningAppProcessInfo>
                     val match = procs?.firstOrNull {
-                        it.processName == STOCK_PACKAGE_NAME && it.pid > 0
+                        (it.processName == stockPkg || isStockAssistantPackage(it.processName)) && it.pid > 0
                     }
                     if (match != null) {
                         cachedStockPid = match.pid
@@ -1434,7 +1473,7 @@ object PrivilegedHelperMain {
                 } catch (_: Throwable) {
                 }
             }
-            val resolved = execRootCommand("pidof $STOCK_PACKAGE_NAME")
+            val resolved = execRootCommand("pidof $stockPkg")
                 .trim()
                 .split(Regex("\\s+"))
                 .firstOrNull { it.isNotEmpty() && it.all(Char::isDigit) }
@@ -1509,10 +1548,38 @@ object PrivilegedHelperMain {
             }
         }
 
+        internal fun setBacklightPowerInternal(panelIndex: Int, blanked: Boolean) {
+            if (panelIndex != 0 && panelIndex != 1) return
+            if (panelIndex == 0) {
+                panel0BacklightBlanked = blanked
+            } else {
+                panel1BacklightBlanked = blanked
+            }
+            val hook = backlightWriteOverride
+            if (hook != null) {
+                hook(panelIndex, blanked)
+                return
+            }
+            val path = "/sys/class/backlight/panel$panelIndex-backlight/bl_power"
+            val valStr = if (blanked) "1" else "0"
+            try {
+                val file = File(path)
+                if (file.exists()) {
+                    file.writeText(valStr)
+                    return
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Direct sysfs write to $path failed, trying shell", t)
+            }
+            if (File(path).exists()) {
+                execRootCommand("echo $valStr > $path")
+            }
+        }
+
         /**
-         * Restores Dual-Screen mode (`0`), unblanks any display whose brightness was set to `-1.0f`,
-         * re-enables touch on both screens, and ensures the stock `com.odin.dualscreen.assistant`
-         * is enabled and running.
+         * Restores Dual-Screen mode (`0`), unblanks any display whose brightness was set to `-1.0f`
+         * or whose kernel backlight power (`bl_power`) was set to `1`, re-enables touch on both
+         * screens, and ensures the stock DualScreenAssistant is enabled and running.
          */
         private fun restoreDisplayAndStockAssistant() {
             try {
@@ -1520,22 +1587,29 @@ object PrivilegedHelperMain {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                     temporarilyUnfrozenStockPid = -1
                 }
+                val bottomDisplayId = resolveBottomDisplayIdInternal()
+                val stockPkg = resolveStockPackageInternal()
+
                 // 0. Finalize any active screen recording, remove cover windows, re-enable status bar, and unregister FPS listener
                 stopScreenRecordIfActiveInternal("restore_stock")
                 unregisterFpsListenerInternal()
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
                 setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
 
-                // 1. Restore top (0) and bottom (4) display brightness if blanked (< 0.005f)
+                // 0.5. Restore hardware backlight power on both panels if supported (Retroid Pocket Duo safety)
+                setBacklightPowerInternal(0, blanked = false)
+                setBacklightPowerInternal(1, blanked = false)
+
+                // 1. Restore top (0) and bottom (4 / 2) display brightness if blanked (< 0.005f)
                 val topCur = getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f }
                 if (topCur < 0.005f) {
                     val restoreTop = if (savedTopBrightness > 0.01f) savedTopBrightness else 0.4f
                     setDisplayBrightnessInternal(0, restoreTop, false)
                 }
-                val bottomCur = getDisplayBrightnessInternal(4).getOrElse(0) { 0.4f }
+                val bottomCur = getDisplayBrightnessInternal(bottomDisplayId).getOrElse(0) { 0.4f }
                 if (bottomCur < 0.005f) {
                     val restoreBottom = if (savedBottomBrightness > 0.01f) savedBottomBrightness else 0.4f
-                    setDisplayBrightnessInternal(4, restoreBottom, false)
+                    setDisplayBrightnessInternal(bottomDisplayId, restoreBottom, false)
                 }
 
                 // 2. Reset Dual-Screen mode (0), focus lock (0), touch disable ("0,0"), and pin screen mode (0)
@@ -1552,10 +1626,10 @@ object PrivilegedHelperMain {
                 clearOsThemeOverlayInternal(savedStockNightMode, savedStockThemeJson)
 
                 // 3. Re-enable and start stock DualScreenAssistant
-                execRootCommand("pm enable $STOCK_PACKAGE_NAME")
-                execRootCommand("pm enable $STOCK_PACKAGE_NAME/.services.TccServices")
-                execRootCommand("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver")
-                val pids = execRootCommand("pidof $STOCK_PACKAGE_NAME")
+                execRootCommand("pm enable $stockPkg")
+                execRootCommand("pm enable $stockPkg/.services.TccServices")
+                execRootCommand("pm enable $stockPkg/.receivers.BootBroadcastReceiver")
+                val pids = execRootCommand("pidof $stockPkg")
                     .trim()
                     .split(Regex("\\s+"))
                     .filter { it.isNotEmpty() && it.all(Char::isDigit) }
@@ -1570,7 +1644,7 @@ object PrivilegedHelperMain {
                         execRootCommand("kill -9 ${pids.joinToString(" ")}")
                     }
                 }
-                execRootCommand("am startservice -n $STOCK_PACKAGE_NAME/.services.TccServices")
+                execRootCommand("am startservice -n $stockPkg/.services.TccServices")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed during restoreDisplayAndStockAssistant", t)
             }
@@ -2020,15 +2094,7 @@ object PrivilegedHelperMain {
             }
         }
 
-        private fun registerFpsListenerForTaskInternal(taskId: Int): Boolean {
-            if (taskId <= 0) return false
-            val newListenerBinder = createFpsListenerBinder(taskId)
-            fpsListenerBinder = newListenerBinder
-            trackedFpsTaskId = taskId
-            latestReportedTaskFps = 0f
-            latestReportedTaskFpsElapsedMs = 0L
-
-            // Primary path: direct SurfaceFlinger addFpsListener(taskId, IFpsListener) transaction (57).
+        private fun tryRegisterFpsViaSurfaceFlinger(taskId: Int, listenerBinder: IBinder): Boolean {
             try {
                 val sf = getServiceMethod.invoke(null, "SurfaceFlinger") as? IBinder
                 if (sf != null) {
@@ -2037,7 +2103,7 @@ object PrivilegedHelperMain {
                     try {
                         data.writeInterfaceToken(DESCRIPTOR_SURFACE_COMPOSER)
                         data.writeInt(taskId)
-                        data.writeStrongBinder(newListenerBinder)
+                        data.writeStrongBinder(listenerBinder)
                         if (sf.transact(SF_TRANSACTION_ADD_FPS_LISTENER, data, reply, 0)) {
                             fpsRegisteredViaSurfaceFlinger = true
                             fpsRegisteredViaWindowManager = false
@@ -2052,10 +2118,12 @@ object PrivilegedHelperMain {
             } catch (t: Throwable) {
                 Log.w(TAG, "SurfaceFlinger addFpsListener($taskId) failed", t)
             }
+            return false
+        }
 
-            // Fallback path: IWindowManager.registerTaskFpsCallback(taskId, ITaskFpsCallback)
+        private fun tryRegisterFpsViaWindowManager(taskId: Int, listenerBinder: IBinder): Boolean {
             val wm = windowManagerProxy
-            val proxy = createTaskFpsCallbackProxy(newListenerBinder)
+            val proxy = createTaskFpsCallbackProxy(listenerBinder)
             if (wm != null && proxy != null) {
                 try {
                     val regMethod = wm.javaClass.methods.firstOrNull { m ->
@@ -2072,6 +2140,28 @@ object PrivilegedHelperMain {
                     Log.w(TAG, "IWindowManager.registerTaskFpsCallback($taskId) failed", t)
                 }
             }
+            return false
+        }
+
+        private fun registerFpsListenerForTaskInternal(taskId: Int): Boolean {
+            if (taskId <= 0) return false
+            val newListenerBinder = createFpsListenerBinder(taskId)
+            fpsListenerBinder = newListenerBinder
+            trackedFpsTaskId = taskId
+            latestReportedTaskFps = 0f
+            latestReportedTaskFpsElapsedMs = 0L
+
+            // On Android 14+ (SDK >= 34, including Retroid Pocket Duo Android 16), raw C++
+            // ISurfaceComposer transaction codes shift; prefer the stable AIDL IWindowManager API first.
+            val registered = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                tryRegisterFpsViaWindowManager(taskId, newListenerBinder) ||
+                    tryRegisterFpsViaSurfaceFlinger(taskId, newListenerBinder)
+            } else {
+                tryRegisterFpsViaSurfaceFlinger(taskId, newListenerBinder) ||
+                    tryRegisterFpsViaWindowManager(taskId, newListenerBinder)
+            }
+
+            if (registered) return true
 
             trackedFpsTaskId = -1
             return false
@@ -2126,16 +2216,18 @@ object PrivilegedHelperMain {
 
         private fun findTargetTaskIdForFpsInternal(): Int {
             val atm = activityTaskManagerProxy ?: return -1
+            val bottomDisplayId = resolveBottomDisplayIdInternal()
             return try {
                 val getTasksMethod = atm.javaClass.getMethod(
                     "getAllRootTaskInfosOnDisplay",
                     Int::class.javaPrimitiveType
                 )
                 val topTasks = getTasksMethod.invoke(atm, 0) as? List<*> ?: emptyList<Any?>()
-                val bottomTasks = getTasksMethod.invoke(atm, 4) as? List<*> ?: emptyList<Any?>()
+                val bottomTasks = getTasksMethod.invoke(atm, bottomDisplayId) as? List<*> ?: emptyList<Any?>()
 
-                // Screen blanking on AYN Thor sets brightness to -1.0f (< 0f); 0.0f is valid minimum slider brightness.
+                // Screen blanking sets brightness to -1.0f (< 0f) on AYN Thor or panel0BacklightBlanked on Retroid.
                 val isTopBlanked = topBootProgressBlankView != null ||
+                    panel0BacklightBlanked ||
                     getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f } < 0f
 
                 if (!isTopBlanked) {
@@ -2183,7 +2275,7 @@ object PrivilegedHelperMain {
                         task.javaClass.getField("topActivity").get(task) as? android.content.ComponentName
                     val pkg = topActivity?.packageName ?: ""
                     if (pkg == APP_PACKAGE_NAME ||
-                        pkg == STOCK_PACKAGE_NAME ||
+                        isStockAssistantPackage(pkg) ||
                         pkg == SYSUI_PACKAGE
                     ) {
                         continue
@@ -2332,16 +2424,18 @@ object PrivilegedHelperMain {
         private fun getOrCreateDisplay4Context(): Context? {
             bottomDisplayContext?.let { return it }
             val callingToken = Binder.clearCallingIdentity()
+            val bottomDisplayId = resolveBottomDisplayIdInternal()
             return try {
                 val sysCtx = resolveSystemContext() ?: return null
                 val dm = sysCtx.getSystemService(DisplayManager::class.java)
-                val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
+                val bottomDisplay = dm?.getDisplay(bottomDisplayId)
+                    ?: dm?.displays?.firstOrNull { it.displayId != 0 }
                     ?: return null
-                val ctx = sysCtx.createDisplayContext(display4)
+                val ctx = sysCtx.createDisplayContext(bottomDisplay)
                 bottomDisplayContext = ctx
                 ctx
             } catch (t: Throwable) {
-                Log.w(TAG, "Failed to obtain Display 4 context in helper", t)
+                Log.w(TAG, "Failed to obtain bottom display ($bottomDisplayId) context in helper", t)
                 null
             } finally {
                 Binder.restoreCallingIdentity(callingToken)
@@ -2349,7 +2443,7 @@ object PrivilegedHelperMain {
         }
 
         internal fun createBottomCoverLayoutParams(width: Int, height: Int): WindowManager.LayoutParams {
-            // Never set FLAG_LAYOUT_NO_LIMITS on Display 4 (prevents WMS laying out at Display 0's 1920px width).
+            // Never set FLAG_LAYOUT_NO_LIMITS on bottom display (prevents WMS laying out at Display 0's 1920px width).
             // Set fitInsetsTypes = 0 so DisplayPolicy applies zero navigation/gesture bar insets.
             return WindowManager.LayoutParams(
                 width,
@@ -2371,23 +2465,25 @@ object PrivilegedHelperMain {
         }
 
         /**
-         * Covers the bottom screen (Display 4, `1240x1080`) with a `type = 2021` (`TYPE_BOOT_PROGRESS`,
-         * Layer 27 — above `TYPE_NAVIGATION_BAR` Layer 24, matching stock `ScreenUtil.d()`) solid black
-         * cover window when [blank] and [showCoverWindow] are true so the white gesture/swipe bar is
-         * completely hidden while the bottom screen is turned off.
+         * Covers the bottom screen (Display 4 `1240x1080` on AYN Thor, Display 2 `1280x960` on Retroid)
+         * with a `type = 2021` (`TYPE_BOOT_PROGRESS`, Layer 27 — above `TYPE_NAVIGATION_BAR` Layer 24,
+         * matching stock `ScreenUtil.d()`) solid black cover window when [blank] and [showCoverWindow]
+         * are true so the white gesture/swipe bar is completely hidden while the bottom screen is turned off.
          */
         private fun setBottomScreenBlankedInternal(blank: Boolean, showCoverWindow: Boolean) {
             val ctx = getOrCreateDisplay4Context() ?: return
             val wm = ctx.getSystemService(WindowManager::class.java) ?: return
             if (blank && showCoverWindow) {
                 if (bottomBootProgressBlankView != null) return
-                val point = Point(1240, 1080)
+                val profile = resolveActiveDeviceProfile()
+                val point = Point(profile.bottomFallbackWidth, profile.bottomFallbackHeight)
                 try {
                     val dm = ctx.getSystemService(DisplayManager::class.java)
-                    val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
-                    if (display4 != null) {
+                    val bottomDisplay = dm?.getDisplay(profile.bottomDisplayId)
+                        ?: dm?.displays?.firstOrNull { it.displayId != 0 }
+                    if (bottomDisplay != null) {
                         @Suppress("DEPRECATION")
-                        display4.getRealSize(point)
+                        bottomDisplay.getRealSize(point)
                     }
                 } catch (_: Throwable) {
                 }

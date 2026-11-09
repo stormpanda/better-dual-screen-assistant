@@ -8,6 +8,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -47,9 +48,12 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -57,7 +61,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.HardwareTelemetryState
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
@@ -65,19 +71,26 @@ import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareInfoComponentCard
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareRingGauge
 import com.stormpanda.betterdualscreenassistant.ui.components.HorizontalSlidingBar
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
 import com.stormpanda.betterdualscreenassistant.ui.components.SliderKind
 import com.stormpanda.betterdualscreenassistant.ui.components.TccButton
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogFpsSelectorRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogOption
+import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogSegmentedRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogToggleRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccOptionDialog
 import com.stormpanda.betterdualscreenassistant.ui.components.TccRadioCheckIndicator
 import com.stormpanda.betterdualscreenassistant.ui.statusbar.StatusBarRow
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -128,7 +141,10 @@ fun AssistantOverlayScreen(
     onStopScreenRecordingRequest: () -> Unit = {},
     onDismissOverlayRequest: () -> Unit
 ) {
+    val context = LocalContext.current
+    val profile = remember(context) { DeviceProfile.current(context) }
     val themeMode by repository.themeMode.collectAsState()
+    val uiLookMode by repository.uiLookMode.collectAsState()
     val customAccentArgb by repository.customAccentArgb.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
@@ -214,6 +230,7 @@ fun AssistantOverlayScreen(
 
     TccTheme(
         themeMode = themeMode,
+        uiLookMode = uiLookMode,
         customAccentArgb = customAccentArgb,
         syncedMegingiardOption = syncedMegingiardOption,
         syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
@@ -268,6 +285,7 @@ fun AssistantOverlayScreen(
                             bottomBrightness = bottomBrightness,
                             isDualBrightnessActive = isDualBrightnessActive,
                             showSwapScreensButton = showSwapScreensButton,
+                            supportsAmbientLight = profile.supportsAmbientLight,
                             showLedBrightnessSlider = showLedBrightnessSlider,
                             ledBrightnessPercent = ledBrightnessPercent,
                             ambientLightEnabled = ambientLight,
@@ -296,7 +314,7 @@ fun AssistantOverlayScreen(
                                 repository.setDisplayBrightnessPercent(0, pct, temp)
                             },
                             onBottomBrightnessChange = { pct, temp ->
-                                repository.setDisplayBrightnessPercent(4, pct, temp)
+                                repository.setDisplayBrightnessPercent(profile.bottomDisplayId, pct, temp)
                             },
                             onLedBrightnessChange = { pct ->
                                 repository.setLedBrightnessPercent(pct)
@@ -313,6 +331,7 @@ fun AssistantOverlayScreen(
                         )
                     } else {
                         SystemSettingsTab(
+                            profile = profile,
                             telemetry = telemetry,
                             tempFahrenheit = tempFahrenheit,
                             refreshRate = refreshRate,
@@ -532,6 +551,11 @@ fun AssistantOverlayScreen(
                 }
 
                 ActiveDialog.CONTROLLER_STYLE -> {
+                    val standardLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
+                        profile.standardControllerLabel
+                    } else {
+                        stringResource(R.string.fan_option_odin_style)
+                    }
                     val options = listOf(
                         TccDialogOption(
                             id = 2,
@@ -545,7 +569,7 @@ fun AssistantOverlayScreen(
                         ),
                         TccDialogOption(
                             id = 1,
-                            label = stringResource(R.string.fan_option_odin_style),
+                            label = standardLabel,
                             iconRes = R.drawable.ic_controller_odin_style
                         )
                     )
@@ -645,7 +669,26 @@ fun AssistantOverlayScreen(
                                 }
                             }
                         },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
+                        onDismiss = { activeDialog = ActiveDialog.NONE },
+                        footerContent = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(1.dp)
+                                    .background(colors.fourth)
+                            )
+                            TccDialogSegmentedRow(
+                                label = "Overlay UI Look",
+                                segments = listOf(
+                                    TccUiLookPreference.AUTO.id to TccUiLookPreference.AUTO.shortLabel,
+                                    TccUiLookPreference.AYN.id to TccUiLookPreference.AYN.shortLabel,
+                                    TccUiLookPreference.RETROID.id to TccUiLookPreference.RETROID.shortLabel
+                                ),
+                                selectedId = uiLookMode,
+                                onSelectId = { repository.setUiLookMode(it) }
+                            )
+                        }
                     )
                 }
 
@@ -795,6 +838,7 @@ private fun ScreenControlTab(
     bottomBrightness: Int,
     isDualBrightnessActive: Boolean,
     showSwapScreensButton: Boolean,
+    supportsAmbientLight: Boolean,
     showLedBrightnessSlider: Boolean,
     ledBrightnessPercent: Int,
     ambientLightEnabled: Boolean,
@@ -813,6 +857,10 @@ private fun ScreenControlTab(
     onSecondaryVolumeChange: (Int) -> Unit
 ) {
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val cardShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(20.dp)
+    val showFourthBrightnessSlider = supportsAmbientLight && showLedBrightnessSlider
+    val cardHorizontalPad = if (isRetroidLook) 12.dp else 10.dp
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Reference 3-slider card geometry from the stock 50% / 50% split:
@@ -829,8 +877,15 @@ private fun ScreenControlTab(
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(cardShape)
                     .background(colors.panelBackground)
+                    .then(
+                        if (isRetroidLook) {
+                            Modifier.border(1.dp, colors.fourth, cardShape)
+                        } else {
+                            Modifier
+                        }
+                    )
                     .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
@@ -880,9 +935,16 @@ private fun ScreenControlTab(
                         .weight(1f)
                         .fillMaxHeight()
                         .padding(end = 5.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(cardShape)
                         .background(colors.panelBackground)
-                        .padding(horizontal = 10.dp, vertical = cardVerticalPad),
+                        .then(
+                            if (isRetroidLook) {
+                                Modifier.border(1.dp, colors.fourth, cardShape)
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .padding(horizontal = cardHorizontalPad, vertical = cardVerticalPad),
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
                     HorizontalSlidingBar(
@@ -913,7 +975,7 @@ private fun ScreenControlTab(
                             .fillMaxWidth()
                             .height(sliderHeight)
                     )
-                    if (showLedBrightnessSlider) {
+                    if (showFourthBrightnessSlider) {
                         HorizontalSlidingBar(
                             label = stringResource(R.string.sliding_stick_led),
                             progress = ledBrightnessPercent,
@@ -933,9 +995,16 @@ private fun ScreenControlTab(
                         .weight(1f)
                         .fillMaxHeight()
                         .padding(start = 5.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(cardShape)
                         .background(colors.panelBackground)
-                        .padding(horizontal = 10.dp, vertical = cardVerticalPad),
+                        .then(
+                            if (isRetroidLook) {
+                                Modifier.border(1.dp, colors.fourth, cardShape)
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .padding(horizontal = cardHorizontalPad, vertical = cardVerticalPad),
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
                     HorizontalSlidingBar(
@@ -992,6 +1061,7 @@ private data class QuickSettingTileModel(
  */
 @Composable
 private fun SystemSettingsTab(
+    profile: DeviceProfile,
     telemetry: HardwareTelemetryState,
     tempFahrenheit: Boolean,
     refreshRate: Int,
@@ -1044,11 +1114,14 @@ private fun SystemSettingsTab(
     onTogglePreventAccidentalHome: () -> Unit
 ) {
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val cardShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(20.dp)
     val coroutineScope = rememberCoroutineScope()
 
     // Build dynamic Quick Settings tile list matching user-configured order and visibility
     val tiles = buildList {
         for (tileId in quickTileOrder) {
+            if (!tileId.isSupportedOn(profile)) continue
             if (tileId in disabledQuickTiles) continue
             when (tileId) {
                 QuickSettingTileId.FOCUS_LOCK -> {
@@ -1115,9 +1188,14 @@ private fun SystemSettingsTab(
                 }
 
                 QuickSettingTileId.CONTROLLER_STYLE -> {
+                    val standardLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
+                        profile.standardControllerLabel
+                    } else {
+                        stringResource(R.string.fan_option_odin_style)
+                    }
                     val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
                         0 -> stringResource(R.string.fan_option_xbox_style) to true
-                        1 -> stringResource(R.string.fan_option_odin_style) to true
+                        1 -> standardLabel to true
                         else -> stringResource(R.string.fan_option_disable) to false
                     }
                     add(
@@ -1435,8 +1513,15 @@ private fun SystemSettingsTab(
                     .weight(0.6f)
                     .fillMaxHeight()
                     .padding(start = 5.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(colors.panelBackground),
+                    .clip(cardShape)
+                    .background(colors.panelBackground)
+                    .then(
+                        if (isRetroidLook) {
+                            Modifier.border(1.dp, colors.fourth, cardShape)
+                        } else {
+                            Modifier
+                        }
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 HorizontalPager(
@@ -1467,7 +1552,7 @@ private fun SystemSettingsTab(
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)
-                                        .clip(CircleShape)
+                                        .clip(if (isRetroidLook) RectangleShape else CircleShape)
                                         .background(if (isSelected) colors.accent else colors.secondary)
                                 )
                             }
@@ -1532,8 +1617,15 @@ private fun SystemSettingsTab(
                     .weight(0.6f)
                     .fillMaxHeight()
                     .padding(start = 5.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(cardShape)
                     .background(colors.panelBackground)
+                    .then(
+                        if (isRetroidLook) {
+                            Modifier.border(1.dp, colors.fourth, cardShape)
+                        } else {
+                            Modifier
+                        }
+                    )
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
@@ -1631,7 +1723,20 @@ private fun FrameRatePanelCard(
     onToggleRefreshRate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val pixelFont = tccFontFamily()
+    val pixelStyle = tccTextStyle()
+    val cardShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(20.dp)
+    val badgeShape: Shape = if (isRetroidLook) PixelNotchedShape(6.dp) else RoundedCornerShape(25.dp)
+    val pixelTypeface = remember(context, isRetroidLook) {
+        if (isRetroidLook) {
+            runCatching { ResourcesCompat.getFont(context, R.font.tcc_pixel) }.getOrNull()
+        } else {
+            null
+        }
+    }
     val isHighRate = refreshRate >= 90
     var isFocused by remember { mutableStateOf(false) }
 
@@ -1665,8 +1770,15 @@ private fun FrameRatePanelCard(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(cardShape)
             .background(if (isFocused) colors.panelBackgroundSelected else colors.panelBackground)
+            .then(
+                if (isRetroidLook) {
+                    Modifier.border(1.dp, colors.fourth, cardShape)
+                } else {
+                    Modifier
+                }
+            )
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
                 if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
@@ -1690,15 +1802,25 @@ private fun FrameRatePanelCard(
                 .weight(0.3f),
             contentAlignment = Alignment.Center
         ) {
-            val pillTextColor = if (colors.isMegingiardStyle) colors.onAccent else Color.White
+            val pillTextColor = when {
+                isRetroidLook -> colors.primary
+                colors.isMegingiardStyle -> colors.onAccent
+                else -> Color.White
+            }
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(25.dp))
+                    .clip(badgeShape)
                     .then(
-                        if (colors.isMegingiardStyle) {
-                            Modifier.background(colors.accent)
-                        } else {
-                            Modifier
+                        when {
+                            isRetroidLook -> Modifier
+                                .background(colors.fifth)
+                                .border(
+                                    width = 1.5.dp,
+                                    color = if (isHighRate) colors.accent else colors.secondary,
+                                    shape = badgeShape
+                                )
+                            colors.isMegingiardStyle -> Modifier.background(colors.accent)
+                            else -> Modifier
                                 .background(if (colors.isDark) Color(0xFF272727) else Color(0xFFD5D5D5))
                                 .background(pillGradient)
                         }
@@ -1708,14 +1830,20 @@ private fun FrameRatePanelCard(
                         indication = null,
                         onClick = onToggleRefreshRate
                     )
-                    .padding(horizontal = 15.dp, vertical = 3.dp),
+                    .padding(horizontal = 15.dp, vertical = if (isRetroidLook) 4.dp else 3.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = stringResource(R.string.frame_rate_mode_text, refreshRate),
                     color = pillTextColor,
-                    fontSize = 16.sp,
-                    fontWeight = if (colors.isMegingiardStyle) FontWeight.SemiBold else FontWeight.Normal
+                    fontSize = if (isRetroidLook) 15.sp else 16.sp,
+                    fontFamily = pixelFont,
+                    style = pixelStyle,
+                    fontWeight = if (!isRetroidLook && colors.isMegingiardStyle) {
+                        FontWeight.SemiBold
+                    } else {
+                        FontWeight.Normal
+                    }
                 )
             }
         }
@@ -1723,16 +1851,32 @@ private fun FrameRatePanelCard(
         // 30%..70%: CurrentFrameRateView (exact Canvas drawing from CurrentFrameRateView.java)
         val primaryArgb = colors.primary.toArgb()
         val padPx = with(LocalDensity.current) { 5.dp.toPx() }
-        val numberPaint = remember {
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.FILL_AND_STROKE
-                typeface = Typeface.DEFAULT_BOLD
+        val numberPaint = remember(isRetroidLook, pixelTypeface) {
+            if (isRetroidLook) {
+                Paint().apply {
+                    isAntiAlias = false
+                    style = Paint.Style.FILL
+                    typeface = pixelTypeface ?: Typeface.MONOSPACE
+                }
+            } else {
+                Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL_AND_STROKE
+                    typeface = Typeface.DEFAULT_BOLD
+                }
             }
         }
-        val unitPaint = remember {
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.FILL
-                typeface = Typeface.DEFAULT
+        val unitPaint = remember(isRetroidLook, pixelTypeface) {
+            if (isRetroidLook) {
+                Paint().apply {
+                    isAntiAlias = false
+                    style = Paint.Style.FILL
+                    typeface = pixelTypeface ?: Typeface.MONOSPACE
+                }
+            } else {
+                Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    typeface = Typeface.DEFAULT
+                }
             }
         }
         Canvas(
@@ -1744,7 +1888,7 @@ private fun FrameRatePanelCard(
             val numberStr = currentFps.coerceIn(0, refreshRate).toString()
             val unitStr = "FPS"
 
-            numberPaint.textSize = h * 0.75f
+            numberPaint.textSize = h * (if (isRetroidLook) 0.82f else 0.75f)
             numberPaint.color = primaryArgb
             val fm = numberPaint.fontMetrics
             val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) + padPx
@@ -1772,7 +1916,9 @@ private fun FrameRatePanelCard(
             Text(
                 text = stringResource(R.string.current_frame_rate_tip),
                 color = colors.tertiary,
-                fontSize = 16.sp,
+                fontSize = if (isRetroidLook) 15.sp else 16.sp,
+                fontFamily = pixelFont,
+                style = pixelStyle,
                 fontWeight = FontWeight.Normal
             )
         }
@@ -1833,16 +1979,31 @@ private fun NavigationBarSection(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val cardShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(20.dp)
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(cardShape)
             .background(colors.panelBackground)
+            .then(
+                if (isRetroidLook) {
+                    Modifier.border(1.dp, colors.fourth, cardShape)
+                } else {
+                    Modifier
+                }
+            )
             .padding(vertical = 5.dp),
         contentAlignment = Alignment.Center
     ) {
+        val useWideRow = isRetroidLook || maxWidth >= 880.dp
+        val rowFraction = if (useWideRow) {
+            if (showEditButton) 0.90f else 0.80f
+        } else {
+            if (showEditButton) 0.82f else 0.70f
+        }
         Row(
-            modifier = Modifier.fillMaxWidth(if (showEditButton) 0.82f else 0.70f),
+            modifier = Modifier.fillMaxWidth(rowFraction),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1895,6 +2056,10 @@ fun CloseScreenTipOverlay(
 ) {
     var noMoreTip by remember { mutableStateOf(false) }
     val colors = LocalTccColors.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val pixelFont = tccFontFamily()
+    val pixelStyle = tccTextStyle()
+    val dialogShape: Shape = if (isRetroidLook) PixelNotchedShape(8.dp) else RoundedCornerShape(18.dp)
 
     Box(
         modifier = Modifier
@@ -1910,8 +2075,15 @@ fun CloseScreenTipOverlay(
         Column(
             modifier = Modifier
                 .width(420.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(dialogShape)
                 .background(colors.dialogBackground)
+                .then(
+                    if (isRetroidLook) {
+                        Modifier.border(1.dp, colors.fourth, dialogShape)
+                    } else {
+                        Modifier
+                    }
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1935,7 +2107,9 @@ fun CloseScreenTipOverlay(
                     text = stringResource(R.string.tip_title_text),
                     color = colors.primary,
                     fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
+                    fontFamily = pixelFont,
+                    style = pixelStyle,
+                    fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                 )
             }
 
@@ -1945,6 +2119,8 @@ fun CloseScreenTipOverlay(
                 text = stringResource(R.string.tip_content_text),
                 color = colors.primary,
                 fontSize = 14.sp,
+                fontFamily = pixelFont,
+                style = pixelStyle,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
@@ -1965,7 +2141,9 @@ fun CloseScreenTipOverlay(
                 Text(
                     text = stringResource(R.string.tip_dialog_cb_text_no_more_tip),
                     color = colors.secondary,
-                    fontSize = 13.sp
+                    fontSize = 13.sp,
+                    fontFamily = pixelFont,
+                    style = pixelStyle
                 )
             }
 
@@ -1975,14 +2153,20 @@ fun CloseScreenTipOverlay(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color.Transparent,
-                                Color(0x88E4E4ED),
-                                Color.Transparent
+                    .then(
+                        if (isRetroidLook) {
+                            Modifier.background(colors.fourth)
+                        } else {
+                            Modifier.background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        Color(0x88E4E4ED),
+                                        Color.Transparent
+                                    )
+                                )
                             )
-                        )
+                        }
                     )
             )
 
@@ -2003,7 +2187,9 @@ fun CloseScreenTipOverlay(
                         text = stringResource(R.string.cancel),
                         color = colors.primary,
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        fontFamily = pixelFont,
+                        style = pixelStyle,
+                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium
                     )
                 }
 
@@ -2011,14 +2197,20 @@ fun CloseScreenTipOverlay(
                     modifier = Modifier
                         .width(1.dp)
                         .fillMaxHeight()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    Color(0x88E4E4ED),
-                                    Color.Transparent
+                        .then(
+                            if (isRetroidLook) {
+                                Modifier.background(colors.fourth)
+                            } else {
+                                Modifier.background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Color(0x88E4E4ED),
+                                            Color.Transparent
+                                        )
+                                    )
                                 )
-                            )
+                            }
                         )
                 )
 
@@ -2033,7 +2225,9 @@ fun CloseScreenTipOverlay(
                         text = stringResource(R.string.confirm),
                         color = colors.accent,
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        fontFamily = pixelFont,
+                        style = pixelStyle,
+                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                     )
                 }
             }

@@ -2,9 +2,11 @@ package com.stormpanda.betterdualscreenassistant.privileged
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import androidx.test.core.app.ApplicationProvider
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -16,16 +18,25 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CopyOnWriteArrayList
 
 @RunWith(RobolectricTestRunner::class)
 class PServerClientTest {
 
     private lateinit var context: Context
-    private val executedCommands = mutableListOf<Pair<String, String>>()
+    private val executedCommands = CopyOnWriteArrayList<Pair<String, String>>()
+
+    @Volatile
     private var commandResponder: (String) -> String = { "" }
+
+    @Volatile
+    private var testThread: Thread? = null
 
     @Before
     fun setUp() {
+        testThread = Thread.currentThread()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -38,6 +49,9 @@ class PServerClientTest {
 
     @After
     fun tearDown() {
+        testThread = null
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         setCachedBinder(null)
     }
 
@@ -49,27 +63,29 @@ class PServerClientTest {
     }
 
     private fun createFakePServerBinder(throwOnTransact: Boolean = false): IBinder {
-        val binder = mockk<IBinder>(relaxed = true)
-        every { binder.isBinderAlive } returns true
-        every { binder.transact(any(), any(), any(), any()) } answers {
-            if (throwOnTransact) {
-                throw RuntimeException("Simulated binder failure")
+        val delegate = Binder()
+        return object : IBinder by delegate {
+            override fun isBinderAlive(): Boolean = true
+            override fun pingBinder(): Boolean = true
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (throwOnTransact) {
+                    throw RuntimeException("Simulated binder failure")
+                }
+                assertEquals(0, code)
+                data.setDataPosition(0)
+                val args = data.createStringArray()
+                val cmd = args?.getOrNull(0) ?: ""
+                val waitFlag = args?.getOrNull(1) ?: ""
+                val onTestThread = Thread.currentThread() === testThread
+                if (onTestThread) {
+                    executedCommands.add(cmd to waitFlag)
+                }
+                val output = if (onTestThread) commandResponder(cmd) else ""
+                reply?.writeByteArray(output.toByteArray(Charsets.UTF_8))
+                reply?.setDataPosition(0)
+                return true
             }
-            val code = firstArg<Int>()
-            val data = secondArg<Parcel>()
-            val reply = thirdArg<Parcel?>()
-            assertEquals(0, code)
-            data.setDataPosition(0)
-            val args = data.createStringArray()
-            val cmd = args?.getOrNull(0) ?: ""
-            val waitFlag = args?.getOrNull(1) ?: ""
-            executedCommands.add(cmd to waitFlag)
-            val output = commandResponder(cmd)
-            reply?.writeByteArray(output.toByteArray(Charsets.UTF_8))
-            reply?.setDataPosition(0)
-            true
         }
-        return binder
     }
 
     @Test
@@ -243,5 +259,25 @@ class PServerClientTest {
         assertTrue(cmds.contains("pm enable com.odin.dualscreen.assistant"))
         assertTrue(cmds.contains("pm enable com.odin.dualscreen.assistant/.services.TccServices"))
         assertTrue(cmds.contains("kill -STOP 5555"))
+    }
+
+    @Test
+    fun `setStockAssistantEnabled targets com_retroidpocket_dualscreen_assistant on Retroid Pocket Duo`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        var pidCounter = 3000
+        commandResponder = { cmd ->
+            if (cmd.startsWith("pidof")) "${pidCounter++}" else ""
+        }
+
+        assertTrue(PServerClient.setStockAssistantEnabled(enabled = false, context = context))
+        val suppressCmds = executedCommands.map { it.first }
+        assertTrue(suppressCmds.contains("am stopservice -n com.retroidpocket.dualscreen.assistant/.services.TccServices"))
+        assertTrue(suppressCmds.contains("pm disable com.retroidpocket.dualscreen.assistant/.services.TccServices"))
+        assertTrue(suppressCmds.contains("pm enable com.retroidpocket.dualscreen.assistant/.services.TccServices"))
+
+        executedCommands.clear()
+        assertTrue(PServerClient.setStockAssistantEnabled(enabled = true, context = context))
+        val restoreCmds = executedCommands.map { it.first }
+        assertTrue(restoreCmds.contains("am startservice -n com.retroidpocket.dualscreen.assistant/.services.TccServices"))
     }
 }

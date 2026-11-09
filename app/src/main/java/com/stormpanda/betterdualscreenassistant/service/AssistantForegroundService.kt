@@ -331,9 +331,17 @@ class AssistantForegroundService : Service() {
 
         if (keyActionDown) {
             if (isLongPress) {
-                // Replicates TccServices.c(): Long-press turns off the bottom screen
+                // Replicates TccServices.c(): Long-press turns off the bottom screen on AYN Thor,
+                // and toggles the bottom screen (wake <-> blank) on Retroid Pocket Duo.
                 longPressConsumed = true
-                if (!overlayManager.isBottomScreenBlanked && currentMode != 1) {
+                val profile = com.stormpanda.betterdualscreenassistant.system.DeviceProfile.current(
+                    applicationContext
+                )
+                if (profile.longPressTogglesBottom &&
+                    (overlayManager.isBottomScreenBlanked || currentMode == 1)
+                ) {
+                    overlayManager.wakeBottomScreen()
+                } else if (!overlayManager.isBottomScreenBlanked && currentMode != 1) {
                     overlayManager.hideAssistantOverlay(immediate = true)
                     repository.setDualScreenDisplayMode(1)
                 }

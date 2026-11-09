@@ -7,6 +7,7 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,6 +52,12 @@ object PrivilegedBridge {
 
     @Volatile
     private var bottomScreenShowCoverWindow: Boolean = false
+
+    @Volatile
+    private var panel0BacklightBlanked: Boolean = false
+
+    @Volatile
+    private var panel1BacklightBlanked: Boolean = false
 
     private class PendingOsThemeRequest(
         val apply: Boolean,
@@ -99,6 +106,12 @@ object PrivilegedBridge {
         }
         if (bottomScreenBlanked) {
             dispatchBottomScreenBlankedToBinder(binder, bottomScreenBlanked, bottomScreenShowCoverWindow)
+        }
+        if (panel0BacklightBlanked) {
+            dispatchBacklightPowerToBinder(binder, 0, true)
+        }
+        if (panel1BacklightBlanked) {
+            dispatchBacklightPowerToBinder(binder, 1, true)
         }
         pendingOsThemeRequest?.let { req ->
             scope.launch {
@@ -430,6 +443,56 @@ object PrivilegedBridge {
             true
         } catch (t: Throwable) {
             Log.w(TAG, "Helper setBottomScreenBlanked failed", t)
+            false
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    /**
+     * Controls hardware kernel backlight power (`/sys/class/backlight/panel{0,1}-backlight/bl_power`)
+     * on devices that blank panels via sysfs backlight power ([DeviceProfile.blankViaBacklightSysfs]).
+     * `panelIndex`: `0` = Top screen (`panel0-backlight`), `1` = Bottom screen (`panel1-backlight`).
+     * `blanked`: `true` writes `"1"` (backlight off), `false` writes `"0"` (backlight on).
+     */
+    fun setBacklightPower(context: Context, panelIndex: Int, blanked: Boolean) {
+        if (panelIndex != 0 && panelIndex != 1) return
+        if (panelIndex == 0) {
+            panel0BacklightBlanked = blanked
+        } else {
+            panel1BacklightBlanked = blanked
+        }
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            if (dispatchBacklightPowerToBinder(binder, panelIndex, blanked)) {
+                return
+            }
+        }
+        val valStr = if (blanked) "1" else "0"
+        PServerClient.exec(
+            "echo $valStr > /sys/class/backlight/panel$panelIndex-backlight/bl_power",
+            wait = true
+        )
+        ensureStarted(context)
+    }
+
+    private fun dispatchBacklightPowerToBinder(
+        binder: IBinder,
+        panelIndex: Int,
+        blanked: Boolean
+    ): Boolean {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            data.writeInt(panelIndex)
+            data.writeInt(if (blanked) 1 else 0)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_SET_BACKLIGHT_POWER, data, reply, 0)
+            reply.readException()
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper setBacklightPower($panelIndex, $blanked) failed", t)
             false
         } finally {
             data.recycle()
@@ -774,19 +837,20 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+        val bottomId = DeviceProfile.current(context).bottomDisplayId
         val script = """
-            top_task=$(dumpsys activity activities | awk '/Display #0/{d=0} /Display #4/{d=4} /Task\{.*type=standard/{if (match($0, /#[0-9]+/)) {id=substr($0, RSTART+1, RLENGTH-1); if (d==0 && t0=="") t0=id; if (d==4 && t4=="") t4=id}} END{print t0 ":" t4}')
+            top_task=$(dumpsys activity activities | awk '/Display #0/{d=0} /Display #$bottomId/{d=$bottomId} /Task\{.*type=standard/{if (match($0, /#[0-9]+/)) {id=substr($0, RSTART+1, RLENGTH-1); if (d==0 && t0=="") t0=id; if (d==$bottomId && tb=="") tb=id}} END{print t0 ":" tb}')
             t0=${'$'}{top_task%:*}
-            t4=${'$'}{top_task#*:}
-            if [ -n "${'$'}t0" ] && [ -n "${'$'}t4" ]; then
-                am display move-stack "${'$'}t0" 4
-                am display move-stack "${'$'}t4" 0
+            tb=${'$'}{top_task#*:}
+            if [ -n "${'$'}t0" ] && [ -n "${'$'}tb" ]; then
+                am display move-stack "${'$'}t0" $bottomId
+                am display move-stack "${'$'}tb" 0
                 echo "OK"
             elif [ -n "${'$'}t0" ]; then
-                am display move-stack "${'$'}t0" 4
+                am display move-stack "${'$'}t0" $bottomId
                 echo "OK"
-            elif [ -n "${'$'}t4" ]; then
-                am display move-stack "${'$'}t4" 0
+            elif [ -n "${'$'}tb" ]; then
+                am display move-stack "${'$'}tb" 0
                 echo "OK"
             fi
         """.trimIndent()
@@ -824,7 +888,7 @@ object PrivilegedBridge {
         ensureStarted(context)
         val script = """
             count=0
-            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|com\.odin\.dualscreen\.assistant|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
+            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|com\.odin\.dualscreen\.assistant|com\.retroidpocket\.dualscreen\.assistant|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
                 am stack remove "${'$'}id" >/dev/null 2>&1 && count=${'$'}((count + 1))
             done
             echo "CLEARED:${'$'}count"
@@ -836,20 +900,40 @@ object PrivilegedBridge {
         return match.groupValues[1].toIntOrNull() ?: 0
     }
 
+    internal fun resolvePhysicalDisplayId(context: Context, logicalDisplayId: Int): String? {
+        return try {
+            val dm = context.getSystemService(DisplayManager::class.java)
+            val display = dm?.getDisplay(logicalDisplayId) ?: return null
+            val uniqueId = display.javaClass.getMethod("getUniqueId").invoke(display) as? String
+            val candidate = uniqueId?.removePrefix("local:")?.trim()
+            candidate?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     /**
      * Captures a screenshot of the Top screen (`targetMode == 0`), Bottom screen (`targetMode == 1`),
      * or Both screens (`targetMode == 2`) into `/sdcard/Pictures/Screenshots/` and notifies MediaScanner.
      */
     fun captureScreenshot(context: Context, targetMode: Int): Boolean {
-        val sfOut = PServerClient.exec("dumpsys SurfaceFlinger --display-id", wait = true).getOrDefault("")
-        var topPhysId: String? = null
-        var bottomPhysId: String? = null
-        val regex = Regex("""Display\s+(\d+)\s+\([^)]*port=(\d+)""")
-        for (match in regex.findAll(sfOut)) {
-            val physId = match.groupValues[1]
-            val port = match.groupValues[2]
-            if (port == "131") topPhysId = physId
-            if (port == "132") bottomPhysId = physId
+        val bottomDisplayId = DeviceProfile.current(context).bottomDisplayId
+        var topPhysId: String? = resolvePhysicalDisplayId(context, 0)
+        var bottomPhysId: String? = resolvePhysicalDisplayId(context, bottomDisplayId)
+
+        if (topPhysId.isNullOrEmpty() || bottomPhysId.isNullOrEmpty()) {
+            val sfOut = PServerClient.exec("dumpsys SurfaceFlinger --display-id", wait = true).getOrDefault("")
+            val regex = Regex("""Display\s+(\d+)\s+\([^)]*port=(\d+)""")
+            for (match in regex.findAll(sfOut)) {
+                val physId = match.groupValues[1]
+                val port = match.groupValues[2]
+                if ((port == "131" || port == "146") && topPhysId.isNullOrEmpty()) {
+                    topPhysId = physId
+                }
+                if ((port == "132" || port == "147") && bottomPhysId.isNullOrEmpty()) {
+                    bottomPhysId = physId
+                }
+            }
         }
 
         val dir = "/sdcard/Pictures/Screenshots"
@@ -867,7 +951,7 @@ object PrivilegedBridge {
         if (targetMode == 1 || targetMode == 2) {
             val bottomPath = "$dir/Screenshot_${ts}_Bottom.png"
             paths.add(bottomPath)
-            val dArg = if (!bottomPhysId.isNullOrEmpty()) "-d $bottomPhysId" else "-d 4"
+            val dArg = if (!bottomPhysId.isNullOrEmpty()) "-d $bottomPhysId" else "-d $bottomDisplayId"
             cmds.add("/system/bin/screencap -p $dArg $bottomPath")
         }
 

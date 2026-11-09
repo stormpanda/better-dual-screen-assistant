@@ -11,11 +11,74 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 
 private const val LUMINANCE_CONTRAST_THRESHOLD = 0.45f
 private val DEFAULT_CONTRAST_DARK_TEXT = Color(0xFF121212)
 const val DEFAULT_MEGINGIARD_ACCENT_ARGB: Int = 0xFFCC0000.toInt()
+val RetroidPixelTealSwatch: Color = Color(0xFF03DAC5)
+
+enum class TccUiLook {
+    AYN,
+    RETROID
+}
+
+enum class TccUiLookPreference(
+    val id: Int,
+    val displayName: String,
+    val shortLabel: String
+) {
+    AUTO(0, "Auto", "Auto"),
+    AYN(1, "AYN Smooth", "AYN"),
+    RETROID(2, "Retroid Pixel", "Retroid");
+
+    fun resolve(profile: DeviceProfile): TccUiLook = when (this) {
+        AUTO -> if (profile == DeviceProfile.RETROID_POCKET_DUO) TccUiLook.RETROID else TccUiLook.AYN
+        AYN -> TccUiLook.AYN
+        RETROID -> TccUiLook.RETROID
+    }
+
+    fun displayNameFor(profile: DeviceProfile): String = when (this) {
+        AUTO -> "Auto (${if (profile == DeviceProfile.RETROID_POCKET_DUO) "Retroid Pixel" else "AYN Smooth"})"
+        else -> displayName
+    }
+
+    companion object {
+        fun fromId(id: Int): TccUiLookPreference =
+            entries.firstOrNull { it.id == id } ?: AUTO
+    }
+}
+
+val LocalTccUiLook = compositionLocalOf { TccUiLook.AYN }
+
+val TccPixelFontFamily: FontFamily = FontFamily(
+    Font(R.font.tcc_pixel, FontWeight.Normal),
+    Font(R.font.tcc_pixel, FontWeight.Medium),
+    Font(R.font.tcc_pixel, FontWeight.SemiBold),
+    Font(R.font.tcc_pixel, FontWeight.Bold)
+)
+
+@Composable
+fun tccFontFamily(): FontFamily? =
+    if (LocalTccUiLook.current == TccUiLook.RETROID) TccPixelFontFamily else null
+
+@Composable
+fun tccTextStyle(): TextStyle =
+    if (LocalTccUiLook.current == TccUiLook.RETROID) {
+        TextStyle(
+            fontFamily = TccPixelFontFamily,
+            platformStyle = PlatformTextStyle(includeFontPadding = false)
+        )
+    } else {
+        TextStyle.Default
+    }
 
 fun Color.contrastingContentColor(
     dark: Color = DEFAULT_CONTRAST_DARK_TEXT,
@@ -33,6 +96,7 @@ val MegingiardAccentPresets: List<Color> = listOf(
     Color(0xFFFFCA28), // Amber
     Color(0xFF66BB6A), // Green
     Color(0xFF26A69A), // Teal
+    RetroidPixelTealSwatch, // Retroid Pixel Teal (#03DAC5)
     Color(0xFF29B6F6), // Light Blue
     Color(0xFF42A5F5), // Blue
     Color(0xFF7E57C2), // Deep Purple
@@ -513,16 +577,19 @@ fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<Stri
 }
 
 /**
- * Resolves the TCC or Megingiard theme palette based on `themeMode` ID (`AppThemeOption.id`).
+ * Resolves the TCC or Megingiard theme palette based on `themeMode` ID (`AppThemeOption.id`)
+ * and orthogonal UI Look (`uiLookMode`: Auto / AYN / Retroid Pixel).
  */
 @Composable
 fun TccTheme(
     themeMode: Int,
+    uiLookMode: Int = TccUiLookPreference.AUTO.id,
     customAccentArgb: Int = DEFAULT_MEGINGIARD_ACCENT_ARGB,
     syncedMegingiardOption: AppThemeOption = AppThemeOption.MEGINGIARD,
     syncedMegingiardAccentArgb: Int? = null,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
     val systemDark = isSystemInDarkTheme()
     val option = AppThemeOption.fromId(themeMode)
     val palette = resolveTccPalette(
@@ -532,19 +599,96 @@ fun TccTheme(
         syncedOption = syncedMegingiardOption,
         syncedAccentArgb = syncedMegingiardAccentArgb
     )
+    val resolvedUiLook = TccUiLookPreference.fromId(uiLookMode)
+        .resolve(DeviceProfile.current(context))
 
-    CompositionLocalProvider(LocalTccColors provides palette) {
+    CompositionLocalProvider(
+        LocalTccColors provides palette,
+        LocalTccUiLook provides resolvedUiLook
+    ) {
         content()
     }
 }
 
+@DrawableRes
+internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (resId) {
+    R.drawable.ic_app_manage -> R.drawable.rp_ic_app_manage
+    R.drawable.ic_ban_on_use -> R.drawable.rp_ic_ban_on_use
+    R.drawable.ic_bluetooth -> R.drawable.rp_ic_bluetooth
+    R.drawable.ic_brightness_0 -> R.drawable.rp_ic_brightness_0
+    R.drawable.ic_brightness_1 -> R.drawable.rp_ic_brightness_1
+    R.drawable.ic_brightness_2 -> R.drawable.rp_ic_brightness_2
+    R.drawable.ic_close_screen -> R.drawable.rp_ic_close_screen
+    R.drawable.ic_controller__xbox_style -> R.drawable.rp_ic_controller_xbox_style
+    R.drawable.ic_controller_odin_style -> R.drawable.rp_ic_controller_odin_style
+    R.drawable.ic_dual_screen_display -> R.drawable.rp_ic_dual_screen_display
+    R.drawable.ic_fan_custom_mode -> R.drawable.rp_ic_fan_custom_mode
+    R.drawable.ic_fan_custom_progress -> R.drawable.rp_ic_fan_custom_progress
+    R.drawable.ic_fan_normal -> R.drawable.rp_ic_fan_normal
+    R.drawable.ic_fan_quiet_mode -> R.drawable.rp_ic_fan_quiet_mode
+    R.drawable.ic_fan_smart_mode -> R.drawable.rp_ic_fan_smart_mode
+    R.drawable.ic_fan_sport_mode -> R.drawable.rp_ic_fan_sport_mode
+    R.drawable.ic_headset -> R.drawable.rp_ic_headset
+    R.drawable.ic_height_performance_mode -> R.drawable.rp_ic_height_performance_mode
+    R.drawable.ic_just_screen_above -> R.drawable.rp_ic_just_screen_above
+    R.drawable.ic_just_screen_below -> R.drawable.rp_ic_just_screen_below
+    R.drawable.ic_landscape -> R.drawable.rp_ic_landscape
+    R.drawable.ic_nav_edit -> R.drawable.rp_ic_nav_edit
+    R.drawable.ic_normal_mode -> R.drawable.rp_ic_normal_mode
+    R.drawable.ic_performance_mode -> R.drawable.rp_ic_performance_mode
+    R.drawable.ic_qs_airplane -> R.drawable.rp_ic_qs_airplane
+    R.drawable.ic_qs_ambient_light -> R.drawable.rp_ic_qs_ambient_light
+    R.drawable.ic_qs_charge_limit -> R.drawable.rp_ic_qs_charge_limit
+    R.drawable.ic_qs_charging_separation -> R.drawable.rp_ic_qs_charging_separation
+    R.drawable.ic_qs_clean -> R.drawable.rp_ic_qs_clean
+    R.drawable.ic_qs_clear_tasks -> R.drawable.rp_ic_qs_clear_tasks
+    R.drawable.ic_qs_controller_style -> R.drawable.rp_ic_qs_controller_style
+    R.drawable.ic_qs_dnd -> R.drawable.rp_ic_qs_dnd
+    R.drawable.ic_qs_fan_control -> R.drawable.rp_ic_qs_fan_control
+    R.drawable.ic_qs_keep_awake -> R.drawable.rp_ic_qs_keep_awake
+    R.drawable.ic_qs_key_mapper -> R.drawable.rp_ic_qs_key_mapper
+    R.drawable.ic_qs_keyboard -> R.drawable.rp_ic_qs_keyboard
+    R.drawable.ic_qs_mouse_mode -> R.drawable.rp_ic_qs_mouse_mode
+    R.drawable.ic_qs_performance -> R.drawable.rp_ic_qs_performance
+    R.drawable.ic_qs_prevent_home -> R.drawable.rp_ic_qs_prevent_home
+    R.drawable.ic_qs_screen_record -> R.drawable.rp_ic_qs_screen_record
+    R.drawable.ic_qs_screenshot -> R.drawable.rp_ic_qs_screenshot
+    R.drawable.ic_qs_swap_screens -> R.drawable.rp_ic_qs_swap_screens
+    R.drawable.ic_qs_theme_mode -> R.drawable.rp_ic_qs_theme_mode
+    R.drawable.ic_qs_touch_lock -> R.drawable.rp_ic_qs_touch_lock
+    R.drawable.ic_qs_trigger_mode -> R.drawable.rp_ic_qs_trigger_mode
+    R.drawable.ic_qs_vibrate -> R.drawable.rp_ic_qs_vibrate
+    R.drawable.ic_qs_wifi -> R.drawable.rp_ic_qs_wifi
+    R.drawable.ic_screen_control -> R.drawable.rp_ic_screen_control
+    R.drawable.ic_screen_focus_lock_lower -> R.drawable.rp_ic_screen_focus_lock_lower
+    R.drawable.ic_screen_focus_lock_mode -> R.drawable.rp_ic_screen_focus_lock_mode
+    R.drawable.ic_screen_focus_lock_switchable -> R.drawable.rp_ic_screen_focus_lock_switchable
+    R.drawable.ic_screen_focus_lock_upper -> R.drawable.rp_ic_screen_focus_lock_upper
+    R.drawable.ic_status_wifi_0 -> R.drawable.rp_ic_status_wifi_0
+    R.drawable.ic_status_wifi_1 -> R.drawable.rp_ic_status_wifi_1
+    R.drawable.ic_status_wifi_2 -> R.drawable.rp_ic_status_wifi_2
+    R.drawable.ic_status_wifi_3 -> R.drawable.rp_ic_status_wifi_3
+    R.drawable.ic_system_set -> R.drawable.rp_ic_system_set
+    R.drawable.ic_task_manage -> R.drawable.rp_ic_task_manage
+    R.drawable.ic_temp -> R.drawable.rp_ic_temp
+    R.drawable.ic_tip -> R.drawable.rp_ic_tip
+    R.drawable.ic_volume_0 -> R.drawable.rp_ic_volume_0
+    R.drawable.ic_volume_1 -> R.drawable.rp_ic_volume_1
+    R.drawable.ic_volume_2 -> R.drawable.rp_ic_volume_2
+    R.drawable.ic_volume_3 -> R.drawable.rp_ic_volume_3
+    else -> null
+}
+
 /**
- * Maps a light drawable resource to its `_black` dark-mode equivalent when a dark/Megingiard
- * theme is active, matching `r0.C0469a.c(int)` from the original DualScreenAssistant.
+ * Maps a light drawable resource to its pixel-art (`TccUiLook.RETROID`) or `_black` dark-mode
+ * (`TccUiLook.AYN`) equivalent, matching `N0.b` and `r0.C0469a.c(int)` from DualScreenAssistant.
  */
 @Composable
 @DrawableRes
 fun tccDrawable(@DrawableRes lightResId: Int): Int {
+    if (LocalTccUiLook.current == TccUiLook.RETROID) {
+        retroidPixelDrawableOrNull(lightResId)?.let { return it }
+    }
     val isDark = LocalTccColors.current.isDark
     if (!isDark) return lightResId
     return when (lightResId) {

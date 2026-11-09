@@ -157,8 +157,12 @@ object FanControlClient {
 class OverviewProxyClient(private val context: Context) {
     companion object {
         private const val TAG = "OverviewProxyClient"
-        private const val DESCRIPTOR = "com.android.systemui.shared.recents.IOverviewProxy"
+        internal const val DESCRIPTOR = "com.android.systemui.shared.recents.IOverviewProxy"
+        internal const val DESCRIPTOR_LAUNCHER_PROXY = "com.android.systemui.shared.recents.ILauncherProxy"
         private const val TRANSACTION_ON_OVERVIEW_SHOWN = 6
+
+        internal fun descriptorForSdk(sdkInt: Int = android.os.Build.VERSION.SDK_INT): String =
+            if (sdkInt >= 36) DESCRIPTOR_LAUNCHER_PROXY else DESCRIPTOR
     }
 
     @Volatile
@@ -214,7 +218,7 @@ class OverviewProxyClient(private val context: Context) {
     }
 
     fun toggleRecentAppsOnBottomScreen() {
-        showOverviewOnDisplay(4)
+        showOverviewOnDisplay(DeviceProfile.current(context).bottomDisplayId)
     }
 
     fun showOverviewOnDisplay(displayId: Int) {
@@ -226,13 +230,13 @@ class OverviewProxyClient(private val context: Context) {
         if (activeBinder != null && activeBinder.isBinderAlive) {
             val data = Parcel.obtain()
             try {
-                data.writeInterfaceToken(DESCRIPTOR)
+                data.writeInterfaceToken(descriptorForSdk())
                 data.writeInt(displayId)
                 data.writeString(context.packageName)
                 activeBinder.transact(TRANSACTION_ON_OVERVIEW_SHOWN, data, null, IBinder.FLAG_ONEWAY)
                 return
             } catch (t: Throwable) {
-                Log.w(TAG, "Failed to transact IOverviewProxy.onOverviewShown", t)
+                Log.w(TAG, "Failed to transact OverviewProxy.onOverviewShown", t)
             } finally {
                 data.recycle()
             }
@@ -262,6 +266,7 @@ class MappingServiceClient(
         internal const val TRANSACTION_REGISTER_INPUT_LISTENER = 2
         internal const val TRANSACTION_UNREGISTER_INPUT_LISTENER = 3
         internal const val INPUT_ID_HOME = "HOME"
+        internal const val INPUT_ID_BACK = "BACK"
     }
 
     private var mappingBinder: IBinder? = null
@@ -285,7 +290,9 @@ class MappingServiceClient(
                     data.readInt() // type
                     data.readInt() // code
                     data.readInt() // value
-                    if (inputId == INPUT_ID_HOME && value1.toInt() != 0) {
+                    val shouldDismiss = inputId == INPUT_ID_HOME ||
+                        (inputId == INPUT_ID_BACK && DeviceProfile.current(context).dismissOverlayOnBackMapping)
+                    if (shouldDismiss && value1.toInt() != 0) {
                         consumed = onHomePressed()
                     }
                 }
@@ -311,6 +318,18 @@ class MappingServiceClient(
         }
     }
 
+    private fun resolveFallbackMappingPackage(): String {
+        val candidates = DeviceProfile.current(context).mappingPackages
+        for (pkg in candidates) {
+            try {
+                context.packageManager.getPackageInfo(pkg, 0)
+                return pkg
+            } catch (_: Throwable) {
+            }
+        }
+        return candidates.firstOrNull() ?: MAPPING_PACKAGE
+    }
+
     fun bind() {
         if (mappingBinder != null || isBound) return
         try {
@@ -325,7 +344,7 @@ class MappingServiceClient(
                     ComponentName(resolved.packageName, resolved.name)
                 )
             } else {
-                Intent(ACTION_MAPPING_SERVICE).setPackage(MAPPING_PACKAGE)
+                Intent(ACTION_MAPPING_SERVICE).setPackage(resolveFallbackMappingPackage())
             }
             isBound = context.bindService(bindIntent, connection, Context.BIND_AUTO_CREATE)
         } catch (t: Throwable) {
@@ -363,9 +382,15 @@ class MappingServiceClient(
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
+            val profile = DeviceProfile.current(context)
+            val inputIds = if (profile.dismissOverlayOnBackMapping) {
+                arrayOf(INPUT_ID_HOME, INPUT_ID_BACK)
+            } else {
+                arrayOf(INPUT_ID_HOME)
+            }
             data.writeInterfaceToken(MAPPING_DESCRIPTOR)
             data.writeStrongBinder(keyListenerBinder)
-            data.writeStringArray(arrayOf(INPUT_ID_HOME))
+            data.writeStringArray(inputIds)
             service.transact(TRANSACTION_REGISTER_INPUT_LISTENER, data, reply, 0)
             reply.readException()
         } catch (t: Throwable) {
