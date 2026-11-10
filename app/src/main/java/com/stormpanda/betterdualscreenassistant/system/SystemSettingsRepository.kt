@@ -90,6 +90,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
         const val PREF_ACCURATE_GAME_FPS = "accurate_game_fps"
+        const val PREF_CPU_FREQ_SCALING_MODE = "cpu_freq_scaling_mode"
         const val PREF_TEMP_FAHRENHEIT = "temp_fahrenheit"
         const val PREF_PROMOTED_TO_MANAGER = "promoted_to_manager"
         const val LAUNCHER_ALIAS_ASSISTANT =
@@ -311,6 +312,11 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val accurateGameFps: StateFlow<Boolean> = _accurateGameFps.asStateFlow()
 
+    private val _cpuFreqScalingMode = MutableStateFlow(
+        prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
+    )
+    val cpuFreqScalingMode: StateFlow<Boolean> = _cpuFreqScalingMode.asStateFlow()
+
     private val _tempFahrenheit = MutableStateFlow(
         prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
     )
@@ -522,6 +528,10 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_ACCURATE_GAME_FPS -> {
                 _accurateGameFps.value =
                     prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+            }
+            PREF_CPU_FREQ_SCALING_MODE -> {
+                _cpuFreqScalingMode.value =
+                    prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
             }
             PREF_TEMP_FAHRENHEIT -> {
                 _tempFahrenheit.value =
@@ -852,6 +862,7 @@ class SystemSettingsRepository(private val context: Context) {
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+        _cpuFreqScalingMode.value = prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
         _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
         _promotedToManager.value = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
@@ -1814,6 +1825,11 @@ class SystemSettingsRepository(private val context: Context) {
     fun setAccurateGameFps(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_ACCURATE_GAME_FPS, enabled).apply()
         _accurateGameFps.value = enabled
+    }
+
+    fun setCpuFreqScalingMode(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_CPU_FREQ_SCALING_MODE, enabled).apply()
+        _cpuFreqScalingMode.value = enabled
     }
 
     fun setTempFahrenheit(fahrenheit: Boolean) {

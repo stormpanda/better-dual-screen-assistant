@@ -550,6 +550,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
     val showEditButton by repo.showEditButton.collectAsState()
     val accurateGameFps by repo.accurateGameFps.collectAsState()
+    val cpuFreqScalingMode by repo.cpuFreqScalingMode.collectAsState()
     val tempFahrenheit by repo.tempFahrenheit.collectAsState()
     val promotedToManager by repo.promotedToManager.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
@@ -780,6 +781,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
                                                 accurateGameFps = accurateGameFps,
+                                                cpuFreqScalingMode = cpuFreqScalingMode,
                                                 tempFahrenheit = tempFahrenheit,
                                                 promotedToManager = promotedToManager,
                                                 onToggleReplaceStock = { replaceStock ->
@@ -806,6 +808,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleAccurateGameFps = { enabled ->
                                                     repo.setAccurateGameFps(enabled)
+                                                },
+                                                onSetCpuFreqScalingMode = { scalingMode ->
+                                                    repo.setCpuFreqScalingMode(scalingMode)
                                                 },
                                                 onSetTempFahrenheit = { fahrenheit ->
                                                     repo.setTempFahrenheit(fahrenheit)
@@ -998,6 +1003,7 @@ private fun GeneralSettingsTabContent(
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     accurateGameFps: Boolean,
+    cpuFreqScalingMode: Boolean,
     tempFahrenheit: Boolean,
     promotedToManager: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
@@ -1007,6 +1013,7 @@ private fun GeneralSettingsTabContent(
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit,
     onToggleAccurateGameFps: (Boolean) -> Unit,
+    onSetCpuFreqScalingMode: (Boolean) -> Unit,
     onSetTempFahrenheit: (Boolean) -> Unit,
     onTogglePromotedToManager: (Boolean) -> Unit
 ) {
@@ -1048,6 +1055,15 @@ private fun GeneralSettingsTabContent(
         checked = accurateGameFps,
         icon = Icons.Rounded.Speed,
         onCheckedChange = onToggleAccurateGameFps
+    )
+
+    GamepadChoiceCard(
+        title = "CPU Max Speed Mode",
+        description = "Show the chip's true hardware maximum (AYN Thor style) or the active Performance Mode speed limit (Retroid Duo style)",
+        selectedText = if (cpuFreqScalingMode) "Performance Mode Limit" else "Hardware Maximum",
+        icon = Icons.Rounded.DeveloperBoard,
+        onPrevious = { onSetCpuFreqScalingMode(!cpuFreqScalingMode) },
+        onNext = { onSetCpuFreqScalingMode(!cpuFreqScalingMode) }
     )
 
     GamepadChoiceCard(

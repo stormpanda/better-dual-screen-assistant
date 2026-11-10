@@ -185,4 +185,42 @@ class TelemetryMonitorTest {
         assertEquals(1.15f, initMax, 0.01f)
         assertEquals("GHz", initUnit)
     }
+
+    @Test
+    fun `isCpuFreqScalingModeEnabled defaults to false and respects preference toggle`() {
+        val monitor = TelemetryMonitor(context)
+        assertFalse(monitor.isCpuFreqScalingModeEnabled())
+
+        val repo = SystemSettingsRepository(context)
+        assertFalse(repo.cpuFreqScalingMode.value)
+
+        repo.setCpuFreqScalingMode(true)
+        assertTrue(repo.cpuFreqScalingMode.value)
+        assertTrue(monitor.isCpuFreqScalingModeEnabled())
+
+        repo.setCpuFreqScalingMode(false)
+        assertFalse(repo.cpuFreqScalingMode.value)
+        assertFalse(monitor.isCpuFreqScalingModeEnabled())
+    }
+
+    @Test
+    fun `scaleCpuFrequency formats hardware max and performance mode scaling limits`() {
+        // AYN Thor hardware max (3,187,200 kHz -> 3.19 GHz)
+        val (thorCur, thorMax, thorUnit) = TelemetryMonitor.scaleCpuFrequency(1_843_200L, 3_187_200L)
+        assertEquals(1.84f, thorCur, 0.01f)
+        assertEquals(3.19f, thorMax, 0.01f)
+        assertEquals("GHz", thorUnit)
+
+        // Retroid Pocket Duo Standard mode scaling limit (1,766,400 kHz -> 1.77 GHz)
+        val (duoCur, duoMax, duoUnit) = TelemetryMonitor.scaleCpuFrequency(1_113_600L, 1_766_400L)
+        assertEquals(1.11f, duoCur, 0.01f)
+        assertEquals(1.77f, duoMax, 0.01f)
+        assertEquals("GHz", duoUnit)
+
+        // Fallback when sysfs returns 0
+        val (zeroCur, zeroMax, zeroUnit) = TelemetryMonitor.scaleCpuFrequency(0L, 0L)
+        assertEquals(0f, zeroCur, 0.01f)
+        assertEquals(3.2f, zeroMax, 0.01f)
+        assertEquals("GHz", zeroUnit)
+    }
 }
