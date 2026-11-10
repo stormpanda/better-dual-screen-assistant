@@ -76,8 +76,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_STOP_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 23
     const val TRANSACTION_GET_SCREEN_RECORD_STATE = IBinder.FIRST_CALL_TRANSACTION + 24
     const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
+    const val TRANSACTION_WINDOW_SESSION_TRANSACT = IBinder.FIRST_CALL_TRANSACTION + 26
 
-    const val HELPER_PROTOCOL_VERSION = 20
+    const val HELPER_PROTOCOL_VERSION = 21
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -1019,6 +1020,39 @@ object PrivilegedHelperMain {
                         val blanked = data.readInt() != 0
                         setBacklightPowerInternal(panelIndex, blanked)
                         reply?.writeNoException()
+                        true
+                    }
+                    TRANSACTION_WINDOW_SESSION_TRANSACT -> {
+                        val sessionBinder = data.readStrongBinder()
+                        val targetCode = data.readInt()
+                        val targetFlags = data.readInt()
+                        val forwardData = Parcel.obtain()
+                        val forwardReply = Parcel.obtain()
+                        try {
+                            val rem = data.dataAvail()
+                            if (rem > 0) {
+                                forwardData.appendFrom(data, data.dataPosition(), rem)
+                            }
+                            val callingToken = Binder.clearCallingIdentity()
+                            val ok = try {
+                                sessionBinder != null &&
+                                    sessionBinder.transact(targetCode, forwardData, forwardReply, targetFlags)
+                            } finally {
+                                Binder.restoreCallingIdentity(callingToken)
+                            }
+                            reply?.writeNoException()
+                            reply?.writeInt(if (ok) 1 else 0)
+                            if (ok && reply != null && forwardReply.dataSize() > 0) {
+                                reply.appendFrom(forwardReply, 0, forwardReply.dataSize())
+                            }
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "TRANSACTION_WINDOW_SESSION_TRANSACT failed (code=$targetCode)", t)
+                            reply?.writeNoException()
+                            reply?.writeInt(0)
+                        } finally {
+                            forwardData.recycle()
+                            forwardReply.recycle()
+                        }
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)

@@ -151,6 +151,13 @@ class ScreenOverlayManager(
     companion object {
         private const val TAG = "ScreenOverlayManager"
         const val TOP_DISPLAY_ID = 0
+        /**
+         * Privileged system window type `2021` (`WindowManager.LayoutParams.TYPE_BOOT_PROGRESS`,
+         * matching stock `TccServices.u()` / `ScreenUtil.c()` / `ScreenUtil.d()`).
+         * Exempt from `PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` when added via
+         * [PrivilegedBridge.installPrivilegedWindowSession].
+         */
+        const val PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021
         private const val FADE_DURATION_MS = 200L
     }
 
@@ -315,7 +322,7 @@ class ScreenOverlayManager(
                 if (!android.provider.Settings.canDrawOverlays(context)) {
                     PServerClient.ensurePermissionsGranted(context)
                 }
-                wm.addView(composeView, lp)
+                addOverlayViewWithPrivilegeFallback(wm, composeView, lp)
                 applyImmersiveFullscreen(composeView)
                 composeView.requestFocus()
                 composeView.animate()
@@ -663,7 +670,7 @@ class ScreenOverlayManager(
             }
 
             try {
-                wm.addView(container, lp)
+                addOverlayViewWithPrivilegeFallback(wm, container, lp)
                 mainHandler.postDelayed({
                     try {
                         wm.removeViewImmediate(container)
@@ -705,7 +712,7 @@ class ScreenOverlayManager(
             }
             val lp = createBlankOverlayLayoutParams(TOP_DISPLAY_ID, 1920, 1080)
             try {
-                wm.addView(view, lp)
+                addOverlayViewWithPrivilegeFallback(wm, view, lp)
                 applyImmersiveFullscreen(view)
                 view.requestFocus()
                 topBlankView = view
@@ -787,7 +794,7 @@ class ScreenOverlayManager(
                 currentProfile.bottomFallbackHeight
             )
             try {
-                wm.addView(view, lp)
+                addOverlayViewWithPrivilegeFallback(wm, view, lp)
                 applyImmersiveFullscreen(view)
                 view.requestFocus()
                 bottomBlankView = view
@@ -929,5 +936,34 @@ class ScreenOverlayManager(
 
     private fun getWindowManagerForDisplay(displayId: Int): WindowManager? {
         return getDisplayContext(displayId).getSystemService(WindowManager::class.java)
+    }
+
+    /**
+     * Attaches [view] using privileged window type [PRIVILEGED_OVERLAY_WINDOW_TYPE] (`2021` /
+     * `TYPE_BOOT_PROGRESS`, matching stock `TccServices.u()`) when the root-backed
+     * `IWindowSession` proxy is active so the overlay is never force-hidden by
+     * `PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` (e.g. `com.android.documentsui`),
+     * automatically falling back to `TYPE_APPLICATION_OVERLAY` (`2038`) if unavailable.
+     */
+    private fun addOverlayViewWithPrivilegeFallback(
+        wm: WindowManager,
+        view: View,
+        lp: WindowManager.LayoutParams
+    ) {
+        if (PrivilegedBridge.installPrivilegedWindowSession()) {
+            lp.type = PRIVILEGED_OVERLAY_WINDOW_TYPE
+            try {
+                wm.addView(view, lp)
+                return
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "Privileged window type ${lp.type} addView failed; falling back to TYPE_APPLICATION_OVERLAY",
+                    t
+                )
+            }
+        }
+        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        wm.addView(view, lp)
     }
 }

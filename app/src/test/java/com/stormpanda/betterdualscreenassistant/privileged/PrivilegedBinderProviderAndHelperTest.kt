@@ -713,6 +713,51 @@ class PrivilegedBinderProviderAndHelperTest {
         assertTrue(writes.contains(1 to false))
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_WINDOW_SESSION_TRANSACT forwards parcel payload and reply`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var receivedCode = -1
+        var receivedFlags = -1
+        var receivedWindowType = -1
+        val mockSessionBinder = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                receivedCode = code
+                receivedFlags = flags
+                receivedWindowType = data.readInt()
+                reply?.writeNoException()
+                reply?.writeInt(7) // e.g. WindowManagerGlobal.ADD_OKAY | ADD_FLAG_APP_VISIBLE
+                return true
+            }
+        }
+
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(mockSessionBinder)
+            writeInt(42) // targetCode
+            writeInt(0)  // targetFlags
+            writeInt(2021) // windowType payload
+        }
+        val reply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                data,
+                reply,
+                0
+            )
+        )
+        reply.setDataPosition(0)
+        reply.readException()
+        assertEquals(1, reply.readInt()) // ok == 1
+        reply.readException() // forwarded reply exception header
+        assertEquals(7, reply.readInt()) // forwarded result
+        assertEquals(42, receivedCode)
+        assertEquals(0, receivedFlags)
+        assertEquals(2021, receivedWindowType)
+        data.recycle()
+        reply.recycle()
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

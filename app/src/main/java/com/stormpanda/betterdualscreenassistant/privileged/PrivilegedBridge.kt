@@ -100,6 +100,7 @@ object PrivilegedBridge {
         }
         helperBinder = binder
         _isHelperConnected.value = true
+        installPrivilegedWindowSession()
         registerClientWithHelper(binder)
         if (topScreenBlanked) {
             dispatchTopScreenBlankedToBinder(binder, topScreenBlanked, topScreenShowCoverWindow)
@@ -1242,6 +1243,137 @@ object PrivilegedBridge {
         } finally {
             data.recycle()
             reply.recycle()
+        }
+    }
+
+    @Volatile
+    private var windowSessionProxyInstalled: Boolean = false
+
+    /**
+     * Wraps `WindowManagerGlobal.sWindowSession` with a dynamic proxy that routes `addToDisplay*`
+     * Binder calls through [PrivilegedHelperMain] (`UID 0`) when connected, allowing our overlay
+     * windows to use privileged window type `2021` (`TYPE_BOOT_PROGRESS`, matching stock `TccServices.u()`)
+     * so they are never hidden by `PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` (e.g. Files app).
+     *
+     * Returns `true` if the privileged window session proxy is installed and [PrivilegedHelperMain]
+     * is currently connected.
+     */
+    fun installPrivilegedWindowSession(): Boolean {
+        val helperAlive = helperBinder?.isBinderAlive == true
+        if (windowSessionProxyInstalled) {
+            return helperAlive
+        }
+        return try {
+            val wmGlobalClass = Class.forName("android.view.WindowManagerGlobal")
+            val iWindowSessionClass = Class.forName("android.view.IWindowSession")
+            val iWindowSessionStubClass = Class.forName("android.view.IWindowSession\$Stub")
+            val getWindowSessionMethod = wmGlobalClass.getDeclaredMethod("getWindowSession")
+            getWindowSessionMethod.isAccessible = true
+            val sWindowSessionField = wmGlobalClass.getDeclaredField("sWindowSession")
+            sWindowSessionField.isAccessible = true
+
+            synchronized(wmGlobalClass) {
+                val currentSession = getWindowSessionMethod.invoke(null) ?: return false
+                if (java.lang.reflect.Proxy.isProxyClass(currentSession.javaClass)) {
+                    windowSessionProxyInstalled = true
+                    return helperAlive
+                }
+                val asBinderMethod = currentSession.javaClass.getMethod("asBinder")
+                val realSessionBinder = asBinderMethod.invoke(currentSession) as? IBinder ?: return false
+
+                val proxyBinder = object : Binder() {
+                    override fun onTransact(
+                        code: Int,
+                        data: Parcel,
+                        reply: Parcel?,
+                        flags: Int
+                    ): Boolean {
+                        if (windowSessionTransact(realSessionBinder, code, data, reply, flags)) {
+                            return true
+                        }
+                        return realSessionBinder.transact(code, data, reply, flags)
+                    }
+                }
+
+                val asInterfaceMethod =
+                    iWindowSessionStubClass.getMethod("asInterface", IBinder::class.java)
+                val bridgedSession = asInterfaceMethod.invoke(null, proxyBinder) ?: return false
+
+                val sessionProxy = java.lang.reflect.Proxy.newProxyInstance(
+                    iWindowSessionClass.classLoader,
+                    arrayOf(iWindowSessionClass)
+                ) { _, method, args ->
+                    val target = if (
+                        method.name.startsWith("addToDisplay") &&
+                        helperBinder?.isBinderAlive == true
+                    ) {
+                        bridgedSession
+                    } else {
+                        currentSession
+                    }
+                    try {
+                        if (args == null) {
+                            method.invoke(target)
+                        } else {
+                            method.invoke(target, *args)
+                        }
+                    } catch (e: java.lang.reflect.InvocationTargetException) {
+                        throw (e.targetException ?: e)
+                    }
+                }
+
+                sWindowSessionField.set(null, sessionProxy)
+                windowSessionProxyInstalled = true
+                Log.i(TAG, "Installed privileged IWindowSession proxy in WindowManagerGlobal")
+            }
+            helperAlive
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to install privileged IWindowSession proxy", t)
+            false
+        }
+    }
+
+    private fun windowSessionTransact(
+        realSessionBinder: IBinder,
+        code: Int,
+        data: Parcel,
+        reply: Parcel?,
+        flags: Int
+    ): Boolean {
+        val helper = helperBinder ?: return false
+        if (!helper.isBinderAlive) return false
+        val helperData = Parcel.obtain()
+        val helperReply = Parcel.obtain()
+        return try {
+            helperData.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            helperData.writeStrongBinder(realSessionBinder)
+            helperData.writeInt(code)
+            helperData.writeInt(flags)
+            val dataSize = data.dataSize()
+            if (dataSize > 0) {
+                helperData.appendFrom(data, 0, dataSize)
+            }
+            val transacted = helper.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                helperData,
+                helperReply,
+                0
+            )
+            if (!transacted) return false
+            helperReply.readException()
+            val ok = helperReply.readInt() != 0
+            if (!ok) return false
+            val rem = helperReply.dataAvail()
+            if (rem > 0 && reply != null) {
+                reply.appendFrom(helperReply, helperReply.dataPosition(), rem)
+            }
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "windowSessionTransact(code=$code) via helper failed", t)
+            false
+        } finally {
+            helperData.recycle()
+            helperReply.recycle()
         }
     }
 }
