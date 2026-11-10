@@ -133,6 +133,7 @@ import com.stormpanda.betterdualscreenassistant.ui.components.tccTileBackground
 import com.stormpanda.betterdualscreenassistant.ui.components.tccTileIconTint
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
@@ -214,6 +215,7 @@ class MainActivity : ComponentActivity() {
             }
             val themeModeId by repo.themeMode.collectAsState()
             val uiLookMode by repo.uiLookMode.collectAsState()
+            val retroidReadabilityBoost by repo.retroidReadabilityBoost.collectAsState()
             val customAccentArgb by repo.customAccentArgb.collectAsState()
             val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
             val syncedMegingiardAccentArgb by repo.syncedMegingiardAccentArgb.collectAsState()
@@ -240,6 +242,7 @@ class MainActivity : ComponentActivity() {
             TccTheme(
                 themeMode = themeModeId,
                 uiLookMode = uiLookMode,
+                retroidReadabilityBoost = retroidReadabilityBoost,
                 customAccentArgb = customAccentArgb,
                 syncedMegingiardOption = syncedMegingiardOption,
                 syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
@@ -536,6 +539,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
 
     val themeModeId by repo.themeMode.collectAsState()
     val uiLookMode by repo.uiLookMode.collectAsState()
+    val retroidReadabilityBoost by repo.retroidReadabilityBoost.collectAsState()
     val selectedTheme = AppThemeOption.fromId(themeModeId)
     val customAccentArgb by repo.customAccentArgb.collectAsState()
     val injectSystemTheme by repo.injectOsTheme.collectAsState()
@@ -844,6 +848,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 profile = profile,
                                                 selectedTheme = selectedTheme,
                                                 uiLookMode = uiLookMode,
+                                                retroidReadabilityBoost = retroidReadabilityBoost,
                                                 customAccentArgb = customAccentArgb,
                                                 customSwatchColorArgb = customSwatchColorArgb,
                                                 injectSystemTheme = injectSystemTheme,
@@ -852,6 +857,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 promotedToManager = promotedToManager,
                                                 onSelectTheme = { repo.setThemeMode(it.id) },
                                                 onSetUiLookMode = { repo.setUiLookMode(it) },
+                                                onToggleRetroidReadabilityBoost = {
+                                                    repo.setRetroidReadabilityBoost(it)
+                                                },
                                                 onSelectAccentColor = { repo.setCustomAccentArgb(it) },
                                                 onOpenCustomAccent = {
                                                     subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
@@ -1583,7 +1591,9 @@ private fun ReorderableTccTile(
 ) {
     val tccColors = LocalTccColors.current
     val appColors = LocalAppColors.current
+    val lookSpec = LocalTccLookSpec.current
     val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val boost = lookSpec.retroidReadabilityBoost
     val pixelFont = tccFontFamily()
     val labelStyle = tccTextStyle()
     val tileShape: Shape = if (isRetroidLook) PixelCornerCutShape(5.dp) else CircleShape
@@ -1687,8 +1697,8 @@ private fun ReorderableTccTile(
                         } else {
                             appColors.onSurfaceSecondary
                         },
-                        fontSize = 8.5.sp,
-                        lineHeight = 9.5.sp,
+                        fontSize = if (boost) 12.sp else 8.5.sp,
+                        lineHeight = if (boost) 13.sp else 9.5.sp,
                         fontFamily = pixelFont,
                         fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
                     )
@@ -1700,15 +1710,15 @@ private fun ReorderableTccTile(
             Box(
                 modifier = Modifier
                     .width(70.dp)
-                    .height(23.dp)
+                    .height(if (boost) 32.dp else 23.dp)
                     .padding(horizontal = 1.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
                 Text(
                     text = tile.title,
                     color = textColor,
-                    fontSize = 10.sp,
-                    lineHeight = 11.sp,
+                    fontSize = if (boost) 14.5.sp else 10.sp,
+                    lineHeight = if (boost) 16.sp else 11.sp,
                     style = labelStyle,
                     fontWeight = if (!isRetroidLook && (isCursorSelected || isGrabbed)) {
                         FontWeight.SemiBold
@@ -1787,6 +1797,7 @@ private fun AppearanceSettingsTabContent(
     profile: DeviceProfile,
     selectedTheme: AppThemeOption,
     uiLookMode: Int,
+    retroidReadabilityBoost: Boolean,
     customAccentArgb: Int,
     customSwatchColorArgb: Int,
     injectSystemTheme: Boolean,
@@ -1795,6 +1806,7 @@ private fun AppearanceSettingsTabContent(
     promotedToManager: Boolean,
     onSelectTheme: (AppThemeOption) -> Unit,
     onSetUiLookMode: (Int) -> Unit,
+    onToggleRetroidReadabilityBoost: (Boolean) -> Unit,
     onSelectAccentColor: (Int) -> Unit,
     onOpenCustomAccent: () -> Unit,
     onToggleInjectSystemTheme: (Boolean) -> Unit
@@ -1802,6 +1814,7 @@ private fun AppearanceSettingsTabContent(
     val stockVendorName = profile.vendorName
     val stockVendorLabel = "Stock $stockVendorName"
     val selectedUiLookPref = TccUiLookPreference.fromId(uiLookMode)
+    val isRetroidLookActive = selectedUiLookPref.resolve(profile) == TccUiLook.RETROID
     val uiLookOptions = TccUiLookPreference.entries
 
     val availableSources = remember(isMegingiardAvailable) {
@@ -1966,6 +1979,15 @@ private fun AppearanceSettingsTabContent(
         onNext = {
             onSetUiLookMode(uiLookOptions.cycle(selectedUiLookPref, BumperDirection.NEXT).id)
         }
+    )
+
+    GamepadToggleCard(
+        title = "Improve Retroid Readability",
+        description = "Increase pixel font sizes across overlay tiles, sliders, telemetry readouts, and dialogs when using the Retroid UI look",
+        checked = retroidReadabilityBoost,
+        enabled = isRetroidLookActive,
+        icon = Icons.Rounded.Tune,
+        onCheckedChange = onToggleRetroidReadabilityBoost
     )
 
     GamepadToggleCard(

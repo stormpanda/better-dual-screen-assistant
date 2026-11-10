@@ -115,6 +115,7 @@ fun AssistantOverlayScreen(
     val profile = remember(context) { DeviceProfile.current(context) }
     val themeMode by repository.themeMode.collectAsState()
     val uiLookMode by repository.uiLookMode.collectAsState()
+    val retroidReadabilityBoost by repository.retroidReadabilityBoost.collectAsState()
     val customAccentArgb by repository.customAccentArgb.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
@@ -157,6 +158,7 @@ fun AssistantOverlayScreen(
     TccTheme(
         themeMode = themeMode,
         uiLookMode = uiLookMode,
+        retroidReadabilityBoost = retroidReadabilityBoost,
         customAccentArgb = customAccentArgb,
         syncedMegingiardOption = syncedMegingiardOption,
         syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
@@ -1250,15 +1252,16 @@ private fun FrameRatePanelCard(
             val h = size.height
             val numberStr = currentFps.coerceIn(0, refreshRate).toString()
             val unitStr = "FPS"
+            val boost = lookSpec.retroidReadabilityBoost
 
-            numberPaint.textSize = h * (if (isRetroid) 0.76f else 0.75f)
+            numberPaint.textSize = h * (if (isRetroid) (if (boost) 0.94f else 0.76f) else 0.75f)
             numberPaint.color = primaryArgb
             val fm = numberPaint.fontMetrics
             val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) +
                 (if (!isRetroid) padPx else 0f)
             val numberWidth = numberPaint.measureText(numberStr)
 
-            unitPaint.textSize = h * (if (isRetroid) 0.18f else 0.20f)
+            unitPaint.textSize = h * (if (isRetroid) (if (boost) 0.27f else 0.18f) else 0.20f)
             unitPaint.color = primaryArgb
             val unitWidth = unitPaint.measureText(unitStr)
             val totalWidth = numberWidth + padPx * 2f + unitWidth

@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -626,7 +627,7 @@ fun HardwareInfoComponentCard(
         val density = LocalDensity.current
         val minDim = min(maxWidth, maxHeight)
         val iconSize = minDim * (iconSizeRate * (if (isRetroid) 1.15f else 1.0f))
-        val titleSp = with(density) { (minDim * (if (isRetroid) 0.135f else 0.12f)).toSp() }
+        val titleSp = with(density) { (minDim * settingsSpec.tempFanTitleScale).toSp() }
         val valueSp = with(density) { (minDim * settingsSpec.tempFanValueScale).toSp() }
         val sideInset = maxWidth * (if (isRetroid) 0.16f else 0.20f)
         val iconTopY = maxHeight * 0.20f
@@ -726,9 +727,9 @@ fun HardwareRingGauge(
         val rawSizeDp = min(maxWidth, maxHeight)
         val sizeDp = rawSizeDp * settingsSpec.ringDiameterRatio
         val density = LocalDensity.current
-        val titleSp = with(density) { (sizeDp * 0.13f).toSp() }
+        val titleSp = with(density) { (sizeDp * settingsSpec.ringTitleScale).toSp() }
         val valueSp = with(density) { (sizeDp * settingsSpec.ringValueScale).toSp() }
-        val unitSp = with(density) { (sizeDp * (if (isRetroid) 0.125f else 0.13f)).toSp() }
+        val unitSp = with(density) { (sizeDp * settingsSpec.ringUnitScale).toSp() }
 
         Box(
             modifier = Modifier.size(sizeDp),
@@ -1295,6 +1296,54 @@ fun TccDialogToggleRow(
                     .size(switchThumbSize)
                     .clip(dialogSpec.switchThumbShape)
                     .background(thumbColor)
+            )
+        }
+    }
+}
+
+@Composable
+fun TccDialogCheckboxRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val colors = LocalTccColors.current
+    val lookSpec = LocalTccLookSpec.current
+    val isRetroid = lookSpec.isRetroid
+    val dialogSpec = lookSpec.dialog
+    val labelStyle = tccTextStyle()
+    val contentAlpha = if (enabled) 1f else 0.42f
+    val indicatorSize = if (isRetroid) 26.dp else dialogSpec.checkIndicatorSize
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(dialogSpec.toggleRowHeight)
+            .then(
+                if (enabled) {
+                    Modifier.clickable { onCheckedChange(!checked) }
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = dialogSpec.toggleRowHorizontalPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            color = colors.primary.copy(alpha = contentAlpha),
+            fontSize = dialogSpec.toggleFontSize,
+            style = labelStyle,
+            fontWeight = if (isRetroid) FontWeight.Normal else FontWeight.Medium
+        )
+
+        Box(modifier = Modifier.graphicsLayer { alpha = contentAlpha }) {
+            TccRadioCheckIndicator(
+                selected = checked,
+                modifier = Modifier.size(indicatorSize)
             )
         }
     }

@@ -586,7 +586,8 @@ fun GamepadToggleCard(
             trailingContent = {
                 GamepadPill(
                     text = if (checked) stringResource(R.string.gamepad_toggle_on) else stringResource(R.string.gamepad_toggle_off),
-                    isAccent = checked,
+                    isAccent = checked && enabled,
+                    enabled = enabled,
                 )
             },
         )

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogCheckboxRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogFpsSelectorRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogOption
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogSegmentedRow
@@ -51,6 +52,7 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.LocalOverlayViewport
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
 import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
+import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
 import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.aynSp
@@ -290,11 +292,14 @@ internal fun AssistantOverlayDialogHost(
         ActiveDialog.THEME_MODE -> {
             val themeMode by repository.themeMode.collectAsState()
             val uiLookMode by repository.uiLookMode.collectAsState()
+            val retroidReadabilityBoost by repository.retroidReadabilityBoost.collectAsState()
             val customAccentArgb by repository.customAccentArgb.collectAsState()
             val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
             val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
             val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
             val injectOsTheme by repository.injectOsTheme.collectAsState()
+            val isRetroidLookActive = TccUiLookPreference.fromId(uiLookMode)
+                .resolve(profile) == TccUiLook.RETROID
 
             val rawSelectedThemeOption = AppThemeOption.fromId(themeMode)
             val selectedThemeOption = if (rawSelectedThemeOption == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
@@ -382,6 +387,13 @@ internal fun AssistantOverlayDialogHost(
                         ),
                         selectedId = uiLookMode,
                         onSelectId = { repository.setUiLookMode(it) }
+                    )
+                    DialogFooterDivider()
+                    TccDialogCheckboxRow(
+                        label = "Improve Retroid Readability",
+                        checked = retroidReadabilityBoost,
+                        enabled = isRetroidLookActive,
+                        onCheckedChange = { repository.setRetroidReadabilityBoost(it) }
                     )
                 }
             )
@@ -475,18 +487,19 @@ fun CloseScreenTipOverlay(
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
     val isRetroid = lookSpec.isRetroid
+    val boost = lookSpec.retroidReadabilityBoost
     val dialogSpec = lookSpec.dialog
     val viewport = LocalOverlayViewport.current
     val labelStyle = tccTextStyle()
     val resolvedBodyText = tipBodyText ?: stringResource(R.string.tip_content_text)
 
     val tipDialogWidth = resolveResponsiveDialogWidthDp(
-        preferredWidth = if (isRetroid) 520.dp else aynDp(420f),
+        preferredWidth = if (isRetroid) (if (boost) 556.dp else 520.dp) else aynDp(420f),
         viewportWidth = viewport.widthDp,
         maxViewportWidthFraction = 0.80f
     )
     val sectionGap = if (isRetroid) 18.dp else aynDp(14f)
-    val buttonFontSize = if (isRetroid) 18.sp else aynSp(15f)
+    val buttonFontSize = if (isRetroid) (if (boost) 25.sp else 18.sp) else aynSp(15f)
 
     Box(
         modifier = Modifier
@@ -526,7 +539,7 @@ fun CloseScreenTipOverlay(
                 Text(
                     text = stringResource(R.string.tip_title_text),
                     color = colors.primary,
-                    fontSize = if (isRetroid) 22.sp else aynSp(17f),
+                    fontSize = if (isRetroid) (if (boost) 30.sp else 22.sp) else aynSp(17f),
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -536,8 +549,8 @@ fun CloseScreenTipOverlay(
             Text(
                 text = resolvedBodyText,
                 color = colors.primary,
-                fontSize = if (isRetroid) 17.sp else aynSp(14f),
-                lineHeight = if (isRetroid) 22.sp else aynSp(18f),
+                fontSize = if (isRetroid) (if (boost) 24.sp else 17.sp) else aynSp(14f),
+                lineHeight = if (isRetroid) (if (boost) 30.sp else 22.sp) else aynSp(18f),
                 style = labelStyle,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = if (isRetroid) 30.dp else aynDp(24f))
@@ -562,7 +575,7 @@ fun CloseScreenTipOverlay(
                 Text(
                     text = stringResource(R.string.tip_dialog_cb_text_no_more_tip),
                     color = colors.secondary,
-                    fontSize = if (isRetroid) 16.sp else aynSp(13f),
+                    fontSize = dialogSpec.toggleFontSize,
                     style = labelStyle
                 )
             }

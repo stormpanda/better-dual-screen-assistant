@@ -656,6 +656,7 @@ fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<Stri
 fun TccTheme(
     themeMode: Int,
     uiLookMode: Int = TccUiLookPreference.AUTO.id,
+    retroidReadabilityBoost: Boolean = true,
     customAccentArgb: Int = DEFAULT_MEGINGIARD_ACCENT_ARGB,
     syncedMegingiardOption: AppThemeOption = AppThemeOption.MEGINGIARD,
     syncedMegingiardAccentArgb: Int? = null,
@@ -666,7 +667,7 @@ fun TccTheme(
     val option = AppThemeOption.fromId(themeMode)
     val resolvedUiLook = TccUiLookPreference.fromId(uiLookMode)
         .resolve(DeviceProfile.current(context))
-    val lookSpec = lookSpecFor(resolvedUiLook)
+    val lookSpec = lookSpecFor(resolvedUiLook, retroidReadabilityBoost)
     val palette = resolveTccPalette(
         option = option,
         systemDark = systemDark,

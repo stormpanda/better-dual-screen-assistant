@@ -156,6 +156,7 @@ data class StatusBarLookSpec(
     val timeHorizontalPadding: Dp,
     val itemSpacing: Dp,
     val fontSize: TextUnit,
+    val recordingFontSize: TextUnit = aynSp(12f),
     val bluetoothIconSize: Dp,
     val wifiWidth: Dp,
     val wifiHeight: Dp,
@@ -243,9 +244,12 @@ data class SettingsTabLookSpec(
     val tempFanGap: Dp,
     val ringsHorizontalPadding: Dp,
     val ringsVerticalPadding: Dp,
+    val tempFanTitleScale: Float = 0.12f,
     val tempFanValueScale: Float,
     val ringDiameterRatio: Float,
-    val ringValueScale: Float
+    val ringTitleScale: Float = 0.13f,
+    val ringValueScale: Float,
+    val ringUnitScale: Float = 0.13f
 )
 
 @Immutable
@@ -296,6 +300,7 @@ data class DialogLookSpec(
 @Immutable
 data class TccLookSpec(
     val look: TccUiLook,
+    val retroidReadabilityBoost: Boolean = false,
     val maxContentAspectRatio: Float,
     val outerHorizontalPadding: Dp,
     val contentBottomPadding: Dp,
@@ -463,6 +468,7 @@ val RetroidLookSpec = TccLookSpec(
         timeHorizontalPadding = 0.dp,
         itemSpacing = 10.dp,
         fontSize = 20.5.sp,
+        recordingFontSize = 15.sp,
         bluetoothIconSize = 21.dp,
         wifiWidth = 28.dp,
         wifiHeight = 21.5.dp,
@@ -542,9 +548,12 @@ val RetroidLookSpec = TccLookSpec(
         tempFanGap = 15.dp,
         ringsHorizontalPadding = 16.dp,
         ringsVerticalPadding = 12.dp,
+        tempFanTitleScale = 0.135f,
         tempFanValueScale = 0.215f,
         ringDiameterRatio = 0.90f,
-        ringValueScale = 0.185f
+        ringTitleScale = 0.13f,
+        ringValueScale = 0.185f,
+        ringUnitScale = 0.125f
     ),
     navBar = NavBarLookSpec(
         fixedOuterHeight = 155.5.dp,
@@ -589,9 +598,84 @@ val RetroidLookSpec = TccLookSpec(
     )
 )
 
-fun lookSpecFor(uiLook: TccUiLook): TccLookSpec = when (uiLook) {
+/**
+ * Enhanced-readability variant of [RetroidLookSpec] that boosts pixel font sizes ~20–25%
+ * across tiles, sliders, telemetry readouts, status bar, and dialogs while expanding tight
+ * label containers so larger text never wraps mid-word or clips.
+ */
+val RetroidReadableLookSpec: TccLookSpec = RetroidLookSpec.copy(
+    retroidReadabilityBoost = true,
+    statusBar = RetroidLookSpec.statusBar.copy(
+        topPadding = 30.dp,
+        bottomPadding = 24.dp,
+        fontSize = 29.sp,
+        recordingFontSize = 22.sp
+    ),
+    tile = RetroidLookSpec.tile.copy(
+        modeLabelWidth = 192.dp,
+        qsLabelWidth = 156.dp,
+        navLabelWidth = 136.dp,
+        topGap = 2.dp,
+        compactTopGap = 2.dp,
+        modeLabelTopGap = 7.dp,
+        qsLabelTopGap = 5.dp,
+        compactLabelTopGap = 4.dp,
+        modeTitleHeight = 54.dp,
+        qsTitleHeight = 52.dp,
+        compactTitleHeight = 32.dp,
+        modeLabelFontSize = 22.5.sp,
+        qsLabelFontSize = 21.5.sp,
+        modeLabelLineHeight = 26.sp,
+        qsLabelLineHeight = 24.5.sp
+    ),
+    slider = RetroidLookSpec.slider.copy(
+        labelWidth = 84.dp,
+        labelFontSize = 20.5.sp,
+        labelLineHeight = 23.5.sp
+    ),
+    modeTab = RetroidLookSpec.modeTab.copy(
+        cardHorizontalPadding = 12.dp,
+        fixedCardVerticalPadding = 10.dp,
+        threeSliderRowHeight = 56.dp,
+        fourSliderRowHeight = 48.dp
+    ),
+    settingsTab = RetroidLookSpec.settingsTab.copy(
+        fpsBadgePreferredWidth = 276.dp,
+        fpsBadgeHeight = 46.dp,
+        fpsBadgeFontSize = 27.sp,
+        fpsTipFontSize = 26.sp,
+        tempFanTitleScale = 0.20f,
+        tempFanValueScale = 0.30f,
+        ringTitleScale = 0.185f,
+        ringValueScale = 0.255f,
+        ringUnitScale = 0.18f
+    ),
+    navBar = RetroidLookSpec.navBar.copy(
+        narrowRowFraction3 = 0.78f,
+        wideRowFraction3 = 0.72f,
+        narrowRowFraction4 = 0.90f,
+        wideRowFraction4 = 0.82f
+    ),
+    dialog = RetroidLookSpec.dialog.copy(
+        narrowPreferredWidth = 568.dp,
+        widePreferredWidth = 568.dp,
+        maxViewportWidthFraction = 0.78f,
+        titleFontSize = 34.sp,
+        rowHorizontalPadding = 48.dp,
+        optionFontSize = 29.sp,
+        toggleRowHeight = 60.dp,
+        toggleRowHorizontalPadding = 26.dp,
+        toggleFontSize = 23.sp,
+        segmentedPillFontSize = 20.sp
+    )
+)
+
+fun lookSpecFor(
+    uiLook: TccUiLook,
+    retroidReadabilityBoost: Boolean = false
+): TccLookSpec = when (uiLook) {
     TccUiLook.AYN -> AynLookSpec
-    TccUiLook.RETROID -> RetroidLookSpec
+    TccUiLook.RETROID -> if (retroidReadabilityBoost) RetroidReadableLookSpec else RetroidLookSpec
 }
 
 fun lerpDp(start: Dp, stop: Dp, fraction: Float): Dp = lerp(start, stop, fraction.coerceIn(0f, 1f))

@@ -406,6 +406,23 @@ class TccThemeAndOverlayFormatTest {
         )
 
         assertEquals(AynLookSpec, lookSpecFor(TccUiLook.AYN))
+        assertEquals(AynLookSpec, lookSpecFor(TccUiLook.AYN, retroidReadabilityBoost = true))
         assertEquals(RetroidLookSpec, lookSpecFor(TccUiLook.RETROID))
+        assertEquals(RetroidLookSpec, lookSpecFor(TccUiLook.RETROID, retroidReadabilityBoost = false))
+        assertEquals(RetroidReadableLookSpec, lookSpecFor(TccUiLook.RETROID, retroidReadabilityBoost = true))
+
+        // 5. RetroidReadableLookSpec boosts font sizes and widens tight containers over stock RetroidLookSpec
+        assertTrue(RetroidReadableLookSpec.retroidReadabilityBoost)
+        assertFalse(RetroidLookSpec.retroidReadabilityBoost)
+        assertTrue(RetroidReadableLookSpec.statusBar.fontSize.value > RetroidLookSpec.statusBar.fontSize.value)
+        assertTrue(RetroidReadableLookSpec.tile.modeLabelFontSize.value > RetroidLookSpec.tile.modeLabelFontSize.value)
+        assertTrue(RetroidReadableLookSpec.tile.qsLabelFontSize.value > RetroidLookSpec.tile.qsLabelFontSize.value)
+        assertTrue(RetroidReadableLookSpec.slider.labelFontSize.value > RetroidLookSpec.slider.labelFontSize.value)
+        assertTrue(RetroidReadableLookSpec.slider.labelWidth.value > RetroidLookSpec.slider.labelWidth.value)
+        assertTrue(RetroidReadableLookSpec.settingsTab.fpsBadgeFontSize.value > RetroidLookSpec.settingsTab.fpsBadgeFontSize.value)
+        assertTrue(RetroidReadableLookSpec.settingsTab.tempFanValueScale > RetroidLookSpec.settingsTab.tempFanValueScale)
+        assertTrue(RetroidReadableLookSpec.settingsTab.ringValueScale > RetroidLookSpec.settingsTab.ringValueScale)
+        assertTrue(RetroidReadableLookSpec.dialog.optionFontSize.value > RetroidLookSpec.dialog.optionFontSize.value)
+        assertTrue(RetroidReadableLookSpec.dialog.toggleFontSize.value > RetroidLookSpec.dialog.toggleFontSize.value)
     }
 }

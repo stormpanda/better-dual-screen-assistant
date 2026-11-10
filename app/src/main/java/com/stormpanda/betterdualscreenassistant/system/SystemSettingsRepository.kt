@@ -98,6 +98,7 @@ class SystemSettingsRepository(private val context: Context) {
             "com.stormpanda.betterdualscreenassistant.MainActivityManagerAlias"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
         const val PREF_UI_LOOK_MODE = "ui_look_mode"
+        const val PREF_RETROID_READABILITY_BOOST = "retroid_readability_boost"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
         const val ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT = "dual_screen_action.volume.key.event"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
@@ -255,6 +256,11 @@ class SystemSettingsRepository(private val context: Context) {
     // UI Look Mode: 0 = Auto (Device Default), 1 = AYN, 2 = Retroid Pixel
     private val _uiLookMode = MutableStateFlow(prefs.getInt(PREF_UI_LOOK_MODE, 0).coerceIn(0, 2))
     val uiLookMode: StateFlow<Int> = _uiLookMode.asStateFlow()
+
+    private val _retroidReadabilityBoost = MutableStateFlow(
+        prefs.getBoolean(PREF_RETROID_READABILITY_BOOST, true)
+    )
+    val retroidReadabilityBoost: StateFlow<Boolean> = _retroidReadabilityBoost.asStateFlow()
 
     private val _customAccentArgb = MutableStateFlow(
         prefs.getInt(PREF_CUSTOM_ACCENT_ARGB, DEFAULT_MEGINGIARD_ACCENT_ARGB)
@@ -1167,6 +1173,11 @@ class SystemSettingsRepository(private val context: Context) {
         val normalized = mode.coerceIn(0, 2)
         _uiLookMode.value = normalized
         prefs.edit().putInt(PREF_UI_LOOK_MODE, normalized).apply()
+    }
+
+    fun setRetroidReadabilityBoost(enabled: Boolean) {
+        _retroidReadabilityBoost.value = enabled
+        prefs.edit().putBoolean(PREF_RETROID_READABILITY_BOOST, enabled).apply()
     }
 
     fun setCustomAccentArgb(argb: Int) {

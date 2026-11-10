@@ -282,7 +282,7 @@ fun StatusBarRow(
                     Text(
                         text = recordingElapsedText.ifEmpty { "00:00" },
                         color = Color.White,
-                        fontSize = if (isRetroid) 15.sp else aynSp(12f),
+                        fontSize = spec.recordingFontSize,
                         style = displayStyle,
                         fontWeight = statusFontWeight
                     )

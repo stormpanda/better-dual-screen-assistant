@@ -401,6 +401,14 @@ class SystemSettingsRepositoryTest {
         repo.setThemeMode(AppThemeOption.VALHALLA.id)
         assertEquals(AppThemeOption.VALHALLA.id, repo.themeMode.value)
 
+        // Retroid readability boost defaults to true and persists across repository instances
+        assertTrue(repo.retroidReadabilityBoost.value)
+        repo.setRetroidReadabilityBoost(false)
+        assertFalse(repo.retroidReadabilityBoost.value)
+        assertFalse(SystemSettingsRepository(context).retroidReadabilityBoost.value)
+        repo.setRetroidReadabilityBoost(true)
+        assertTrue(repo.retroidReadabilityBoost.value)
+
         repo.setCustomAccentArgb(0xFF112233.toInt())
         assertEquals(0xFF112233.toInt(), repo.customAccentArgb.value)
 
