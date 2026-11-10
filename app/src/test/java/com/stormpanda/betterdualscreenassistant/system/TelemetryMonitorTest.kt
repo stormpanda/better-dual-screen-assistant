@@ -159,4 +159,30 @@ class TelemetryMonitorTest {
         assertEquals(59, TelemetryMonitor.normalizeGameFpsForPanel(58.27f, 60f))
         assertEquals(30, TelemetryMonitor.normalizeGameFpsForPanel(29.60f, 60f))
     }
+
+    @Test
+    fun `scaleGpuFrequency dynamically switches between MHz and GHz across Adreno 740 and Adreno 830`() {
+        // Adreno 740 (680 MHz max)
+        val (curMhz, maxMhz, unitMhz) = TelemetryMonitor.scaleGpuFrequency(315_000_000L, 680_000_000L)
+        assertEquals(315f, curMhz, 0.01f)
+        assertEquals(680f, maxMhz, 0.01f)
+        assertEquals("MHz", unitMhz)
+
+        // Adreno 830 (1.15 GHz max): switches dynamically between MHz when <1 GHz and GHz when >=1 GHz
+        val (idleCur, idleMax, idleUnit) = TelemetryMonitor.scaleGpuFrequency(225_000_000L, 1_150_000_000L)
+        assertEquals(225f, idleCur, 0.01f)
+        assertEquals(1150f, idleMax, 0.01f)
+        assertEquals("MHz", idleUnit)
+
+        val (boostCur, boostMax, boostUnit) = TelemetryMonitor.scaleGpuFrequency(1_150_000_000L, 1_150_000_000L)
+        assertEquals(1.15f, boostCur, 0.01f)
+        assertEquals(1.15f, boostMax, 0.01f)
+        assertEquals("GHz", boostUnit)
+
+        // Initial pre-loop call with curGpuRaw == 0L
+        val (initCur, initMax, initUnit) = TelemetryMonitor.scaleGpuFrequency(0L, 1_150_000_000L)
+        assertEquals(0f, initCur, 0.01f)
+        assertEquals(1.15f, initMax, 0.01f)
+        assertEquals("GHz", initUnit)
+    }
 }

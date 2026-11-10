@@ -50,16 +50,19 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
-import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayFontFamily
+import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
+import com.stormpanda.betterdualscreenassistant.ui.theme.aynSp
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayTextStyle
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import kotlinx.coroutines.delay
@@ -70,9 +73,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Replicates `StatusBar` (`status_bar.xml`):
- * `marginTop = 15dp`, `paddingHorizontal = 15dp`.
- * Left: `TimeView` (tapping triggers memory cleanup just like the stock app).
+ * Replicates `StatusBar` (`status_bar.xml`) across AYN Smooth and Retroid Pixel UI looks.
+ * Left: `TimeView` (tapping triggers memory cleanup just like the stock app) + optional recording badge.
  * Right: `BluetoothView`, `InternetSpeedView`, `WifiView`, and `BatteryView`.
  */
 @Composable
@@ -85,10 +87,12 @@ fun StatusBarRow(
 ) {
     val context = LocalContext.current
     val colors = LocalTccColors.current
-    val spec = LocalTccLookSpec.current.statusBar
-    val pixelFont = tccDisplayFontFamily()
-    val pixelStyle = tccDisplayTextStyle()
+    val lookSpec = LocalTccLookSpec.current
+    val isRetroid = lookSpec.isRetroid
+    val spec = lookSpec.statusBar
+    val displayStyle = tccDisplayTextStyle()
     val statusFontSize = spec.fontSize
+    val statusFontWeight = if (isRetroid) FontWeight.Normal else FontWeight.Bold
 
     var timeText by remember { mutableStateOf(formatCurrentTime(context)) }
     var batteryLevel by remember { mutableIntStateOf(100) }
@@ -239,9 +243,8 @@ fun StatusBarRow(
                 text = timeText,
                 color = colors.primary,
                 fontSize = statusFontSize,
-                fontFamily = pixelFont,
-                style = pixelStyle,
-                fontWeight = spec.fontWeight,
+                style = displayStyle,
+                fontWeight = statusFontWeight,
                 modifier = Modifier
                     .padding(horizontal = spec.timeHorizontalPadding)
                     .clickable(
@@ -254,7 +257,7 @@ fun StatusBarRow(
             if (isRecording) {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(spec.recordingCornerRadius))
+                        .clip(RoundedCornerShape(if (isRetroid) 4.dp else aynDp(10f)))
                         .background(Color(0xFFE53935))
                         .then(
                             if (onStopRecordingClick != null) {
@@ -264,25 +267,24 @@ fun StatusBarRow(
                             }
                         )
                         .padding(
-                            horizontal = spec.recordingHorizontalPadding,
-                            vertical = spec.recordingVerticalPadding
+                            horizontal = if (isRetroid) 8.dp else aynDp(8f),
+                            vertical = if (isRetroid) 3.dp else aynDp(3f)
                         ),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spec.recordingItemSpacing)
+                    horizontalArrangement = Arrangement.spacedBy(if (isRetroid) 5.dp else aynDp(5f))
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(spec.recordingDotSize)
-                            .clip(if (spec.recordingDotIsSquare) RoundedCornerShape(0.dp) else CircleShape)
+                            .size(if (isRetroid) 7.dp else aynDp(7f))
+                            .clip(if (isRetroid) RectangleShape else CircleShape)
                             .background(Color.White)
                     )
                     Text(
                         text = recordingElapsedText.ifEmpty { "00:00" },
                         color = Color.White,
-                        fontSize = spec.recordingFontSize,
-                        fontFamily = pixelFont,
-                        style = pixelStyle,
-                        fontWeight = spec.fontWeight
+                        fontSize = if (isRetroid) 15.sp else aynSp(12f),
+                        style = displayStyle,
+                        fontWeight = statusFontWeight
                     )
                 }
             }
@@ -306,9 +308,8 @@ fun StatusBarRow(
                     text = netSpeedText,
                     color = colors.primary,
                     fontSize = statusFontSize,
-                    fontFamily = pixelFont,
-                    style = pixelStyle,
-                    fontWeight = spec.fontWeight
+                    style = displayStyle,
+                    fontWeight = statusFontWeight
                 )
             }
 
@@ -322,7 +323,7 @@ fun StatusBarRow(
                 Image(
                     painter = painterResource(id = tccDrawable(wifiRes)),
                     contentDescription = "Wi-Fi",
-                    colorFilter = if (spec.useSegmentedPixelBattery) {
+                    colorFilter = if (isRetroid) {
                         ColorFilter.tint(colors.primary)
                     } else {
                         ColorFilter.tint(
@@ -341,7 +342,7 @@ fun StatusBarRow(
                 BatteryIconCanvas(
                     level = batteryLevel,
                     isCharging = isCharging,
-                    useSegmentedPixelBattery = spec.useSegmentedPixelBattery,
+                    useSegmentedPixelBattery = isRetroid,
                     modifier = Modifier.size(
                         width = spec.batteryWidth,
                         height = spec.batteryHeight
@@ -352,9 +353,8 @@ fun StatusBarRow(
                     text = "$batteryLevel%",
                     color = colors.primary,
                     fontSize = statusFontSize,
-                    fontFamily = pixelFont,
-                    style = pixelStyle,
-                    fontWeight = spec.fontWeight
+                    style = displayStyle,
+                    fontWeight = statusFontWeight
                 )
             }
         }
@@ -371,8 +371,6 @@ private fun BatteryIconCanvas(
     val colors = LocalTccColors.current
     Canvas(modifier = modifier) {
         if (useSegmentedPixelBattery) {
-            // Exact RP_PIXEL 4-bar segmented pixel battery with right-side positive terminal nub:
-            // Body: 49x29px at 1.33125x (37x21.8dp) with 4px (3dp) wall & 4x4px corner cutouts; right nub: 3x13px (2.25x9.8dp).
             val wall = (3.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()
             val nubW = (2.25.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()
             val nubH = (9.8.dp.toPx()).roundToInt().coerceAtLeast(2).toFloat()
@@ -390,7 +388,7 @@ private fun BatteryIconCanvas(
                 topLeft = Offset(wall, bodyH - wall),
                 size = Size((bodyW - wall * 2f).coerceAtLeast(0f), wall)
             )
-            // Left & right vertical walls (inset by `wall` on top & bottom)
+            // Left & right vertical walls
             drawRect(
                 color = colors.primary,
                 topLeft = Offset(0f, wall),
@@ -408,7 +406,7 @@ private fun BatteryIconCanvas(
                 size = Size(nubW, nubH)
             )
 
-            // 4 vertical pixel bars filling left-to-right (matching stock_overlay_1.png white bars at 100%)
+            // 4 vertical pixel bars filling left-to-right
             val clamped = level.coerceIn(0, 100)
             val activeBars = when {
                 clamped <= 0 -> 0

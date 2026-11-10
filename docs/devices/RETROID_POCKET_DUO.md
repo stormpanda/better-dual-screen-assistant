@@ -214,9 +214,10 @@ Exact `RETROID_POCKET_DUO` enum entry in [`DeviceProfile.kt`](../../app/src/main
 
 | `DeviceProfile` Field | Value |
 | :--- | :--- |
-| `displayName` | `"Retroid Pocket Duo"` |
-| `topDisplayId` | `0` |
-| `bottomDisplayId` | `2` |
+| `displayName` / `vendorName` | `"Retroid Pocket Duo"` / `"Retroid"` |
+| `wakeKeyName` / `physicalButtonLabel` | `"Dual Screen key"` / `"physical Dual Screen button"` |
+| `topDisplayId` / `bottomDisplayId` | `0` / `2` |
+| `topSfPort` / `bottomSfPort` | `"146"` / `"147"` |
 | `bottomFallbackWidth` × `bottomFallbackHeight` | `1280 × 960` |
 | `bottomFallbackDensityDpi` | `320` |
 | `defaultUiLookPreferenceId` | `2` (`TccUiLookPreference.RETROID`) |
@@ -224,9 +225,9 @@ Exact `RETROID_POCKET_DUO` enum entry in [`DeviceProfile.kt`](../../app/src/main
 | `blankViaBacklightSysfs` | `true` |
 | `stockAssistantPackage` | `"com.retroidpocket.dualscreen.assistant"` |
 | `mappingPackages` | `["com.rp.mapping", "com.odin.mapping"]` |
+| `protectedVendorPackages` | `["com.retroidpocket.dualscreen.assistant", "com.retroidpocket.gamelauncher", "com.rp.gameassistant", "com.rp.mapping", "com.rp.settings"]` |
 | `supportsAmbientLight` | `false` |
-| `standardControllerLabel` / `overrideStandardControllerLabel` | `"Retro"` / `"Retro"` |
-| `overrideCloseBottomTipText` | `"When the secondary screen is turned off, you can press the Dual Screen key to wake up the screen."` |
+| `standardControllerLabel` / `controllerStyleOptionLabel` | `"Retro"` / `"Retro"` |
 | `topPanelTeClockRatio` | `1.0f` |
 | `longPressTogglesBottom` | `true` |
 | `dismissOverlayOnBackMapping` | `true` |

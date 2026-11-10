@@ -112,8 +112,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.PlatformTextStyle
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,18 +129,20 @@ import com.stormpanda.betterdualscreenassistant.system.QuickSettingCategory
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.ui.components.PixelCornerCutShape
+import com.stormpanda.betterdualscreenassistant.ui.components.tccTileBackground
+import com.stormpanda.betterdualscreenassistant.ui.components.tccTileIconTint
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
-import com.stormpanda.betterdualscreenassistant.ui.theme.RetroidPixelTealSwatch
+import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccColorPalette
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
 import com.stormpanda.betterdualscreenassistant.ui.theme.contrastingContentColor
-import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import com.stormpanda.megingiard.settings.ThemeMode
 import com.stormpanda.megingiard.ui.AppColors
 import com.stormpanda.megingiard.ui.AppPalettes
@@ -501,17 +501,13 @@ private enum class LauncherSubPage(
 private enum class ThemeSourceOption(
     val displayName: String
 ) {
-    STOCK("Stock AYN"),
+    STOCK("Stock"),
     SYNC_MEGINGIARD("Sync with Megingiard"),
     CUSTOM_PALETTE("Custom Palette");
 
-    fun displayNameFor(profile: DeviceProfile): String = when {
-        this == STOCK && profile == DeviceProfile.RETROID_POCKET_DUO -> "Stock Retroid"
-        else -> displayName
-    }
+    fun displayNameFor(profile: DeviceProfile): String =
+        if (this == STOCK) "Stock ${profile.vendorName}" else displayName
 }
-
-private val BdsaAccentPresets: List<Color> = AppPalettes.accentPresets + RetroidPixelTealSwatch
 
 private val StockThemeOptions = listOf(
     AppThemeOption.STOCK_SYSTEM,
@@ -593,7 +589,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     var customSwatchColorArgb by rememberSaveable { mutableIntStateOf(customAccentArgb) }
 
     LaunchedEffect(customAccentArgb) {
-        if (Color(customAccentArgb) !in BdsaAccentPresets) {
+        if (Color(customAccentArgb) !in MegingiardAccentPresets) {
             customSwatchColorArgb = customAccentArgb
         }
     }
@@ -1011,11 +1007,7 @@ private fun GeneralSettingsTabContent(
         if (promotedToManager) R.string.app_name_manager else R.string.app_name
     )
     val roleLower = if (promotedToManager) "manager" else "assistant"
-    val physicalButtonLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-        "physical TCC button"
-    } else {
-        "physical AYN button"
-    }
+    val physicalButtonLabel = profile.physicalButtonLabel
 
     if (updateAvailable && latestReleaseInfo != null) {
         GamepadActionCard(
@@ -1593,8 +1585,9 @@ private fun ReorderableTccTile(
     val appColors = LocalAppColors.current
     val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
     val pixelFont = tccFontFamily()
+    val labelStyle = tccTextStyle()
     val tileShape: Shape = if (isRetroidLook) PixelCornerCutShape(5.dp) else CircleShape
-    val slotContainerShape: Shape = if (isRetroidLook) RoundedCornerShape(8.dp) else RoundedCornerShape(8.dp)
+    val slotContainerShape: Shape = RoundedCornerShape(8.dp)
     val badgeShape: Shape = if (isRetroidLook) PixelCornerCutShape(2.dp) else RoundedCornerShape(5.dp)
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -1604,21 +1597,12 @@ private fun ReorderableTccTile(
         label = "tileGrabScale"
     )
 
-    val iconTint = if (isGrabbed) {
-        if (isRetroidLook) {
-            tccColors.retroidContentOnAccent()
-        } else if (tccColors.isMegingiardStyle) {
-            tccColors.onAccent
-        } else if (tccColors.isDark) {
-            Color.White
-        } else {
-            tccColors.primary
-        }
-    } else if (isCursorSelected) {
-        tccColors.primary
-    } else {
-        tccColors.secondary
-    }
+    val iconTint = tccTileIconTint(
+        colors = tccColors,
+        isRetroidLook = isRetroidLook,
+        selected = isGrabbed,
+        highlighted = isCursorSelected
+    )
     val textColor = if (isCursorSelected || isGrabbed) tccColors.primary else tccColors.secondary
 
     Box(
@@ -1665,36 +1649,10 @@ private fun ReorderableTccTile(
                     modifier = Modifier
                         .size(35.dp)
                         .clip(tileShape)
-                        .then(
-                            if (isRetroidLook) {
-                                if (isGrabbed) {
-                                    Modifier
-                                        .background(tccColors.accent)
-                                        .border(1.dp, tccColors.accent, tileShape)
-                                } else {
-                                    Modifier
-                                        .background(tccColors.fifth)
-                                        .border(1.dp, tccColors.fourth, tileShape)
-                                }
-                            } else if (isGrabbed) {
-                                if (tccColors.isMegingiardStyle) {
-                                    Modifier.background(tccColors.accent)
-                                } else if (tccColors.isDark) {
-                                    Modifier
-                                        .background(Color(0xFF272727))
-                                        .background(
-                                            Brush.verticalGradient(
-                                                0.0f to Color.Transparent,
-                                                0.5f to Color(0x1A9E21BE),
-                                                1.0f to Color(0x66AB24CE)
-                                            )
-                                        )
-                                } else {
-                                    Modifier.background(Color(0xFFD0D0D0))
-                                }
-                            } else {
-                                Modifier.background(tccColors.fifth)
-                            }
+                        .tccTileBackground(
+                            colors = tccColors,
+                            isRetroidLook = isRetroidLook,
+                            selected = isGrabbed
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1751,11 +1709,7 @@ private fun ReorderableTccTile(
                     color = textColor,
                     fontSize = 10.sp,
                     lineHeight = 11.sp,
-                    fontFamily = pixelFont,
-                    style = TextStyle(
-                        fontFamily = pixelFont,
-                        platformStyle = PlatformTextStyle(includeFontPadding = false)
-                    ),
+                    style = labelStyle,
                     fontWeight = if (!isRetroidLook && (isCursorSelected || isGrabbed)) {
                         FontWeight.SemiBold
                     } else {
@@ -1845,8 +1799,8 @@ private fun AppearanceSettingsTabContent(
     onOpenCustomAccent: () -> Unit,
     onToggleInjectSystemTheme: (Boolean) -> Unit
 ) {
-    val stockVendorLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) "Stock Retroid" else "Stock AYN"
-    val stockVendorName = if (profile == DeviceProfile.RETROID_POCKET_DUO) "Retroid" else "AYN"
+    val stockVendorName = profile.vendorName
+    val stockVendorLabel = "Stock $stockVendorName"
     val selectedUiLookPref = TccUiLookPreference.fromId(uiLookMode)
     val uiLookOptions = TccUiLookPreference.entries
 
@@ -1976,13 +1930,13 @@ private fun AppearanceSettingsTabContent(
         val accentColor = Color(customAccentArgb)
         val customSwatchColor = Color(customSwatchColorArgb)
         val isCustomAccent =
-            customAccentArgb == customSwatchColorArgb && accentColor !in BdsaAccentPresets
+            customAccentArgb == customSwatchColorArgb && accentColor !in MegingiardAccentPresets
 
         GamepadColorPaletteCard(
             title = "Accent Color",
             description = "Choose a preset highlight color for ${effectiveSelectedTheme.displayName}",
             icon = Icons.Rounded.FormatColorFill,
-            paletteColors = BdsaAccentPresets,
+            paletteColors = MegingiardAccentPresets,
             selectedColor = accentColor,
             onColorSelected = { onSelectAccentColor(it.toArgb()) }
         )

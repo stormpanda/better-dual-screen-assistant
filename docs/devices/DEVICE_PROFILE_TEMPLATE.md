@@ -213,9 +213,10 @@ Exact enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/stormpanda/
 
 | `DeviceProfile` Field | Value |
 | :--- | :--- |
-| `displayName` | `"<Name>"` |
-| `topDisplayId` | `0` |
-| `bottomDisplayId` | `<id>` |
+| `displayName` / `vendorName` | `"<Name>"` / `"<Vendor>"` |
+| `wakeKeyName` / `physicalButtonLabel` | `"<Key name>"` / `"<physical button label>"` |
+| `topDisplayId` / `bottomDisplayId` | `0` / `<id>` |
+| `topSfPort` / `bottomSfPort` | `"<topPort>"` / `"<bottomPort>"` |
 | `bottomFallbackWidth` × `bottomFallbackHeight` | `<W> × <H>` |
 | `bottomFallbackDensityDpi` | `<dpi>` |
 | `defaultUiLookPreferenceId` | `<1 (AYN) or 2 (RETROID)>` |
@@ -223,9 +224,9 @@ Exact enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/stormpanda/
 | `blankViaBacklightSysfs` | `<true / false>` |
 | `stockAssistantPackage` | `"<pkg>"` |
 | `mappingPackages` | `<list>` |
+| `protectedVendorPackages` | `<list>` |
 | `supportsAmbientLight` | `<true / false>` |
-| `standardControllerLabel` / `overrideStandardControllerLabel` | `"<label>"` / `<null or "label">` |
-| `overrideCloseBottomTipText` | `<null or custom tip string>` |
+| `standardControllerLabel` / `controllerStyleOptionLabel` | `"<short label>"` / `"<dialog & tile label>"` |
 | `topPanelTeClockRatio` | `<float>` |
 | `longPressTogglesBottom` | `<true / false>` |
 | `dismissOverlayOnBackMapping` | `<true / false>` |

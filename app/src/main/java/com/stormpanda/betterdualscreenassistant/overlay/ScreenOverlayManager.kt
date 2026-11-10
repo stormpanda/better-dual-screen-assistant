@@ -151,7 +151,6 @@ class ScreenOverlayManager(
     companion object {
         private const val TAG = "ScreenOverlayManager"
         const val TOP_DISPLAY_ID = 0
-        const val BOTTOM_DISPLAY_ID = 4
         private const val FADE_DURATION_MS = 200L
     }
 
@@ -180,9 +179,6 @@ class ScreenOverlayManager(
 
     var isTemporaryBottomClosed: Boolean = false
         private set
-
-    private var tipDialogView: ComposeView? = null
-    private var tipDialogLifecycle: OverlayLifecycleOwner? = null
 
     private var savedTopBrightnessLinear: Float? = null
     private var savedBottomBrightnessLinear: Float? = null
@@ -441,7 +437,6 @@ class ScreenOverlayManager(
             if (currentProfile.blankViaBacklightSysfs) {
                 if (!interactive) {
                     hideAssistantOverlay(immediate = true)
-                    dismissCloseScreenTip()
                 } else {
                     repository.reapplyTouchDisableForCurrentMode()
                     PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = isTopScreenBlanked)
@@ -453,7 +448,6 @@ class ScreenOverlayManager(
             val targetBottomDisplayId = currentProfile.bottomDisplayId
             if (!interactive) {
                 hideAssistantOverlay(immediate = true)
-                dismissCloseScreenTip()
                 if (isTopScreenBlanked) {
                     savedTopBrightnessLinear?.let {
                         PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, it, false)
@@ -858,19 +852,6 @@ class ScreenOverlayManager(
         }
     }
 
-    private fun dismissCloseScreenTip() {
-        val view = tipDialogView ?: return
-        val wm = getWindowManagerForDisplay(TOP_DISPLAY_ID)
-        try {
-            wm?.removeViewImmediate(view)
-        } catch (_: Throwable) {
-        }
-        tipDialogLifecycle?.onPause()
-        tipDialogLifecycle?.onDestroy()
-        tipDialogLifecycle = null
-        tipDialogView = null
-    }
-
     private fun createBlankOverlayLayoutParams(
         displayId: Int,
         fallbackWidth: Int,
@@ -880,7 +861,7 @@ class ScreenOverlayManager(
         // Replicate stock ScreenUtil.c()/d() flags (132608 = FLAG_ALT_FOCUSABLE_IM | FLAG_FULLSCREEN |
         // FLAG_LAYOUT_NO_LIMITS) without FLAG_NOT_FOCUSABLE so DisplayPolicy/InsetsPolicy allows this
         // fullscreen window to hide the Status Bar and Gesture Bar on Display 0.
-        // Never include FLAG_LAYOUT_NO_LIMITS on Display 4 (BOTTOM_DISPLAY_ID).
+        // Never include FLAG_LAYOUT_NO_LIMITS on the secondary bottom display.
         var flags = WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
             WindowManager.LayoutParams.FLAG_FULLSCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or

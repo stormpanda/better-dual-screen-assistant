@@ -24,16 +24,14 @@ enum class QuickSettingCategory(
         enabledByDefault = false
     );
 
-    fun titleFor(profile: DeviceProfile): String = when {
-        this == STOCK_AYN && profile == DeviceProfile.RETROID_POCKET_DUO -> "Stock Retroid Toggles"
+    fun titleFor(profile: DeviceProfile): String = when (this) {
+        STOCK_AYN -> "Stock ${profile.vendorName} Toggles"
         else -> title
     }
 
-    fun descriptionFor(profile: DeviceProfile): String = when {
-        this == STOCK_AYN && profile == DeviceProfile.RETROID_POCKET_DUO ->
-            "Built-in Retroid Dual Screen Assistant quick settings (on by default)"
-        this == TOOLS && profile == DeviceProfile.RETROID_POCKET_DUO ->
-            "Dual-screen multi-tasking utilities and Retroid hardware tools (off by default)"
+    fun descriptionFor(profile: DeviceProfile): String = when (this) {
+        STOCK_AYN -> "Built-in ${profile.vendorName} Dual Screen Assistant quick settings (on by default)"
+        TOOLS -> "Dual-screen multi-tasking utilities and ${profile.vendorName} hardware tools (off by default)"
         else -> description
     }
 }
@@ -46,7 +44,7 @@ enum class QuickSettingTileId(
     val key: String,
     val title: String,
     val description: String,
-    @DrawableRes val iconRes: Int,
+    @param:DrawableRes val iconRes: Int,
     val category: QuickSettingCategory,
     val enabledByDefault: Boolean = category.enabledByDefault
 ) {
@@ -233,10 +231,10 @@ enum class QuickSettingTileId(
     ): String = when {
         promotedToManager && this == THEME_MODE ->
             "Switch manager overlay and system theme palette"
-        this == CONTROLLER_STYLE && profile == DeviceProfile.RETROID_POCKET_DUO ->
+        this == CONTROLLER_STYLE ->
             "Switch between Xbox, ${profile.standardControllerLabel}, or Disabled gamepad button layout"
-        this == KEY_MAPPER && profile == DeviceProfile.RETROID_POCKET_DUO ->
-            "Toggle Retroid screen key mapping (Key Adapter)"
+        this == KEY_MAPPER ->
+            "Toggle ${profile.vendorName} screen key mapping (Key Adapter)"
         else -> description
     }
 

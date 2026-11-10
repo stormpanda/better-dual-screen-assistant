@@ -2127,16 +2127,8 @@ class SystemSettingsRepository(private val context: Context) {
     fun cleanMemory(): Pair<Int, String> {
         val am = context.getSystemService(ActivityManager::class.java)
         val homePkg = resolveHomePackage()
-        val protectedPackages = setOf(
+        val protectedPackages = DeviceProfile.allProtectedVendorPackages + setOfNotNull(
             context.packageName,
-            "com.odin.dualscreen.assistant",
-            "com.odin.gameassistant",
-            "com.odin.mapping",
-            "com.retroidpocket.dualscreen.assistant",
-            "com.retroidpocket.gamelauncher",
-            "com.rp.gameassistant",
-            "com.rp.mapping",
-            "com.rp.settings",
             "com.android.systemui",
             "com.android.launcher3",
             homePkg

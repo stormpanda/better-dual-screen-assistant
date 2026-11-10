@@ -886,9 +886,12 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+        val stockPkgsRegex = DeviceProfile.allStockAssistantPackages.joinToString("|") {
+            it.replace(".", """\.""")
+        }
         val script = """
             count=0
-            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|com\.odin\.dualscreen\.assistant|com\.retroidpocket\.dualscreen\.assistant|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
+            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|${stockPkgsRegex}|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
                 am stack remove "${'$'}id" >/dev/null 2>&1 && count=${'$'}((count + 1))
             done
             echo "CLEARED:${'$'}count"
@@ -927,10 +930,10 @@ object PrivilegedBridge {
             for (match in regex.findAll(sfOut)) {
                 val physId = match.groupValues[1]
                 val port = match.groupValues[2]
-                if ((port == "131" || port == "146") && topPhysId.isNullOrEmpty()) {
+                if (port in DeviceProfile.allTopSfPorts && topPhysId.isNullOrEmpty()) {
                     topPhysId = physId
                 }
-                if ((port == "132" || port == "147") && bottomPhysId.isNullOrEmpty()) {
+                if (port in DeviceProfile.allBottomSfPorts && bottomPhysId.isNullOrEmpty()) {
                     bottomPhysId = physId
                 }
             }

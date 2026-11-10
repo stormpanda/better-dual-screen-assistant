@@ -14,8 +14,13 @@ import android.os.Build
  */
 enum class DeviceProfile(
     val displayName: String,
+    val vendorName: String,
+    val wakeKeyName: String,
+    val physicalButtonLabel: String,
     val topDisplayId: Int,
     val bottomDisplayId: Int,
+    val topSfPort: String,
+    val bottomSfPort: String,
     val bottomFallbackWidth: Int,
     val bottomFallbackHeight: Int,
     val bottomFallbackDensityDpi: Int,
@@ -24,18 +29,23 @@ enum class DeviceProfile(
     val blankViaBacklightSysfs: Boolean,
     val stockAssistantPackage: String,
     val mappingPackages: List<String>,
+    val protectedVendorPackages: List<String>,
     val supportsAmbientLight: Boolean,
     val standardControllerLabel: String,
-    val overrideStandardControllerLabel: String?,
-    val overrideCloseBottomTipText: String?,
+    val controllerStyleOptionLabel: String,
     val topPanelTeClockRatio: Float,
     val longPressTogglesBottom: Boolean,
     val dismissOverlayOnBackMapping: Boolean
 ) {
     AYN_THOR(
         displayName = "AYN Thor",
+        vendorName = "AYN",
+        wakeKeyName = "AYN key",
+        physicalButtonLabel = "physical AYN button",
         topDisplayId = 0,
         bottomDisplayId = 4,
+        topSfPort = "131",
+        bottomSfPort = "132",
         bottomFallbackWidth = 1240,
         bottomFallbackHeight = 1080,
         bottomFallbackDensityDpi = 369,
@@ -44,18 +54,28 @@ enum class DeviceProfile(
         blankViaBacklightSysfs = false,
         stockAssistantPackage = "com.odin.dualscreen.assistant",
         mappingPackages = listOf("com.odin.mapping", "com.rp.mapping"),
+        protectedVendorPackages = listOf(
+            "com.odin.dualscreen.assistant",
+            "com.odin.gameassistant",
+            "com.odin.mapping",
+            "com.odin.settings"
+        ),
         supportsAmbientLight = true,
         standardControllerLabel = "Odin",
-        overrideStandardControllerLabel = null,
-        overrideCloseBottomTipText = null,
+        controllerStyleOptionLabel = "Standard Style",
         topPanelTeClockRatio = 118.412f / 120f,
         longPressTogglesBottom = false,
         dismissOverlayOnBackMapping = false
     ),
     RETROID_POCKET_DUO(
         displayName = "Retroid Pocket Duo",
+        vendorName = "Retroid",
+        wakeKeyName = "Dual Screen key",
+        physicalButtonLabel = "physical Dual Screen button",
         topDisplayId = 0,
         bottomDisplayId = 2,
+        topSfPort = "146",
+        bottomSfPort = "147",
         bottomFallbackWidth = 1280,
         bottomFallbackHeight = 960,
         bottomFallbackDensityDpi = 320,
@@ -64,18 +84,39 @@ enum class DeviceProfile(
         blankViaBacklightSysfs = true,
         stockAssistantPackage = "com.retroidpocket.dualscreen.assistant",
         mappingPackages = listOf("com.rp.mapping", "com.odin.mapping"),
+        protectedVendorPackages = listOf(
+            "com.retroidpocket.dualscreen.assistant",
+            "com.retroidpocket.gamelauncher",
+            "com.rp.gameassistant",
+            "com.rp.mapping",
+            "com.rp.settings"
+        ),
         supportsAmbientLight = false,
         standardControllerLabel = "Retro",
-        overrideStandardControllerLabel = "Retro",
-        overrideCloseBottomTipText = "When the secondary screen is turned off, you can press the Dual Screen key to wake up the screen.",
+        controllerStyleOptionLabel = "Retro",
         topPanelTeClockRatio = 1.0f,
         longPressTogglesBottom = true,
         dismissOverlayOnBackMapping = true
     );
 
+    val closeBottomTipText: String
+        get() = "When the secondary screen is turned off, you can press the $wakeKeyName to wake up the screen."
+
     companion object {
         const val ODIN_STOCK_ASSISTANT_PACKAGE = "com.odin.dualscreen.assistant"
         const val RETROID_STOCK_ASSISTANT_PACKAGE = "com.retroidpocket.dualscreen.assistant"
+
+        val allStockAssistantPackages: Set<String> =
+            entries.mapTo(LinkedHashSet()) { it.stockAssistantPackage }
+
+        val allProtectedVendorPackages: Set<String> =
+            entries.flatMapTo(LinkedHashSet()) { it.protectedVendorPackages }
+
+        val allTopSfPorts: Set<String> =
+            entries.mapTo(LinkedHashSet()) { it.topSfPort }
+
+        val allBottomSfPorts: Set<String> =
+            entries.mapTo(LinkedHashSet()) { it.bottomSfPort }
 
         @Volatile
         internal var testOverride: DeviceProfile? = null

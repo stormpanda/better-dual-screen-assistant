@@ -143,6 +143,35 @@ class TelemetryMonitor(private val context: Context) {
             return rawFps.roundToInt().coerceIn(0, peakInt)
         }
 
+        internal fun scaleGpuFrequency(
+            curGpuRaw: Long,
+            maxGpuRaw: Long
+        ): Triple<Float, Float, String> {
+            return when {
+                curGpuRaw >= 1_000_000_000L -> Triple(
+                    roundDiv(curGpuRaw, 1_000_000_000L),
+                    if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000_000L) else 1.15f,
+                    "GHz"
+                )
+                curGpuRaw >= 1_000_000L -> Triple(
+                    roundDiv(curGpuRaw, 1_000_000L),
+                    if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000L) else 680f,
+                    "MHz"
+                )
+                maxGpuRaw >= 1_000_000_000L -> Triple(
+                    0f,
+                    roundDiv(maxGpuRaw, 1_000_000_000L),
+                    "GHz"
+                )
+                maxGpuRaw >= 1_000_000L -> Triple(
+                    0f,
+                    roundDiv(maxGpuRaw, 1_000_000L),
+                    "MHz"
+                )
+                else -> Triple(0f, 680f, "MHz")
+            }
+        }
+
         private fun roundDiv(numerator: Long, denominator: Long, scale: Int = 2): Float {
             if (denominator == 0L) return 0f
             return BigDecimal.valueOf(numerator)
@@ -212,13 +241,7 @@ class TelemetryMonitor(private val context: Context) {
             }
 
             val maxGpuRaw = PrivilegedBridge.readSysfsLong(GPU_MAX_FREQ_PATH)
-            val (gpuMaxVal, gpuUnitStr) = if (maxGpuRaw >= 1_000_000_000L) {
-                roundDiv(maxGpuRaw, 1_000_000_000L) to "GHz"
-            } else if (maxGpuRaw >= 1_000_000L) {
-                roundDiv(maxGpuRaw, 1_000_000L) to "MHz"
-            } else {
-                680f to "MHz"
-            }
+            val (_, initialGpuMaxVal, initialGpuUnitStr) = scaleGpuFrequency(0L, maxGpuRaw)
 
             val am = context.getSystemService(ActivityManager::class.java)
             val memInfo = ActivityManager.MemoryInfo()
@@ -232,8 +255,8 @@ class TelemetryMonitor(private val context: Context) {
             _state.value = _state.value.copy(
                 cpuMaxFreqGhz = cpuMaxVal,
                 cpuUnit = cpuUnitStr,
-                gpuMaxFreqMhz = gpuMaxVal,
-                gpuUnit = gpuUnitStr,
+                gpuMaxFreqMhz = initialGpuMaxVal,
+                gpuUnit = initialGpuUnitStr,
                 ramTotalGb = totalRamGb
             )
 
@@ -257,21 +280,8 @@ class TelemetryMonitor(private val context: Context) {
                 }
 
                 val curGpuRaw = PrivilegedBridge.readSysfsLong(GPU_CUR_FREQ_PATH)
-                val (gpuCurVal, dynamicGpuMaxVal, dynamicGpuUnitStr) = if (curGpuRaw >= 1_000_000_000L) {
-                    Triple(
-                        roundDiv(curGpuRaw, 1_000_000_000L),
-                        if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000_000L) else gpuMaxVal,
-                        "GHz"
-                    )
-                } else if (curGpuRaw >= 1_000_000L) {
-                    Triple(
-                        roundDiv(curGpuRaw, 1_000_000L),
-                        if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000L) else 680f,
-                        "MHz"
-                    )
-                } else {
-                    Triple(0f, gpuMaxVal, gpuUnitStr)
-                }
+                val (gpuCurVal, dynamicGpuMaxVal, dynamicGpuUnitStr) =
+                    scaleGpuFrequency(curGpuRaw, maxGpuRaw)
 
                 val currentNowUa = PrivilegedBridge.readSysfsLong(BATTERY_CURRENT_NOW_PATH)
                 val voltageNowUv = PrivilegedBridge.readSysfsLong(BATTERY_VOLTAGE_NOW_PATH)

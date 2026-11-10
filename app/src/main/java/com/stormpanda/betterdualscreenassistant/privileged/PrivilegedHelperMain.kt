@@ -436,15 +436,22 @@ object PrivilegedHelperMain {
         @Volatile
         private var panel1BacklightBlanked: Boolean = false
 
+        @Volatile
+        private var cachedDeviceProfile: DeviceProfile? = null
+
         private fun resolveActiveDeviceProfile(): DeviceProfile {
+            DeviceProfile.testOverride?.let { return it }
+            cachedDeviceProfile?.let { return it }
             val sysDetected = DeviceProfile.detectFromSystem()
-            if (sysDetected == DeviceProfile.RETROID_POCKET_DUO) {
-                return DeviceProfile.RETROID_POCKET_DUO
+            val resolved = if (sysDetected == DeviceProfile.RETROID_POCKET_DUO ||
+                getApplicationInfoInternal(RETROID_STOCK_PACKAGE_NAME)?.packageName == RETROID_STOCK_PACKAGE_NAME
+            ) {
+                DeviceProfile.RETROID_POCKET_DUO
+            } else {
+                sysDetected
             }
-            if (getApplicationInfoInternal(RETROID_STOCK_PACKAGE_NAME) != null) {
-                return DeviceProfile.RETROID_POCKET_DUO
-            }
-            return sysDetected
+            cachedDeviceProfile = resolved
+            return resolved
         }
 
         private fun resolveStockPackageInternal(): String =
@@ -454,7 +461,7 @@ object PrivilegedHelperMain {
             resolveActiveDeviceProfile().bottomDisplayId
 
         private fun isStockAssistantPackage(pkg: String): Boolean =
-            pkg == STOCK_PACKAGE_NAME || pkg == RETROID_STOCK_PACKAGE_NAME
+            pkg in DeviceProfile.allStockAssistantPackages
 
         private var screenRecorderInstance: ScreenRecorderEngine? = null
 
@@ -2526,7 +2533,8 @@ object PrivilegedHelperMain {
             if (existing != null) return existing
             return ScreenRecorderEngine(
                 contextProvider = { systemContext ?: getOrCreateDisplay0Context() },
-                displayManagerProxy = displayManagerProxy
+                displayManagerProxy = displayManagerProxy,
+                profileProvider = { resolveActiveDeviceProfile() }
             ).also {
                 screenRecorderInstance = it
             }

@@ -264,7 +264,6 @@ class TccThemeAndOverlayFormatTest {
             R.drawable.ic_status_wifi_1,
             R.drawable.ic_status_wifi_2,
             R.drawable.ic_status_wifi_3,
-            R.drawable.ic_headset,
             R.drawable.ic_temp,
             R.drawable.ic_fan_normal,
             R.drawable.ic_tip

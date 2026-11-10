@@ -214,9 +214,10 @@ Exact `AYN_THOR` enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/
 
 | `DeviceProfile` Field | Value |
 | :--- | :--- |
-| `displayName` | `"AYN Thor"` |
-| `topDisplayId` | `0` |
-| `bottomDisplayId` | `4` |
+| `displayName` / `vendorName` | `"AYN Thor"` / `"AYN"` |
+| `wakeKeyName` / `physicalButtonLabel` | `"AYN key"` / `"physical AYN button"` |
+| `topDisplayId` / `bottomDisplayId` | `0` / `4` |
+| `topSfPort` / `bottomSfPort` | `"131"` / `"132"` |
 | `bottomFallbackWidth` × `bottomFallbackHeight` | `1240 × 1080` |
 | `bottomFallbackDensityDpi` | `369` |
 | `defaultUiLookPreferenceId` | `1` (`TccUiLookPreference.AYN`) |
@@ -224,9 +225,9 @@ Exact `AYN_THOR` enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/
 | `blankViaBacklightSysfs` | `false` |
 | `stockAssistantPackage` | `"com.odin.dualscreen.assistant"` |
 | `mappingPackages` | `["com.odin.mapping", "com.rp.mapping"]` |
+| `protectedVendorPackages` | `["com.odin.dualscreen.assistant", "com.odin.gameassistant", "com.odin.mapping", "com.odin.settings"]` |
 | `supportsAmbientLight` | `true` |
-| `standardControllerLabel` / `overrideStandardControllerLabel` | `"Odin"` / `null` (uses localized `@string/fan_option_odin_style`) |
-| `overrideCloseBottomTipText` | `null` (uses localized `@string/tip_content_text`) |
+| `standardControllerLabel` / `controllerStyleOptionLabel` | `"Odin"` / `"Standard Style"` |
 | `topPanelTeClockRatio` | `118.412f / 120f` (`0.9867667f`) |
 | `longPressTogglesBottom` | `false` |
 | `dismissOverlayOnBackMapping` | `false` |

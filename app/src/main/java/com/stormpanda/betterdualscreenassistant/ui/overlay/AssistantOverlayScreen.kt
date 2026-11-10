@@ -6,7 +6,6 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -43,16 +42,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.core.content.res.ResourcesCompat
@@ -67,26 +63,16 @@ import com.stormpanda.betterdualscreenassistant.ui.components.HardwareRingGauge
 import com.stormpanda.betterdualscreenassistant.ui.components.HorizontalSlidingBar
 import com.stormpanda.betterdualscreenassistant.ui.components.SliderKind
 import com.stormpanda.betterdualscreenassistant.ui.components.TccButton
-import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogFpsSelectorRow
-import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogOption
-import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogSegmentedRow
-import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogToggleRow
-import com.stormpanda.betterdualscreenassistant.ui.components.TccOptionDialog
-import com.stormpanda.betterdualscreenassistant.ui.components.TccRadioCheckIndicator
 import com.stormpanda.betterdualscreenassistant.ui.components.TccTileVariant
 import com.stormpanda.betterdualscreenassistant.ui.statusbar.StatusBarRow
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalOverlayViewport
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
-import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
 import com.stormpanda.betterdualscreenassistant.ui.theme.OverlayViewport
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
-import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
-import com.stormpanda.betterdualscreenassistant.ui.theme.resolveResponsiveDialogWidthDp
+import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
-import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
-import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -95,19 +81,6 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-private enum class ActiveDialog {
-    NONE,
-    FOCUS_LOCK,
-    PERFORMANCE_MODE,
-    FAN_CONTROL,
-    CONTROLLER_STYLE,
-    THEME_MODE,
-    TRIGGER_MODE,
-    SCREENSHOT,
-    SCREEN_RECORD,
-    CLOSE_BOTTOM_TIP
-}
 
 internal fun formatRecordingElapsedSeconds(totalSeconds: Long): String {
     val clamped = totalSeconds.coerceAtLeast(0L)
@@ -145,42 +118,10 @@ fun AssistantOverlayScreen(
     val customAccentArgb by repository.customAccentArgb.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
-    val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
-    val injectOsTheme by repository.injectOsTheme.collectAsState()
-    val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
-    val focusLock by repository.screenFocusLock.collectAsState()
-    val performanceMode by repository.performanceMode.collectAsState()
-    val fanMode by repository.fanMode.collectAsState()
-    val fanSpeed by repository.fanSpeed.collectAsState()
-    val controllerStyle by repository.controllerStyle.collectAsState()
-    val chargingSeparation by repository.chargingSeparation.collectAsState()
-    val vibrateOn by repository.vibrateOn.collectAsState()
-    val ambientLight by repository.ambientLightEnabled.collectAsState()
-    val forceLandscape by repository.forceLandscape.collectAsState()
-    val refreshRate by repository.refreshRate.collectAsState()
-    val quickTileOrder by repository.quickTileOrder.collectAsState()
-    val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
-
-    val showLedBrightnessSlider by repository.showLedBrightnessSlider.collectAsState()
-    val showSwapScreensButton by repository.showSwapScreensButton.collectAsState()
     val showEditButton by repository.showEditButton.collectAsState()
-    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
-    val ledBrightnessPercent by repository.ledBrightnessPercent.collectAsState()
-    val wifiEnabled by repository.wifiEnabled.collectAsState()
-    val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
-    val dndEnabled by repository.dndEnabled.collectAsState()
-    val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
-    val touchLockEnabled by repository.touchLockEnabled.collectAsState()
-    val triggerMode by repository.triggerMode.collectAsState()
-    val chargeLimit80 by repository.chargeLimit80.collectAsState()
-    val gamepadMouseMode by repository.gamepadMouseMode.collectAsState()
-    val keyMapperEnabled by repository.keyMapperEnabled.collectAsState()
-    val keepScreenOn by repository.keepScreenOn.collectAsState()
-    val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
-    val screenRecordInternalAudio by repository.screenRecordInternalAudio.collectAsState()
-    val screenRecordMicAudio by repository.screenRecordMicAudio.collectAsState()
-    val screenRecordFps by repository.screenRecordFps.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
+    val telemetry by telemetryMonitor.state.collectAsState()
+    val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
 
     var recordingElapsedSeconds by remember { mutableLongStateOf(0L) }
     LaunchedEffect(screenRecordingState.isRecording, screenRecordingState.startedElapsedRealtimeMs) {
@@ -199,18 +140,6 @@ fun AssistantOverlayScreen(
         formatRecordingElapsedSeconds(recordingElapsedSeconds)
     }
 
-    val dualBrightness by repository.dualBrightness.collectAsState()
-    val topBrightness by repository.topBrightness.collectAsState()
-    val bottomBrightness by repository.bottomBrightness.collectAsState()
-    val isDualBrightnessActive by repository.isDualBrightnessActive.collectAsState()
-    val dualVolume by repository.dualVolumePercent.collectAsState()
-    val primaryVolume by repository.primaryVolumePercent.collectAsState()
-    val secondaryVolume by repository.secondaryVolumePercent.collectAsState()
-    val isDualVolumeActive by repository.isDualVolumeActive.collectAsState()
-
-    val telemetry by telemetryMonitor.state.collectAsState()
-
-    val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
     var activeDialog by remember { mutableStateOf(ActiveDialog.NONE) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -291,107 +220,22 @@ fun AssistantOverlayScreen(
                     ) {
                         if (activeTab == 0) {
                             ScreenControlTab(
-                                dualScreenMode = dualScreenMode,
-                                dualBrightness = dualBrightness,
-                                topBrightness = topBrightness,
-                                bottomBrightness = bottomBrightness,
-                                isDualBrightnessActive = isDualBrightnessActive,
-                                showSwapScreensButton = showSwapScreensButton,
-                                supportsAmbientLight = profile.supportsAmbientLight,
-                                showLedBrightnessSlider = showLedBrightnessSlider,
-                                ledBrightnessPercent = ledBrightnessPercent,
-                                ambientLightEnabled = ambientLight,
-                                dualVolume = dualVolume,
-                                primaryVolume = primaryVolume,
-                                secondaryVolume = secondaryVolume,
-                                isDualVolumeActive = isDualVolumeActive,
-                                onSelectDisplayMode = { mode ->
-                                    if (mode == 1 && dualScreenMode != 1) {
-                                        if (repository.shouldShowCloseBottomScreenTip()) {
-                                            activeDialog = ActiveDialog.CLOSE_BOTTOM_TIP
-                                        } else {
-                                            repository.setDualScreenDisplayMode(1)
-                                        }
-                                    } else {
-                                        repository.setDualScreenDisplayMode(mode)
-                                    }
-                                },
+                                profile = profile,
+                                repository = repository,
                                 onSwapScreens = onSwapScreensRequest,
-                                onDualBrightnessChange = { pct, temp ->
-                                    repository.setDualScreenBrightnessPercent(pct, temp)
-                                },
-                                onTopBrightnessChange = { pct, temp ->
-                                    repository.setDisplayBrightnessPercent(0, pct, temp)
-                                },
-                                onBottomBrightnessChange = { pct, temp ->
-                                    repository.setDisplayBrightnessPercent(profile.bottomDisplayId, pct, temp)
-                                },
-                                onLedBrightnessChange = { pct ->
-                                    repository.setLedBrightnessPercent(pct)
-                                },
-                                onDualVolumeChange = { pct ->
-                                    repository.setDualVolumePercent(pct)
-                                },
-                                onPrimaryVolumeChange = { pct ->
-                                    repository.setPrimaryVolumePercent(pct)
-                                },
-                                onSecondaryVolumeChange = { pct ->
-                                    repository.setSecondaryVolumePercent(pct)
-                                }
+                                onShowCloseBottomTip = { activeDialog = ActiveDialog.CLOSE_BOTTOM_TIP }
                             )
                         } else {
                             SystemSettingsTab(
                                 profile = profile,
+                                repository = repository,
                                 telemetry = telemetry,
-                                tempFahrenheit = tempFahrenheit,
-                                refreshRate = refreshRate,
-                                dualScreenMode = dualScreenMode,
-                                focusLock = focusLock,
-                                performanceMode = performanceMode,
-                                fanMode = fanMode,
-                                controllerStyle = controllerStyle,
-                                chargingSeparation = chargingSeparation,
-                                vibrateOn = vibrateOn,
-                                ambientLight = ambientLight,
-                                forceLandscape = forceLandscape,
-                                themeMode = themeMode,
-                                isMegingiardAvailable = isMegingiardAvailable,
-                                syncedMegingiardOption = syncedMegingiardOption,
-                                wifiEnabled = wifiEnabled,
-                                bluetoothEnabled = bluetoothEnabled,
-                                dndEnabled = dndEnabled,
-                                airplaneModeEnabled = airplaneModeEnabled,
-                                touchLockEnabled = touchLockEnabled,
-                                triggerMode = triggerMode,
-                                chargeLimit80 = chargeLimit80,
-                                gamepadMouseMode = gamepadMouseMode,
-                                keyMapperEnabled = keyMapperEnabled,
-                                keepScreenOn = keepScreenOn,
-                                preventAccidentalHome = preventAccidentalHome,
-                                isRecordingScreen = screenRecordingState.isRecording,
                                 recordingElapsedText = recordingElapsedText,
-                                quickTileOrder = quickTileOrder,
-                                disabledQuickTiles = disabledQuickTiles,
-                                onToggleRefreshRate = { repository.toggleRefreshRate() },
-                                onToggleTempUnit = { repository.toggleTempFahrenheit() },
                                 onOpenDialog = { dialog -> activeDialog = dialog },
                                 onStopScreenRecording = onStopScreenRecordingRequest,
-                                onToggleChargingSeparation = { repository.toggleChargingSeparation() },
-                                onToggleVibrate = { repository.toggleVibrate() },
                                 onCleanMemory = onCleanMemoryRequest,
                                 onClearAllTasks = onClearAllTasksRequest,
-                                onToggleAmbientLight = { repository.toggleAmbientLight() },
-                                onToggleForceLandscape = { repository.toggleForceLandscape() },
-                                onToggleWifi = { repository.toggleWifi() },
-                                onToggleBluetooth = { repository.toggleBluetooth() },
-                                onToggleDnd = { repository.toggleDnd() },
-                                onToggleAirplaneMode = { repository.toggleAirplaneMode() },
-                                onToggleTouchLock = onToggleTouchLockRequest,
-                                onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
-                                onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
-                                onToggleKeyMapper = { repository.toggleKeyMapper() },
-                                onToggleKeepScreenOn = { repository.toggleKeepScreenOn() },
-                                onTogglePreventAccidentalHome = { repository.togglePreventAccidentalHome() }
+                                onToggleTouchLock = onToggleTouchLockRequest
                             )
                         }
                     }
@@ -420,428 +264,15 @@ fun AssistantOverlayScreen(
                     )
                 }
 
-                // Modal Option Dialogs
-                when (activeDialog) {
-                    ActiveDialog.NONE -> Unit
-
-                    ActiveDialog.CLOSE_BOTTOM_TIP -> {
-                        CloseScreenTipOverlay(
-                            tipBodyOverride = profile.overrideCloseBottomTipText,
-                            onCancel = { activeDialog = ActiveDialog.NONE },
-                            onConfirm = { noMore ->
-                                if (noMore) {
-                                    repository.setNoMoreCloseBottomScreenTip(true)
-                                }
-                                activeDialog = ActiveDialog.NONE
-                                coroutineScope.launch {
-                                    delay(100L)
-                                    repository.setDualScreenDisplayMode(1)
-                                }
-                            }
-                        )
-                    }
-
-                    ActiveDialog.FOCUS_LOCK -> {
-                        val options = listOf(
-                            TccDialogOption(
-                                id = 0,
-                                label = stringResource(R.string.key_focus_mode_touch_switchable),
-                                iconRes = R.drawable.ic_screen_focus_lock_switchable
-                            ),
-                            TccDialogOption(
-                                id = 1,
-                                label = stringResource(R.string.key_focus_mode_lock_on_upper_screen),
-                                iconRes = R.drawable.ic_screen_focus_lock_upper
-                            ),
-                            TccDialogOption(
-                                id = 2,
-                                label = stringResource(R.string.key_focus_mode_lock_on_lower_screen),
-                                iconRes = R.drawable.ic_screen_focus_lock_lower
-                            )
-                        )
-                        TccOptionDialog(
-                            title = stringResource(R.string.key_focus_mode_title_text),
-                            titleIconRes = R.drawable.ic_screen_focus_lock_mode,
-                            options = options,
-                            selectedId = focusLock,
-                            onSelectOption = { selected ->
-                                repository.setScreenFocusLock(selected)
-                                coroutineScope.launch {
-                                    delay(300L)
-                                    activeDialog = ActiveDialog.NONE
-                                }
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE }
-                        )
-                    }
-
-                    ActiveDialog.PERFORMANCE_MODE -> {
-                        val options = listOf(
-                            TccDialogOption(
-                                id = 0,
-                                label = stringResource(R.string.text_performance_mode_normal),
-                                iconRes = R.drawable.ic_normal_mode
-                            ),
-                            TccDialogOption(
-                                id = 1,
-                                label = stringResource(R.string.text_performance_mode_performance),
-                                iconRes = R.drawable.ic_performance_mode
-                            ),
-                            TccDialogOption(
-                                id = 2,
-                                label = stringResource(R.string.text_performance_mode_height_performance),
-                                iconRes = R.drawable.ic_height_performance_mode
-                            )
-                        )
-                        TccOptionDialog(
-                            title = stringResource(R.string.text_performance_mode_title),
-                            titleIconRes = R.drawable.ic_qs_performance,
-                            options = options,
-                            selectedId = performanceMode,
-                            onSelectOption = { selected ->
-                                repository.setPerformanceMode(selected)
-                                if (selected == 2 && fanMode == 0) {
-                                    repository.setFanMode(4)
-                                }
-                                coroutineScope.launch {
-                                    delay(300L)
-                                    activeDialog = ActiveDialog.NONE
-                                }
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE }
-                        )
-                    }
-
-                    ActiveDialog.FAN_CONTROL -> {
-                        val options = buildList {
-                            if (performanceMode != 2) {
-                                add(
-                                    TccDialogOption(
-                                        id = 0,
-                                        label = stringResource(R.string.text_fan_control_off),
-                                        iconRes = R.drawable.ic_ban_on_use
-                                    )
-                                )
-                            }
-                            add(
-                                TccDialogOption(
-                                    id = 1,
-                                    label = stringResource(R.string.text_fan_control_low_speed),
-                                    iconRes = R.drawable.ic_fan_quiet_mode
-                                )
-                            )
-                            add(
-                                TccDialogOption(
-                                    id = 4,
-                                    label = stringResource(R.string.text_fan_control_smart),
-                                    iconRes = R.drawable.ic_fan_smart_mode
-                                )
-                            )
-                            add(
-                                TccDialogOption(
-                                    id = 5,
-                                    label = stringResource(R.string.text_fan_control_medium_speed),
-                                    iconRes = R.drawable.ic_fan_sport_mode
-                                )
-                            )
-                            add(
-                                TccDialogOption(
-                                    id = 6,
-                                    label = stringResource(R.string.text_fan_control_custom),
-                                    iconRes = R.drawable.ic_fan_custom_mode
-                                )
-                            )
-                        }
-                        TccOptionDialog(
-                            title = stringResource(R.string.text_fan_control_title),
-                            titleIconRes = R.drawable.ic_qs_fan_control,
-                            options = options,
-                            selectedId = fanMode,
-                            showCustomFanSlider = true,
-                            customFanSpeed = fanSpeed,
-                            onCustomFanSpeedChange = { speed ->
-                                repository.setCustomFanSpeed(speed)
-                            },
-                            onSelectOption = { selected ->
-                                repository.setFanMode(selected)
-                                if (selected != 6) {
-                                    coroutineScope.launch {
-                                        delay(300L)
-                                        activeDialog = ActiveDialog.NONE
-                                    }
-                                }
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE }
-                        )
-                    }
-
-                    ActiveDialog.CONTROLLER_STYLE -> {
-                        val standardLabel = profile.overrideStandardControllerLabel
-                            ?: stringResource(R.string.fan_option_odin_style)
-                        val options = listOf(
-                            TccDialogOption(
-                                id = 2,
-                                label = stringResource(R.string.fan_option_disable),
-                                iconRes = R.drawable.ic_ban_on_use
-                            ),
-                            TccDialogOption(
-                                id = 0,
-                                label = stringResource(R.string.fan_option_xbox_style),
-                                iconRes = R.drawable.ic_controller__xbox_style
-                            ),
-                            TccDialogOption(
-                                id = 1,
-                                label = standardLabel,
-                                iconRes = R.drawable.ic_controller_odin_style
-                            )
-                        )
-                        TccOptionDialog(
-                            title = stringResource(R.string.text_handle_style_title),
-                            titleIconRes = R.drawable.ic_qs_controller_style,
-                            options = options,
-                            selectedId = controllerStyle,
-                            onSelectOption = { selected ->
-                                repository.setControllerStyle(selected)
-                                coroutineScope.launch {
-                                    delay(300L)
-                                    activeDialog = ActiveDialog.NONE
-                                }
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE }
-                        )
-                    }
-
-                    ActiveDialog.THEME_MODE -> {
-                        val rawSelectedThemeOption = AppThemeOption.fromId(themeMode)
-                        val selectedThemeOption = if (rawSelectedThemeOption == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
-                            syncedMegingiardOption
-                        } else {
-                            rawSelectedThemeOption
-                        }
-                        val customAccentColor = Color(customAccentArgb)
-                        val syncedAccentColor = syncedMegingiardAccentArgb?.let { Color(it) }
-                            ?: syncedMegingiardOption.previewAccent
-                        val visibleThemeOptions = AppThemeOption.entries.filter { opt ->
-                            opt != AppThemeOption.SYNC_MEGINGIARD || isMegingiardAvailable
-                        }
-                        val options = visibleThemeOptions.map { opt ->
-                            when (opt) {
-                                AppThemeOption.STOCK_SYSTEM -> TccDialogOption(
-                                    id = opt.id,
-                                    label = "${stringResource(R.string.text_system_theme)} (Stock)",
-                                    iconRes = R.drawable.ic_qs_system_theme,
-                                    preserveIconColors = true
-                                )
-                                AppThemeOption.STOCK_LIGHT -> TccDialogOption(
-                                    id = opt.id,
-                                    label = "${stringResource(R.string.text_light_theme)} (Stock)",
-                                    iconRes = R.drawable.ic_qs_light_theme,
-                                    preserveIconColors = true
-                                )
-                                AppThemeOption.STOCK_DARK -> TccDialogOption(
-                                    id = opt.id,
-                                    label = "${stringResource(R.string.text_dark_theme)} (Stock)",
-                                    iconRes = R.drawable.ic_qs_dark_theme,
-                                    preserveIconColors = true
-                                )
-                                AppThemeOption.SYNC_MEGINGIARD -> TccDialogOption(
-                                    id = opt.id,
-                                    label = "${opt.displayName} (${syncedMegingiardOption.shortTileLabel})",
-                                    iconRes = R.drawable.ic_qs_theme_mode,
-                                    swatchColors = syncedMegingiardOption.previewSurface to syncedAccentColor
-                                )
-                                AppThemeOption.MEGINGIARD_DARK, AppThemeOption.MEGINGIARD_DARK_OLED -> TccDialogOption(
-                                    id = opt.id,
-                                    label = opt.displayName,
-                                    iconRes = R.drawable.ic_qs_theme_mode,
-                                    swatchColors = opt.previewSurface to customAccentColor
-                                )
-                                else -> TccDialogOption(
-                                    id = opt.id,
-                                    label = opt.displayName,
-                                    iconRes = R.drawable.ic_qs_theme_mode,
-                                    swatchColors = opt.previewSurface to opt.previewAccent
-                                )
-                            }
-                        }
-                        TccOptionDialog(
-                            title = stringResource(R.string.text_theme_mode_title),
-                            titleIconRes = R.drawable.ic_qs_theme_mode,
-                            options = options,
-                            selectedId = selectedThemeOption.id,
-                            accentPresets = if (selectedThemeOption.supportsCustomAccent) {
-                                MegingiardAccentPresets
-                            } else {
-                                emptyList()
-                            },
-                            selectedAccentArgb = customAccentArgb,
-                            onSelectAccentColor = { color ->
-                                repository.setCustomAccentArgb(color.toArgb())
-                            },
-                            showOsThemeToggle = true,
-                            injectOsThemeEnabled = injectOsTheme,
-                            onToggleInjectOsTheme = { enabled ->
-                                repository.setInjectOsTheme(enabled)
-                            },
-                            onSelectOption = { selected ->
-                                repository.setThemeMode(selected)
-                                val newlySelected = AppThemeOption.fromId(selected)
-                                if (!newlySelected.supportsCustomAccent && !injectOsTheme) {
-                                    coroutineScope.launch {
-                                        delay(300L)
-                                        activeDialog = ActiveDialog.NONE
-                                    }
-                                }
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE },
-                            footerContent = {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = lookSpec.dialog.dividerHorizontalPadding)
-                                        .height(1.dp)
-                                        .background(colors.fourth)
-                                )
-                                TccDialogSegmentedRow(
-                                    label = "Overlay UI Look",
-                                    segments = listOf(
-                                        TccUiLookPreference.AUTO.id to TccUiLookPreference.AUTO.shortLabel,
-                                        TccUiLookPreference.AYN.id to TccUiLookPreference.AYN.shortLabel,
-                                        TccUiLookPreference.RETROID.id to TccUiLookPreference.RETROID.shortLabel
-                                    ),
-                                    selectedId = uiLookMode,
-                                    onSelectId = { repository.setUiLookMode(it) }
-                                )
-                            }
-                        )
-                    }
-
-                    ActiveDialog.TRIGGER_MODE -> {
-                        val options = listOf(
-                            TccDialogOption(
-                                id = 1,
-                                label = "Analog Only",
-                                iconRes = R.drawable.ic_qs_trigger_mode
-                            ),
-                            TccDialogOption(
-                                id = 0,
-                                label = "Digital Only",
-                                iconRes = R.drawable.ic_qs_trigger_mode
-                            ),
-                            TccDialogOption(
-                                id = 2,
-                                label = "Both (Analog + Digital)",
-                                iconRes = R.drawable.ic_qs_trigger_mode
-                            )
-                        )
-                        TccOptionDialog(
-                            title = "L2 / R2 Trigger Mode",
-                            titleIconRes = R.drawable.ic_qs_trigger_mode,
-                            options = options,
-                            selectedId = triggerMode,
-                            onSelectOption = { selected ->
-                                repository.setTriggerMode(selected)
-                                coroutineScope.launch {
-                                    delay(300L)
-                                    activeDialog = ActiveDialog.NONE
-                                }
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE }
-                        )
-                    }
-
-                    ActiveDialog.SCREENSHOT -> {
-                        val options = listOf(
-                            TccDialogOption(
-                                id = 0,
-                                label = "Top Screen",
-                                iconRes = R.drawable.ic_just_screen_above
-                            ),
-                            TccDialogOption(
-                                id = 1,
-                                label = "Bottom Screen",
-                                iconRes = R.drawable.ic_just_screen_below
-                            ),
-                            TccDialogOption(
-                                id = 2,
-                                label = "Both Screens",
-                                iconRes = R.drawable.ic_dual_screen_display
-                            )
-                        )
-                        TccOptionDialog(
-                            title = "Capture Screenshot",
-                            titleIconRes = R.drawable.ic_qs_screenshot,
-                            options = options,
-                            selectedId = -1,
-                            onSelectOption = { selected ->
-                                activeDialog = ActiveDialog.NONE
-                                onCaptureScreenshotRequest(selected)
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE }
-                        )
-                    }
-
-                    ActiveDialog.SCREEN_RECORD -> {
-                        val options = listOf(
-                            TccDialogOption(
-                                id = 0,
-                                label = "Top Screen",
-                                iconRes = R.drawable.ic_just_screen_above
-                            ),
-                            TccDialogOption(
-                                id = 1,
-                                label = "Bottom Screen",
-                                iconRes = R.drawable.ic_just_screen_below
-                            ),
-                            TccDialogOption(
-                                id = 2,
-                                label = "Both Screens",
-                                iconRes = R.drawable.ic_dual_screen_display
-                            )
-                        )
-                        TccOptionDialog(
-                            title = "Record Screen",
-                            titleIconRes = R.drawable.ic_qs_screen_record,
-                            options = options,
-                            selectedId = -1,
-                            onSelectOption = { selected ->
-                                activeDialog = ActiveDialog.NONE
-                                onStartScreenRecordingRequest(selected)
-                            },
-                            onDismiss = { activeDialog = ActiveDialog.NONE },
-                            footerContent = {
-                                TccDialogToggleRow(
-                                    label = "Internal Game Audio",
-                                    checked = screenRecordInternalAudio,
-                                    onCheckedChange = { repository.setScreenRecordInternalAudio(it) }
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = lookSpec.dialog.dividerHorizontalPadding)
-                                        .height(1.dp)
-                                        .background(colors.fourth)
-                                )
-                                TccDialogToggleRow(
-                                    label = "Microphone",
-                                    checked = screenRecordMicAudio,
-                                    onCheckedChange = { repository.setScreenRecordMicAudio(it) }
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = lookSpec.dialog.dividerHorizontalPadding)
-                                        .height(1.dp)
-                                        .background(colors.fourth)
-                                )
-                                TccDialogFpsSelectorRow(
-                                    selectedFps = screenRecordFps,
-                                    onSelectFps = { repository.setScreenRecordFps(it) }
-                                )
-                            }
-                        )
-                    }
-                }
+                AssistantOverlayDialogHost(
+                    activeDialog = activeDialog,
+                    profile = profile,
+                    repository = repository,
+                    coroutineScope = coroutineScope,
+                    onDismiss = { activeDialog = ActiveDialog.NONE },
+                    onCaptureScreenshotRequest = onCaptureScreenshotRequest,
+                    onStartScreenRecordingRequest = onStartScreenRecordingRequest
+                )
             }
         }
     }
@@ -853,53 +284,49 @@ fun AssistantOverlayScreen(
  */
 @Composable
 private fun ScreenControlTab(
-    dualScreenMode: Int,
-    dualBrightness: Int,
-    topBrightness: Int,
-    bottomBrightness: Int,
-    isDualBrightnessActive: Boolean,
-    showSwapScreensButton: Boolean,
-    supportsAmbientLight: Boolean,
-    showLedBrightnessSlider: Boolean,
-    ledBrightnessPercent: Int,
-    ambientLightEnabled: Boolean,
-    dualVolume: Int,
-    primaryVolume: Int,
-    secondaryVolume: Int,
-    isDualVolumeActive: Boolean,
-    onSelectDisplayMode: (Int) -> Unit,
+    profile: DeviceProfile,
+    repository: SystemSettingsRepository,
     onSwapScreens: () -> Unit,
-    onDualBrightnessChange: (Int, Boolean) -> Unit,
-    onTopBrightnessChange: (Int, Boolean) -> Unit,
-    onBottomBrightnessChange: (Int, Boolean) -> Unit,
-    onLedBrightnessChange: (Int) -> Unit,
-    onDualVolumeChange: (Int) -> Unit,
-    onPrimaryVolumeChange: (Int) -> Unit,
-    onSecondaryVolumeChange: (Int) -> Unit
+    onShowCloseBottomTip: () -> Unit
 ) {
+    val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
+    val dualBrightness by repository.dualBrightness.collectAsState()
+    val topBrightness by repository.topBrightness.collectAsState()
+    val bottomBrightness by repository.bottomBrightness.collectAsState()
+    val isDualBrightnessActive by repository.isDualBrightnessActive.collectAsState()
+    val showSwapScreensButton by repository.showSwapScreensButton.collectAsState()
+    val showLedBrightnessSlider by repository.showLedBrightnessSlider.collectAsState()
+    val ledBrightnessPercent by repository.ledBrightnessPercent.collectAsState()
+    val ambientLightEnabled by repository.ambientLightEnabled.collectAsState()
+    val dualVolume by repository.dualVolumePercent.collectAsState()
+    val primaryVolume by repository.primaryVolumePercent.collectAsState()
+    val secondaryVolume by repository.secondaryVolumePercent.collectAsState()
+    val isDualVolumeActive by repository.isDualVolumeActive.collectAsState()
+
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
+    val reserveFourSliderLowerHeight = !lookSpec.isRetroid
     val modeSpec = lookSpec.modeTab
     val cardShape = lookSpec.panelCardShape
-    val showFourthBrightnessSlider = supportsAmbientLight && showLedBrightnessSlider
+    val showFourthBrightnessSlider = profile.supportsAmbientLight && showLedBrightnessSlider
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val referenceThreeSliderCardHeight = (maxHeight * 0.5f) - modeSpec.referenceHalfGapSubtractor
+        val referenceThreeSliderCardHeight = (maxHeight * 0.5f) - aynDp(10f)
         val dynamicSliderHeight = referenceThreeSliderCardHeight * 0.2933f
         val dynamicCardVerticalPad = referenceThreeSliderCardHeight * 0.06f
         val reservedBottomCardsHeight = (dynamicSliderHeight * 4f) + (dynamicCardVerticalPad * 2f)
 
         val brightnessSliderHeight = when {
-            modeSpec.reserveFourSliderLowerHeight -> dynamicSliderHeight
+            reserveFourSliderLowerHeight -> dynamicSliderHeight
             showFourthBrightnessSlider -> modeSpec.fourSliderRowHeight
             else -> modeSpec.threeSliderRowHeight
         }
-        val volumeSliderHeight = if (modeSpec.reserveFourSliderLowerHeight) {
+        val volumeSliderHeight = if (reserveFourSliderLowerHeight) {
             dynamicSliderHeight
         } else {
             modeSpec.threeSliderRowHeight
         }
-        val cardVerticalPad = if (modeSpec.reserveFourSliderLowerHeight) {
+        val cardVerticalPad = if (reserveFourSliderLowerHeight) {
             dynamicCardVerticalPad
         } else {
             modeSpec.fixedCardVerticalPadding
@@ -909,7 +336,7 @@ private fun ScreenControlTab(
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(if (modeSpec.reserveFourSliderLowerHeight) 1f else modeSpec.upperCardWeight)
+                    .weight(if (reserveFourSliderLowerHeight) 1f else modeSpec.upperCardWeight)
                     .padding(top = modeSpec.upperCardTopPadding)
                     .clip(cardShape)
                     .background(colors.panelBackground)
@@ -923,6 +350,13 @@ private fun ScreenControlTab(
                     horizontal = modeSpec.modeItemHorizontalPadding,
                     vertical = modeSpec.modeItemVerticalPadding
                 )
+                val selectMode: (Int) -> Unit = { mode ->
+                    if (mode == 1 && dualScreenMode != 1 && repository.shouldShowCloseBottomScreenTip()) {
+                        onShowCloseBottomTip()
+                    } else {
+                        repository.setDualScreenDisplayMode(mode)
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -933,7 +367,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.dualscreen_asynchronous_display),
                         iconRes = R.drawable.ic_dual_screen_display,
                         selected = dualScreenMode == 0,
-                        onClick = { onSelectDisplayMode(0) },
+                        onClick = { selectMode(0) },
                         variant = TccTileVariant.MODE,
                         maxLabelWidth = maxModeLabelWidth,
                         modifier = itemModifier
@@ -942,7 +376,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.only_theupper_screen_displayed),
                         iconRes = R.drawable.ic_just_screen_above,
                         selected = dualScreenMode == 1,
-                        onClick = { onSelectDisplayMode(1) },
+                        onClick = { selectMode(1) },
                         variant = TccTileVariant.MODE,
                         maxLabelWidth = maxModeLabelWidth,
                         modifier = itemModifier
@@ -951,7 +385,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.only_following_screen_displayed),
                         iconRes = R.drawable.ic_just_screen_below,
                         selected = dualScreenMode == 2,
-                        onClick = { onSelectDisplayMode(2) },
+                        onClick = { selectMode(2) },
                         variant = TccTileVariant.MODE,
                         maxLabelWidth = maxModeLabelWidth,
                         modifier = itemModifier
@@ -973,7 +407,7 @@ private fun ScreenControlTab(
             Spacer(modifier = Modifier.height(modeSpec.middleGap))
 
             Row(
-                modifier = if (modeSpec.reserveFourSliderLowerHeight) {
+                modifier = if (reserveFourSliderLowerHeight) {
                     Modifier
                         .fillMaxWidth()
                         .height(reservedBottomCardsHeight)
@@ -1001,7 +435,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.sliding_dual_screen),
                         progress = dualBrightness,
                         kind = SliderKind.BRIGHTNESS,
-                        onProgressChange = onDualBrightnessChange,
+                        onProgressChange = { pct, temp -> repository.setDualScreenBrightnessPercent(pct, temp) },
                         isFillDimmed = !isDualBrightnessActive,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1011,7 +445,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.sliding_main_screen),
                         progress = topBrightness,
                         kind = SliderKind.BRIGHTNESS,
-                        onProgressChange = onTopBrightnessChange,
+                        onProgressChange = { pct, temp -> repository.setDisplayBrightnessPercent(0, pct, temp) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(brightnessSliderHeight)
@@ -1020,7 +454,9 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.sliding_secondary_screen),
                         progress = bottomBrightness,
                         kind = SliderKind.BRIGHTNESS,
-                        onProgressChange = onBottomBrightnessChange,
+                        onProgressChange = { pct, temp ->
+                            repository.setDisplayBrightnessPercent(profile.bottomDisplayId, pct, temp)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(brightnessSliderHeight)
@@ -1030,7 +466,7 @@ private fun ScreenControlTab(
                             label = stringResource(R.string.sliding_stick_led),
                             progress = ledBrightnessPercent,
                             kind = SliderKind.LED_BRIGHTNESS,
-                            onProgressChange = { pct, _ -> onLedBrightnessChange(pct) },
+                            onProgressChange = { pct, _ -> repository.setLedBrightnessPercent(pct) },
                             isFillDimmed = !ambientLightEnabled,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1056,7 +492,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.sliding_dual_screen),
                         progress = dualVolume,
                         kind = SliderKind.VOLUME,
-                        onProgressChange = { pct, _ -> onDualVolumeChange(pct) },
+                        onProgressChange = { pct, _ -> repository.setDualVolumePercent(pct) },
                         isFillDimmed = !isDualVolumeActive,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1066,7 +502,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.sliding_main_screen),
                         progress = primaryVolume,
                         kind = SliderKind.VOLUME,
-                        onProgressChange = { pct, _ -> onPrimaryVolumeChange(pct) },
+                        onProgressChange = { pct, _ -> repository.setPrimaryVolumePercent(pct) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(volumeSliderHeight)
@@ -1075,7 +511,7 @@ private fun ScreenControlTab(
                         label = stringResource(R.string.sliding_secondary_screen),
                         progress = secondaryVolume,
                         kind = SliderKind.VOLUME,
-                        onProgressChange = { pct, _ -> onSecondaryVolumeChange(pct) },
+                        onProgressChange = { pct, _ -> repository.setSecondaryVolumePercent(pct) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(volumeSliderHeight)
@@ -1094,105 +530,69 @@ private data class QuickSettingTileModel(
 )
 
 @Composable
-private fun SystemSettingsTab(
+private fun buildQuickSettingTileModels(
     profile: DeviceProfile,
-    telemetry: HardwareTelemetryState,
-    tempFahrenheit: Boolean,
-    refreshRate: Int,
-    dualScreenMode: Int,
-    focusLock: Int,
-    performanceMode: Int,
-    fanMode: Int,
-    controllerStyle: Int,
-    chargingSeparation: Boolean,
-    vibrateOn: Boolean,
-    ambientLight: Boolean,
-    forceLandscape: Boolean,
-    themeMode: Int,
-    isMegingiardAvailable: Boolean,
-    syncedMegingiardOption: AppThemeOption,
-    wifiEnabled: Boolean,
-    bluetoothEnabled: Boolean,
-    dndEnabled: Boolean,
-    airplaneModeEnabled: Boolean,
-    touchLockEnabled: Boolean,
-    triggerMode: Int,
-    chargeLimit80: Boolean,
-    gamepadMouseMode: Boolean,
-    keyMapperEnabled: Boolean,
-    keepScreenOn: Boolean,
-    preventAccidentalHome: Boolean,
-    isRecordingScreen: Boolean,
+    repository: SystemSettingsRepository,
     recordingElapsedText: String,
-    quickTileOrder: List<QuickSettingTileId>,
-    disabledQuickTiles: Set<QuickSettingTileId>,
-    onToggleRefreshRate: () -> Unit,
-    onToggleTempUnit: () -> Unit,
     onOpenDialog: (ActiveDialog) -> Unit,
     onStopScreenRecording: () -> Unit,
-    onToggleChargingSeparation: () -> Unit,
-    onToggleVibrate: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
-    onToggleAmbientLight: () -> Unit,
-    onToggleForceLandscape: () -> Unit,
-    onToggleWifi: () -> Unit,
-    onToggleBluetooth: () -> Unit,
-    onToggleDnd: () -> Unit,
-    onToggleAirplaneMode: () -> Unit,
-    onToggleTouchLock: () -> Unit,
-    onToggleChargeLimit80: () -> Unit,
-    onToggleGamepadMouseMode: () -> Unit,
-    onToggleKeyMapper: () -> Unit,
-    onToggleKeepScreenOn: () -> Unit,
-    onTogglePreventAccidentalHome: () -> Unit
-) {
-    val colors = LocalTccColors.current
-    val lookSpec = LocalTccLookSpec.current
-    val settingsSpec = lookSpec.settingsTab
-    val viewport = LocalOverlayViewport.current
-    val cardShape = lookSpec.panelCardShape
-    val coroutineScope = rememberCoroutineScope()
+    onToggleTouchLock: () -> Unit
+): List<QuickSettingTileModel> {
+    val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
+    val focusLock by repository.screenFocusLock.collectAsState()
+    val performanceMode by repository.performanceMode.collectAsState()
+    val fanMode by repository.fanMode.collectAsState()
+    val controllerStyle by repository.controllerStyle.collectAsState()
+    val chargingSeparation by repository.chargingSeparation.collectAsState()
+    val vibrateOn by repository.vibrateOn.collectAsState()
+    val ambientLight by repository.ambientLightEnabled.collectAsState()
+    val forceLandscape by repository.forceLandscape.collectAsState()
+    val themeMode by repository.themeMode.collectAsState()
+    val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
+    val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
+    val wifiEnabled by repository.wifiEnabled.collectAsState()
+    val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
+    val dndEnabled by repository.dndEnabled.collectAsState()
+    val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
+    val touchLockEnabled by repository.touchLockEnabled.collectAsState()
+    val triggerMode by repository.triggerMode.collectAsState()
+    val chargeLimit80 by repository.chargeLimit80.collectAsState()
+    val gamepadMouseMode by repository.gamepadMouseMode.collectAsState()
+    val keyMapperEnabled by repository.keyMapperEnabled.collectAsState()
+    val keepScreenOn by repository.keepScreenOn.collectAsState()
+    val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
+    val screenRecordingState by repository.screenRecordingState.collectAsState()
+    val quickTileOrder by repository.quickTileOrder.collectAsState()
+    val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
 
-    val tiles = buildList {
+    val isRecordingScreen = screenRecordingState.isRecording
+
+    return buildList {
         for (tileId in quickTileOrder) {
-            if (!tileId.isSupportedOn(profile)) continue
-            if (tileId in disabledQuickTiles) continue
+            if (!tileId.isSupportedOn(profile) || tileId in disabledQuickTiles) continue
             when (tileId) {
-                QuickSettingTileId.FOCUS_LOCK -> {
-                    if (dualScreenMode == 0) {
-                        val (focusLabel, focusSelected) = when (focusLock) {
-                            1 -> stringResource(R.string.key_focus_mode_lock_on_upper_screen) to true
-                            2 -> stringResource(R.string.key_focus_mode_lock_on_lower_screen) to true
-                            else -> stringResource(R.string.key_focus_mode_touch_switchable) to false
-                        }
-                        add(
-                            QuickSettingTileModel(
-                                label = focusLabel,
-                                iconRes = R.drawable.ic_screen_focus_lock_mode,
-                                selected = focusSelected,
-                                onClick = { onOpenDialog(ActiveDialog.FOCUS_LOCK) }
-                            )
-                        )
+                QuickSettingTileId.FOCUS_LOCK -> if (dualScreenMode == 0) {
+                    val (focusLabel, focusSelected) = when (focusLock) {
+                        1 -> stringResource(R.string.key_focus_mode_lock_on_upper_screen) to true
+                        2 -> stringResource(R.string.key_focus_mode_lock_on_lower_screen) to true
+                        else -> stringResource(R.string.key_focus_mode_touch_switchable) to false
                     }
+                    add(QuickSettingTileModel(focusLabel, R.drawable.ic_screen_focus_lock_mode, focusSelected) {
+                        onOpenDialog(ActiveDialog.FOCUS_LOCK)
+                    })
                 }
-
                 QuickSettingTileId.PERFORMANCE_MODE -> {
                     val (perfLabel, perfSelected) = when (performanceMode) {
                         1 -> stringResource(R.string.text_performance_mode_performance) to true
                         2 -> stringResource(R.string.text_performance_mode_height_performance) to true
                         else -> stringResource(R.string.text_performance_mode_normal) to false
                     }
-                    add(
-                        QuickSettingTileModel(
-                            label = perfLabel,
-                            iconRes = R.drawable.ic_qs_performance,
-                            selected = perfSelected,
-                            onClick = { onOpenDialog(ActiveDialog.PERFORMANCE_MODE) }
-                        )
-                    )
+                    add(QuickSettingTileModel(perfLabel, R.drawable.ic_qs_performance, perfSelected) {
+                        onOpenDialog(ActiveDialog.PERFORMANCE_MODE)
+                    })
                 }
-
                 QuickSettingTileId.FAN_CONTROL -> {
                     val (fanLabel, fanSelected) = when (fanMode) {
                         1 -> stringResource(R.string.text_fan_control_low_speed) to true
@@ -1201,89 +601,51 @@ private fun SystemSettingsTab(
                         6 -> stringResource(R.string.text_fan_control_custom) to true
                         else -> stringResource(R.string.text_fan_control_off) to false
                     }
-                    add(
-                        QuickSettingTileModel(
-                            label = fanLabel,
-                            iconRes = R.drawable.ic_qs_fan_control,
-                            selected = fanSelected,
-                            onClick = { onOpenDialog(ActiveDialog.FAN_CONTROL) }
-                        )
-                    )
+                    add(QuickSettingTileModel(fanLabel, R.drawable.ic_qs_fan_control, fanSelected) {
+                        onOpenDialog(ActiveDialog.FAN_CONTROL)
+                    })
                 }
-
-                QuickSettingTileId.CLEAR_MEMORY -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = stringResource(R.string.text_clear_memory_title),
-                            iconRes = R.drawable.ic_qs_clean,
-                            selected = false,
-                            onClick = onCleanMemory
-                        )
-                    )
-                }
-
+                QuickSettingTileId.CLEAR_MEMORY -> add(
+                    QuickSettingTileModel(stringResource(R.string.text_clear_memory_title), R.drawable.ic_qs_clean, false, onCleanMemory)
+                )
                 QuickSettingTileId.CONTROLLER_STYLE -> {
-                    val standardLabel = profile.overrideStandardControllerLabel
-                        ?: stringResource(R.string.fan_option_odin_style)
                     val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
                         0 -> stringResource(R.string.fan_option_xbox_style) to true
-                        1 -> standardLabel to true
+                        1 -> profile.controllerStyleOptionLabel to true
                         else -> stringResource(R.string.fan_option_disable) to false
                     }
-                    add(
-                        QuickSettingTileModel(
-                            label = ctrlLabel,
-                            iconRes = R.drawable.ic_qs_controller_style,
-                            selected = ctrlSelected,
-                            onClick = { onOpenDialog(ActiveDialog.CONTROLLER_STYLE) }
-                        )
-                    )
+                    add(QuickSettingTileModel(ctrlLabel, R.drawable.ic_qs_controller_style, ctrlSelected) {
+                        onOpenDialog(ActiveDialog.CONTROLLER_STYLE)
+                    })
                 }
-
-                QuickSettingTileId.CHARGING_SEPARATION -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = stringResource(R.string.text_charging_separation_title),
-                            iconRes = R.drawable.ic_qs_charging_separation,
-                            selected = chargingSeparation,
-                            onClick = onToggleChargingSeparation
-                        )
-                    )
-                }
-
-                QuickSettingTileId.VIBRATION -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = stringResource(R.string.text_vibration_open_title),
-                            iconRes = R.drawable.ic_qs_vibrate,
-                            selected = vibrateOn,
-                            onClick = onToggleVibrate
-                        )
-                    )
-                }
-
-                QuickSettingTileId.AMBIENT_LIGHT -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = stringResource(R.string.text_led_lights_open_title),
-                            iconRes = R.drawable.ic_qs_ambient_light,
-                            selected = ambientLight,
-                            onClick = onToggleAmbientLight
-                        )
-                    )
-                }
-
-                QuickSettingTileId.FORCE_LANDSCAPE -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = stringResource(R.string.force_landscape_mode_text),
-                            iconRes = R.drawable.ic_landscape,
-                            selected = forceLandscape,
-                            onClick = onToggleForceLandscape
-                        )
-                    )
-                }
-
+                QuickSettingTileId.CHARGING_SEPARATION -> add(
+                    QuickSettingTileModel(
+                        stringResource(R.string.text_charging_separation_title),
+                        R.drawable.ic_qs_charging_separation,
+                        chargingSeparation
+                    ) { repository.toggleChargingSeparation() }
+                )
+                QuickSettingTileId.VIBRATION -> add(
+                    QuickSettingTileModel(
+                        stringResource(R.string.text_vibration_open_title),
+                        R.drawable.ic_qs_vibrate,
+                        vibrateOn
+                    ) { repository.toggleVibrate() }
+                )
+                QuickSettingTileId.AMBIENT_LIGHT -> add(
+                    QuickSettingTileModel(
+                        stringResource(R.string.text_led_lights_open_title),
+                        R.drawable.ic_qs_ambient_light,
+                        ambientLight
+                    ) { repository.toggleAmbientLight() }
+                )
+                QuickSettingTileId.FORCE_LANDSCAPE -> add(
+                    QuickSettingTileModel(
+                        stringResource(R.string.force_landscape_mode_text),
+                        R.drawable.ic_landscape,
+                        forceLandscape
+                    ) { repository.toggleForceLandscape() }
+                )
                 QuickSettingTileId.THEME_MODE -> {
                     val rawThemeOpt = AppThemeOption.fromId(themeMode)
                     val currentThemeOpt = if (rawThemeOpt == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
@@ -1297,188 +659,119 @@ private fun SystemSettingsTab(
                         AppThemeOption.STOCK_DARK -> stringResource(R.string.text_dark_theme) to true
                         else -> currentThemeOpt.shortTileLabel to true
                     }
-                    add(
-                        QuickSettingTileModel(
-                            label = themeLabel,
-                            iconRes = R.drawable.ic_qs_theme_mode,
-                            selected = themeSelected,
-                            onClick = { onOpenDialog(ActiveDialog.THEME_MODE) }
-                        )
-                    )
+                    add(QuickSettingTileModel(themeLabel, R.drawable.ic_qs_theme_mode, themeSelected) {
+                        onOpenDialog(ActiveDialog.THEME_MODE)
+                    })
                 }
-
-                QuickSettingTileId.WIFI -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Wi-Fi",
-                            iconRes = R.drawable.ic_qs_wifi,
-                            selected = wifiEnabled,
-                            onClick = onToggleWifi
-                        )
+                QuickSettingTileId.WIFI -> add(
+                    QuickSettingTileModel("Wi-Fi", R.drawable.ic_qs_wifi, wifiEnabled) { repository.toggleWifi() }
+                )
+                QuickSettingTileId.BLUETOOTH -> add(
+                    QuickSettingTileModel("Bluetooth", R.drawable.ic_bluetooth, bluetoothEnabled) { repository.toggleBluetooth() }
+                )
+                QuickSettingTileId.DO_NOT_DISTURB -> add(
+                    QuickSettingTileModel("Do Not Disturb", R.drawable.ic_qs_dnd, dndEnabled) { repository.toggleDnd() }
+                )
+                QuickSettingTileId.AIRPLANE_MODE -> add(
+                    QuickSettingTileModel("Airplane Mode", R.drawable.ic_qs_airplane, airplaneModeEnabled) { repository.toggleAirplaneMode() }
+                )
+                QuickSettingTileId.TOUCH_LOCK -> add(
+                    QuickSettingTileModel(
+                        if (touchLockEnabled) "Touch Locked" else "Touch Lock",
+                        R.drawable.ic_qs_touch_lock,
+                        touchLockEnabled,
+                        onToggleTouchLock
                     )
-                }
-
-                QuickSettingTileId.BLUETOOTH -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Bluetooth",
-                            iconRes = R.drawable.ic_bluetooth,
-                            selected = bluetoothEnabled,
-                            onClick = onToggleBluetooth
-                        )
-                    )
-                }
-
-                QuickSettingTileId.DO_NOT_DISTURB -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Do Not Disturb",
-                            iconRes = R.drawable.ic_qs_dnd,
-                            selected = dndEnabled,
-                            onClick = onToggleDnd
-                        )
-                    )
-                }
-
-                QuickSettingTileId.AIRPLANE_MODE -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Airplane Mode",
-                            iconRes = R.drawable.ic_qs_airplane,
-                            selected = airplaneModeEnabled,
-                            onClick = onToggleAirplaneMode
-                        )
-                    )
-                }
-
-                QuickSettingTileId.TOUCH_LOCK -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = if (touchLockEnabled) "Touch Locked" else "Touch Lock",
-                            iconRes = R.drawable.ic_qs_touch_lock,
-                            selected = touchLockEnabled,
-                            onClick = onToggleTouchLock
-                        )
-                    )
-                }
-
-                QuickSettingTileId.SCREENSHOT -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Screenshot",
-                            iconRes = R.drawable.ic_qs_screenshot,
-                            selected = false,
-                            onClick = { onOpenDialog(ActiveDialog.SCREENSHOT) }
-                        )
-                    )
-                }
-
+                )
+                QuickSettingTileId.SCREENSHOT -> add(
+                    QuickSettingTileModel("Screenshot", R.drawable.ic_qs_screenshot, false) {
+                        onOpenDialog(ActiveDialog.SCREENSHOT)
+                    }
+                )
                 QuickSettingTileId.SCREEN_RECORD -> {
                     val tileLabel = if (isRecordingScreen) {
                         "Stop (${recordingElapsedText.ifEmpty { "00:00" }})"
                     } else {
                         "Screen Record"
                     }
-                    add(
-                        QuickSettingTileModel(
-                            label = tileLabel,
-                            iconRes = R.drawable.ic_qs_screen_record,
-                            selected = isRecordingScreen,
-                            onClick = {
-                                if (isRecordingScreen) {
-                                    onStopScreenRecording()
-                                } else {
-                                    onOpenDialog(ActiveDialog.SCREEN_RECORD)
-                                }
-                            }
-                        )
-                    )
+                    add(QuickSettingTileModel(tileLabel, R.drawable.ic_qs_screen_record, isRecordingScreen) {
+                        if (isRecordingScreen) onStopScreenRecording() else onOpenDialog(ActiveDialog.SCREEN_RECORD)
+                    })
                 }
-
                 QuickSettingTileId.TRIGGER_MODE -> {
                     val triggerLabel = when (triggerMode) {
                         1 -> "Trigger: Analog"
                         0 -> "Trigger: Digital"
                         else -> "Trigger: Both"
                     }
-                    add(
-                        QuickSettingTileModel(
-                            label = triggerLabel,
-                            iconRes = R.drawable.ic_qs_trigger_mode,
-                            selected = triggerMode != 2,
-                            onClick = { onOpenDialog(ActiveDialog.TRIGGER_MODE) }
-                        )
-                    )
+                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != 2) {
+                        onOpenDialog(ActiveDialog.TRIGGER_MODE)
+                    })
                 }
-
-                QuickSettingTileId.CHARGE_LIMIT_80 -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "80% Charge Limit",
-                            iconRes = R.drawable.ic_qs_charge_limit,
-                            selected = chargeLimit80,
-                            onClick = onToggleChargeLimit80
-                        )
-                    )
-                }
-
-                QuickSettingTileId.GAMEPAD_MOUSE_MODE -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Mouse Mode",
-                            iconRes = R.drawable.ic_qs_mouse_mode,
-                            selected = gamepadMouseMode,
-                            onClick = onToggleGamepadMouseMode
-                        )
-                    )
-                }
-
-                QuickSettingTileId.KEY_MAPPER -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Key Mapper",
-                            iconRes = R.drawable.ic_qs_key_mapper,
-                            selected = keyMapperEnabled,
-                            onClick = onToggleKeyMapper
-                        )
-                    )
-                }
-
-                QuickSettingTileId.KEEP_SCREEN_ON -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Keep Screen On",
-                            iconRes = R.drawable.ic_qs_keep_awake,
-                            selected = keepScreenOn,
-                            onClick = onToggleKeepScreenOn
-                        )
-                    )
-                }
-
-                QuickSettingTileId.PREVENT_ACCIDENTAL_HOME -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Home Lock",
-                            iconRes = R.drawable.ic_qs_prevent_home,
-                            selected = preventAccidentalHome,
-                            onClick = onTogglePreventAccidentalHome
-                        )
-                    )
-                }
-
-                QuickSettingTileId.CLEAR_ALL_TASKS -> {
-                    add(
-                        QuickSettingTileModel(
-                            label = "Clear All Tasks",
-                            iconRes = R.drawable.ic_qs_clear_tasks,
-                            selected = false,
-                            onClick = onClearAllTasks
-                        )
-                    )
-                }
+                QuickSettingTileId.CHARGE_LIMIT_80 -> add(
+                    QuickSettingTileModel("80% Charge Limit", R.drawable.ic_qs_charge_limit, chargeLimit80) {
+                        repository.toggleChargeLimit80()
+                    }
+                )
+                QuickSettingTileId.GAMEPAD_MOUSE_MODE -> add(
+                    QuickSettingTileModel("Mouse Mode", R.drawable.ic_qs_mouse_mode, gamepadMouseMode) {
+                        repository.toggleGamepadMouseMode()
+                    }
+                )
+                QuickSettingTileId.KEY_MAPPER -> add(
+                    QuickSettingTileModel("Key Mapper", R.drawable.ic_qs_key_mapper, keyMapperEnabled) {
+                        repository.toggleKeyMapper()
+                    }
+                )
+                QuickSettingTileId.KEEP_SCREEN_ON -> add(
+                    QuickSettingTileModel("Keep Screen On", R.drawable.ic_qs_keep_awake, keepScreenOn) {
+                        repository.toggleKeepScreenOn()
+                    }
+                )
+                QuickSettingTileId.PREVENT_ACCIDENTAL_HOME -> add(
+                    QuickSettingTileModel("Home Lock", R.drawable.ic_qs_prevent_home, preventAccidentalHome) {
+                        repository.togglePreventAccidentalHome()
+                    }
+                )
+                QuickSettingTileId.CLEAR_ALL_TASKS -> add(
+                    QuickSettingTileModel("Clear All Tasks", R.drawable.ic_qs_clear_tasks, false, onClearAllTasks)
+                )
             }
         }
     }
+}
+
+@Composable
+private fun SystemSettingsTab(
+    profile: DeviceProfile,
+    repository: SystemSettingsRepository,
+    telemetry: HardwareTelemetryState,
+    recordingElapsedText: String,
+    onOpenDialog: (ActiveDialog) -> Unit,
+    onStopScreenRecording: () -> Unit,
+    onCleanMemory: () -> Unit,
+    onClearAllTasks: () -> Unit,
+    onToggleTouchLock: () -> Unit
+) {
+    val refreshRate by repository.refreshRate.collectAsState()
+    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
+    val colors = LocalTccColors.current
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
+    val viewport = LocalOverlayViewport.current
+    val cardShape = lookSpec.panelCardShape
+    val coroutineScope = rememberCoroutineScope()
+
+    val tiles = buildQuickSettingTileModels(
+        profile = profile,
+        repository = repository,
+        recordingElapsedText = recordingElapsedText,
+        onOpenDialog = onOpenDialog,
+        onStopScreenRecording = onStopScreenRecording,
+        onCleanMemory = onCleanMemory,
+        onClearAllTasks = onClearAllTasks,
+        onToggleTouchLock = onToggleTouchLock
+    )
 
     val pages = remember(tiles) { tiles.chunked(8) }
     val pageCount = pages.size.coerceAtLeast(1)
@@ -1537,7 +830,7 @@ private fun SystemSettingsTab(
             FrameRatePanelCard(
                 refreshRate = refreshRate,
                 currentFps = telemetry.currentFps,
-                onToggleRefreshRate = onToggleRefreshRate,
+                onToggleRefreshRate = { repository.toggleRefreshRate() },
                 modifier = Modifier
                     .weight(leftColWeight)
                     .fillMaxHeight()
@@ -1622,7 +915,7 @@ private fun SystemSettingsTab(
                 else -> Color(0xFF818184)
             }
             val rawTempText = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit)
-            val displayTempText = if (lookSpec.useAsciiDegreeSymbol) {
+            val displayTempText = if (lookSpec.isRetroid) {
                 rawTempText.replace("℃", "°C").replace("℉", "°F")
             } else {
                 rawTempText
@@ -1641,7 +934,7 @@ private fun SystemSettingsTab(
                     iconRes = R.drawable.ic_temp,
                     iconTint = tempTint,
                     iconSizeRate = 0.20f,
-                    onClick = onToggleTempUnit,
+                    onClick = { repository.toggleTempFahrenheit() },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -1782,19 +1075,19 @@ private fun FrameRatePanelCard(
     val context = LocalContext.current
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
+    val isRetroid = lookSpec.isRetroid
     val settingsSpec = lookSpec.settingsTab
-    val pixelFont = tccFontFamily()
-    val pixelStyle = tccTextStyle()
+    val labelStyle = tccTextStyle()
 
-    val pixelDisplayTypeface = remember(context, settingsSpec.fpsUsePixelCanvasFonts) {
-        if (settingsSpec.fpsUsePixelCanvasFonts) {
+    val pixelDisplayTypeface = remember(context, isRetroid) {
+        if (isRetroid) {
             runCatching { ResourcesCompat.getFont(context, R.font.tcc_pixel_display) }.getOrNull()
         } else {
             null
         }
     }
-    val pixelLabelTypeface = remember(context, settingsSpec.fpsUsePixelCanvasFonts) {
-        if (settingsSpec.fpsUsePixelCanvasFonts) {
+    val pixelLabelTypeface = remember(context, isRetroid) {
+        if (isRetroid) {
             runCatching { ResourcesCompat.getFont(context, R.font.tcc_pixel_label) }.getOrNull()
         } else {
             null
@@ -1854,7 +1147,7 @@ private fun FrameRatePanelCard(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(settingsSpec.fpsTopWeight),
+                .weight(if (isRetroid) 0.34f else 0.30f),
             contentAlignment = Alignment.Center
         ) {
             val retroidPillBg = when {
@@ -1863,7 +1156,7 @@ private fun FrameRatePanelCard(
                 else -> Color(0xFF70E7FF)
             }
             val pillTextColor = when {
-                lookSpec.isRetroid -> when {
+                isRetroid -> when {
                     colors.isMegingiardStyle && !isHighRate -> colors.primary
                     colors.isMegingiardStyle -> colors.retroidContentOnAccent()
                     else -> Color.Black
@@ -1886,7 +1179,7 @@ private fun FrameRatePanelCard(
                     .clip(settingsSpec.fpsBadgeShape)
                     .then(
                         when {
-                            lookSpec.isRetroid -> Modifier.background(retroidPillBg)
+                            isRetroid -> Modifier.background(retroidPillBg)
                             colors.isMegingiardStyle -> Modifier.background(colors.accent)
                             else -> Modifier
                                 .background(if (colors.isDark) Color(0xFF272727) else Color(0xFFD5D5D5))
@@ -1908,9 +1201,8 @@ private fun FrameRatePanelCard(
                     text = stringResource(R.string.frame_rate_mode_text, refreshRate),
                     color = pillTextColor,
                     fontSize = settingsSpec.fpsBadgeFontSize,
-                    fontFamily = pixelFont,
-                    style = pixelStyle,
-                    fontWeight = if (!lookSpec.isRetroid && colors.isMegingiardStyle) {
+                    style = labelStyle,
+                    fontWeight = if (!isRetroid && colors.isMegingiardStyle) {
                         FontWeight.SemiBold
                     } else {
                         FontWeight.Normal
@@ -1921,9 +1213,9 @@ private fun FrameRatePanelCard(
         }
 
         val primaryArgb = colors.primary.toArgb()
-        val padPx = with(LocalDensity.current) { settingsSpec.fpsCanvasPadDp.toPx() }
-        val numberPaint = remember(settingsSpec.fpsUsePixelCanvasFonts, pixelDisplayTypeface) {
-            if (settingsSpec.fpsUsePixelCanvasFonts) {
+        val padPx = with(LocalDensity.current) { (if (isRetroid) 5.dp else aynDp(5f)).toPx() }
+        val numberPaint = remember(isRetroid, pixelDisplayTypeface) {
+            if (isRetroid) {
                 Paint().apply {
                     isAntiAlias = false
                     style = Paint.Style.FILL
@@ -1936,8 +1228,8 @@ private fun FrameRatePanelCard(
                 }
             }
         }
-        val unitPaint = remember(settingsSpec.fpsUsePixelCanvasFonts, pixelLabelTypeface) {
-            if (settingsSpec.fpsUsePixelCanvasFonts) {
+        val unitPaint = remember(isRetroid, pixelLabelTypeface) {
+            if (isRetroid) {
                 Paint().apply {
                     isAntiAlias = false
                     style = Paint.Style.FILL
@@ -1953,20 +1245,20 @@ private fun FrameRatePanelCard(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(settingsSpec.fpsCenterWeight)
+                .weight(if (isRetroid) 0.38f else 0.40f)
         ) {
             val h = size.height
             val numberStr = currentFps.coerceIn(0, refreshRate).toString()
             val unitStr = "FPS"
 
-            numberPaint.textSize = h * settingsSpec.fpsNumberHeightRatio
+            numberPaint.textSize = h * (if (isRetroid) 0.76f else 0.75f)
             numberPaint.color = primaryArgb
             val fm = numberPaint.fontMetrics
             val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) +
-                (if (settingsSpec.fpsBaselineShiftByPad) padPx else 0f)
+                (if (!isRetroid) padPx else 0f)
             val numberWidth = numberPaint.measureText(numberStr)
 
-            unitPaint.textSize = h * settingsSpec.fpsUnitHeightRatio
+            unitPaint.textSize = h * (if (isRetroid) 0.18f else 0.20f)
             unitPaint.color = primaryArgb
             val unitWidth = unitPaint.measureText(unitStr)
             val totalWidth = numberWidth + padPx * 2f + unitWidth
@@ -1981,15 +1273,14 @@ private fun FrameRatePanelCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(settingsSpec.fpsBottomWeight),
+                .weight(if (isRetroid) 0.28f else 0.30f),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = stringResource(R.string.current_frame_rate_tip),
                 color = colors.tertiary,
                 fontSize = settingsSpec.fpsTipFontSize,
-                fontFamily = pixelFont,
-                style = pixelStyle,
+                style = labelStyle,
                 fontWeight = FontWeight.Normal
             )
         }
@@ -2121,196 +1412,6 @@ private fun NavigationBarSection(
                     maxLabelWidth = maxNavLabelWidth,
                     modifier = itemModifier
                 )
-            }
-        }
-    }
-}
-
-@Composable
-fun CloseScreenTipOverlay(
-    tipBodyOverride: String? = null,
-    onCancel: () -> Unit,
-    onConfirm: (noMoreTip: Boolean) -> Unit
-) {
-    var noMoreTip by remember { mutableStateOf(false) }
-    val colors = LocalTccColors.current
-    val lookSpec = LocalTccLookSpec.current
-    val dialogSpec = lookSpec.dialog
-    val viewport = LocalOverlayViewport.current
-    val pixelFont = tccFontFamily()
-    val pixelStyle = tccTextStyle()
-    val tipBodyText = tipBodyOverride ?: stringResource(R.string.tip_content_text)
-
-    val tipDialogWidth = resolveResponsiveDialogWidthDp(
-        preferredWidth = dialogSpec.tipDialogPreferredWidth,
-        viewportWidth = viewport.widthDp,
-        maxViewportWidthFraction = 0.80f
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = dialogSpec.backdropDimAlpha))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onCancel
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            modifier = Modifier
-                .width(tipDialogWidth)
-                .clip(dialogSpec.dialogShape)
-                .background(colors.dialogBackground)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {}
-                )
-                .padding(top = dialogSpec.tipTopPadding),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Image(
-                    painter = painterResource(id = tccDrawable(R.drawable.ic_tip)),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(colors.secondary),
-                    modifier = Modifier.size(dialogSpec.tipIconSize)
-                )
-                Spacer(modifier = Modifier.width(dialogSpec.tipIconGap))
-                Text(
-                    text = stringResource(R.string.tip_title_text),
-                    color = colors.primary,
-                    fontSize = dialogSpec.tipTitleFontSize,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(dialogSpec.tipSectionGap))
-
-            Text(
-                text = tipBodyText,
-                color = colors.primary,
-                fontSize = dialogSpec.tipBodyFontSize,
-                lineHeight = dialogSpec.tipBodyLineHeight,
-                fontFamily = pixelFont,
-                style = pixelStyle,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = dialogSpec.tipBodyHorizontalPadding)
-            )
-
-            Spacer(modifier = Modifier.height(dialogSpec.tipSectionGap))
-
-            Row(
-                modifier = Modifier
-                    .clickable { noMoreTip = !noMoreTip }
-                    .padding(
-                        horizontal = dialogSpec.tipCheckboxRowHorizontalPadding,
-                        vertical = dialogSpec.tipCheckboxRowVerticalPadding
-                    ),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TccRadioCheckIndicator(
-                    selected = noMoreTip,
-                    modifier = Modifier.size(dialogSpec.tipCheckboxSize)
-                )
-                Spacer(modifier = Modifier.width(dialogSpec.tipCheckboxGap))
-                Text(
-                    text = stringResource(R.string.tip_dialog_cb_text_no_more_tip),
-                    color = colors.secondary,
-                    fontSize = dialogSpec.tipCheckboxFontSize,
-                    fontFamily = pixelFont,
-                    style = pixelStyle
-                )
-            }
-
-            Spacer(modifier = Modifier.height(dialogSpec.tipBeforeButtonsGap))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .then(
-                        if (dialogSpec.tipSolidDividers) {
-                            Modifier.background(colors.fourth)
-                        } else {
-                            Modifier.background(
-                                Brush.horizontalGradient(
-                                    listOf(
-                                        Color.Transparent,
-                                        Color(0x88E4E4ED),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                        }
-                    )
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(dialogSpec.tipButtonRowHeight),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable(onClick = onCancel),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.cancel),
-                        color = colors.primary,
-                        fontSize = dialogSpec.tipButtonFontSize,
-                        fontFamily = pixelFont,
-                        style = pixelStyle,
-                        fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Medium
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .fillMaxHeight()
-                        .then(
-                            if (dialogSpec.tipSolidDividers) {
-                                Modifier.background(colors.fourth)
-                            } else {
-                                Modifier.background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color.Transparent,
-                                            Color(0x88E4E4ED),
-                                            Color.Transparent
-                                        )
-                                    )
-                                )
-                            }
-                        )
-                )
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable { onConfirm(noMoreTip) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.confirm),
-                        color = colors.accent,
-                        fontSize = dialogSpec.tipButtonFontSize,
-                        fontFamily = pixelFont,
-                        style = pixelStyle,
-                        fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Bold
-                    )
-                }
             }
         }
     }

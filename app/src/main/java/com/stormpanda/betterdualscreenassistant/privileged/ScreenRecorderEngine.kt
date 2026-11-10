@@ -59,7 +59,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 @SuppressLint("PrivateApi", "DiscouragedPrivateApi", "BlockedPrivateApi", "MissingPermission")
 class ScreenRecorderEngine(
     private val contextProvider: () -> Context?,
-    private val displayManagerProxy: Any?
+    private val displayManagerProxy: Any?,
+    private val profileProvider: () -> DeviceProfile = { DeviceProfile.detectFromSystem() }
 ) {
 
     data class Config(
@@ -346,7 +347,7 @@ class ScreenRecorderEngine(
     }
 
     private fun queryDisplaySpec(displayId: Int): DisplayMirrorSpec {
-        val profile = DeviceProfile.detectFromSystem()
+        val profile = profileProvider()
         val fallbackWidth = if (displayId == 0) 1920 else profile.bottomFallbackWidth
         val fallbackHeight = if (displayId == 0) 1080 else profile.bottomFallbackHeight
         val fallbackLayerStack = displayId
@@ -405,7 +406,7 @@ class ScreenRecorderEngine(
         fun start(): Boolean {
             return try {
                 val topSpec = queryDisplaySpec(0)
-                val bottomSpec = queryDisplaySpec(DeviceProfile.detectFromSystem().bottomDisplayId)
+                val bottomSpec = queryDisplaySpec(profileProvider().bottomDisplayId)
 
                 val (videoWidth, videoHeight, bitRate) = when (config.targetMode) {
                     TARGET_TOP -> Triple(

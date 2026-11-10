@@ -82,7 +82,7 @@ class ScreenOverlayManagerTest {
         // Bottom Display (ID 4): MUST NOT include FLAG_LAYOUT_NO_LIMITS (prevents 1920px primary surface clipping bug)
         val bottomLp = method.invoke(
             manager,
-            ScreenOverlayManager.BOTTOM_DISPLAY_ID,
+            DeviceProfile.AYN_THOR.bottomDisplayId,
             1240,
             1080
         ) as WindowManager.LayoutParams
@@ -206,14 +206,14 @@ class ScreenOverlayManagerTest {
         // Device goes non-interactive (screen sleep) -> restores saved bottom brightness (0.5f)
         manager.onDeviceScreenInteractiveChanged(false)
         ShadowLooper.idleMainLooper()
-        verify { PrivilegedBridge.setDisplayBrightness(context, ScreenOverlayManager.BOTTOM_DISPLAY_ID, 0.5f, false) }
+        verify { PrivilegedBridge.setDisplayBrightness(context, DeviceProfile.AYN_THOR.bottomDisplayId, 0.5f, false) }
 
         // Device wakes up (interactive) -> reapplies touch disable and sets blanked display brightness to -1.0f
         manager.onDeviceScreenInteractiveChanged(true)
         ShadowLooper.idleMainLooper()
         verify { mockRepository.reapplyTouchDisableForCurrentMode() }
         verify { PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = true) }
-        verify { PrivilegedBridge.setDisplayBrightness(context, ScreenOverlayManager.BOTTOM_DISPLAY_ID, -1.0f, false) }
+        verify { PrivilegedBridge.setDisplayBrightness(context, DeviceProfile.AYN_THOR.bottomDisplayId, -1.0f, false) }
     }
 
     @Test

@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -44,8 +43,8 @@ const val CANONICAL_OVERLAY_HEIGHT_DP: Float = 720f
  */
 internal const val AYN_TO_CANONICAL_720_SCALE: Float = 1.5375f
 
-private fun aynDp(rawThorDp: Float): Dp = (rawThorDp * AYN_TO_CANONICAL_720_SCALE).dp
-private fun aynSp(rawThorSp: Float): TextUnit = (rawThorSp * AYN_TO_CANONICAL_720_SCALE).sp
+internal fun aynDp(rawThorDp: Float): Dp = (rawThorDp * AYN_TO_CANONICAL_720_SCALE).dp
+internal fun aynSp(rawThorSp: Float): TextUnit = (rawThorSp * AYN_TO_CANONICAL_720_SCALE).sp
 
 fun computeOverlayNormalizedDensity(
     widthPx: Int,
@@ -157,26 +156,16 @@ data class StatusBarLookSpec(
     val timeHorizontalPadding: Dp,
     val itemSpacing: Dp,
     val fontSize: TextUnit,
-    val fontWeight: FontWeight,
-    val recordingCornerRadius: Dp,
-    val recordingHorizontalPadding: Dp,
-    val recordingVerticalPadding: Dp,
-    val recordingItemSpacing: Dp,
-    val recordingDotSize: Dp,
-    val recordingDotIsSquare: Boolean,
-    val recordingFontSize: TextUnit,
     val bluetoothIconSize: Dp,
     val wifiWidth: Dp,
     val wifiHeight: Dp,
     val batteryWidth: Dp,
     val batteryHeight: Dp,
-    val batteryPercentGap: Dp,
-    val useSegmentedPixelBattery: Boolean
+    val batteryPercentGap: Dp
 )
 
 @Immutable
 data class TileButtonLookSpec(
-    val outerFocusShape: Shape,
     val buttonShape: Shape,
     val modeTileSize: Dp,
     val qsTileSize: Dp,
@@ -193,22 +182,16 @@ data class TileButtonLookSpec(
     val modeTitleHeight: Dp,
     val qsTitleHeight: Dp,
     val compactTitleHeight: Dp,
-    val labelHorizontalPadding: Dp,
     val modeLabelFontSize: TextUnit,
     val qsLabelFontSize: TextUnit,
     val modeLabelLineHeight: TextUnit,
-    val qsLabelLineHeight: TextUnit,
-    val alignNonCompactLabelTop: Boolean,
-    val singleLineWhenCompact: Boolean,
-    val useRetroidAccentContrast: Boolean
+    val qsLabelLineHeight: TextUnit
 )
 
 @Immutable
 data class SliderLookSpec(
     val controlShape: Shape,
     val trackShape: Shape,
-    val clipFillToTrackShape: Boolean,
-    val useDarkPixelTrackOverrides: Boolean,
     val labelStartPadding: Dp,
     val labelWidth: Dp,
     val labelFontSize: TextUnit,
@@ -216,13 +199,11 @@ data class SliderLookSpec(
     val trackHorizontalPadding: Dp,
     val trackVerticalPaddingRatio: Float,
     val iconHeightRatio: Float,
-    val iconStartPadding: Dp,
-    val dimZeroIconInDark: Boolean
+    val iconStartPadding: Dp
 )
 
 @Immutable
 data class ModeTabLookSpec(
-    val reserveFourSliderLowerHeight: Boolean,
     val upperCardWeight: Float,
     val lowerRowWeight: Float,
     val upperCardTopPadding: Dp,
@@ -235,8 +216,7 @@ data class ModeTabLookSpec(
     val cardHorizontalPadding: Dp,
     val fixedCardVerticalPadding: Dp,
     val threeSliderRowHeight: Dp,
-    val fourSliderRowHeight: Dp,
-    val referenceHalfGapSubtractor: Dp
+    val fourSliderRowHeight: Dp
 )
 
 @Immutable
@@ -253,9 +233,6 @@ data class SettingsTabLookSpec(
     val indicatorDotSize: Dp,
     val indicatorDotSpacing: Dp,
     val indicatorShape: Shape,
-    val fpsTopWeight: Float,
-    val fpsCenterWeight: Float,
-    val fpsBottomWeight: Float,
     val fpsBadgeShape: Shape,
     val fpsBadgePreferredWidth: Dp?,
     val fpsBadgeHeight: Dp?,
@@ -263,24 +240,12 @@ data class SettingsTabLookSpec(
     val fpsBadgeVerticalPadding: Dp,
     val fpsBadgeFontSize: TextUnit,
     val fpsTipFontSize: TextUnit,
-    val fpsCanvasPadDp: Dp,
-    val fpsNumberHeightRatio: Float,
-    val fpsUnitHeightRatio: Float,
-    val fpsBaselineShiftByPad: Boolean,
-    val fpsUsePixelCanvasFonts: Boolean,
     val tempFanGap: Dp,
     val ringsHorizontalPadding: Dp,
     val ringsVerticalPadding: Dp,
-    val tempFanIconScaleMultiplier: Float,
-    val tempFanTitleScale: Float,
     val tempFanValueScale: Float,
-    val tempFanSideInsetRatio: Float,
     val ringDiameterRatio: Float,
-    val ringTitleScale: Float,
-    val ringValueScale: Float,
-    val ringUnitScale: Float,
-    val ringTitleBoxRatio: Float,
-    val ringUnitBoxRatio: Float
+    val ringValueScale: Float
 )
 
 @Immutable
@@ -303,35 +268,19 @@ data class DialogLookSpec(
     val narrowPreferredWidth: Dp,
     val widePreferredWidth: Dp,
     val maxViewportWidthFraction: Float,
-    val maxViewportHeightFraction: Float,
     val verticalPadding: Dp,
-    val showHeaderIconAndDivider: Boolean,
     val headerBottomPadding: Dp,
     val headerIconSize: Dp,
-    val headerIconGap: Dp,
     val titleFontSize: TextUnit,
-    val headerDividerHorizontalPadding: Dp,
-    val headerAfterDividerSpacer: Dp,
     val maxScrollHeight: Dp,
     val rowHeight: Dp,
     val rowHorizontalPadding: Dp,
-    val optionEndPadding: Dp,
     val swatchShape: Shape,
     val swatchOuterSize: Dp,
-    val swatchBorderWidth: Dp,
-    val swatchInnerSize: Dp,
     val optionIconSize: Dp,
     val optionIconGap: Dp,
     val optionFontSize: TextUnit,
     val checkIndicatorSize: Dp,
-    val pixelCheckCutSize: Dp,
-    val showInterRowDividers: Boolean,
-    val dividerHorizontalPadding: Dp,
-    val accentRowHorizontalPadding: Dp,
-    val accentRowVerticalPadding: Dp,
-    val accentSwatchSpacing: Dp,
-    val accentSwatchSize: Dp,
-    val accentSelectedBorderWidth: Dp,
     val toggleRowHeight: Dp,
     val toggleRowHorizontalPadding: Dp,
     val toggleFontSize: TextUnit,
@@ -339,37 +288,9 @@ data class DialogLookSpec(
     val switchThumbShape: Shape,
     val switchWidth: Dp,
     val switchHeight: Dp,
-    val switchThumbSize: Dp,
-    val switchHorizontalPadding: Dp,
-    val fanSliderRowHeight: Dp,
-    val fanSliderIconSize: Dp,
-    val fanSliderIconGap: Dp,
-    val fanSliderValueGap: Dp,
     val segmentedOuterShape: Shape,
     val segmentedInnerShape: Shape,
-    val segmentedContainerPadding: Dp,
-    val segmentedItemSpacing: Dp,
-    val segmentedPillHorizontalPadding: Dp,
-    val segmentedPillVerticalPadding: Dp,
-    val segmentedPillFontSize: TextUnit,
-    val tipDialogPreferredWidth: Dp,
-    val tipTopPadding: Dp,
-    val tipIconSize: Dp,
-    val tipIconGap: Dp,
-    val tipTitleFontSize: TextUnit,
-    val tipSectionGap: Dp,
-    val tipBodyFontSize: TextUnit,
-    val tipBodyLineHeight: TextUnit,
-    val tipBodyHorizontalPadding: Dp,
-    val tipCheckboxSize: Dp,
-    val tipCheckboxGap: Dp,
-    val tipCheckboxFontSize: TextUnit,
-    val tipCheckboxRowHorizontalPadding: Dp,
-    val tipCheckboxRowVerticalPadding: Dp,
-    val tipBeforeButtonsGap: Dp,
-    val tipButtonRowHeight: Dp,
-    val tipButtonFontSize: TextUnit,
-    val tipSolidDividers: Boolean
+    val segmentedPillFontSize: TextUnit
 )
 
 @Immutable
@@ -379,7 +300,6 @@ data class TccLookSpec(
     val outerHorizontalPadding: Dp,
     val contentBottomPadding: Dp,
     val panelCardShape: Shape,
-    val useAsciiDegreeSymbol: Boolean,
     val statusBar: StatusBarLookSpec,
     val tile: TileButtonLookSpec,
     val slider: SliderLookSpec,
@@ -397,7 +317,6 @@ val AynLookSpec = TccLookSpec(
     outerHorizontalPadding = aynDp(15f),
     contentBottomPadding = aynDp(5f),
     panelCardShape = RoundedCornerShape(aynDp(20f)),
-    useAsciiDegreeSymbol = false,
     statusBar = StatusBarLookSpec(
         topPadding = aynDp(15f),
         bottomPadding = 0.dp,
@@ -405,24 +324,14 @@ val AynLookSpec = TccLookSpec(
         timeHorizontalPadding = aynDp(6f),
         itemSpacing = aynDp(10f),
         fontSize = aynSp(15f),
-        fontWeight = FontWeight.Bold,
-        recordingCornerRadius = aynDp(10f),
-        recordingHorizontalPadding = aynDp(8f),
-        recordingVerticalPadding = aynDp(3f),
-        recordingItemSpacing = aynDp(5f),
-        recordingDotSize = aynDp(7f),
-        recordingDotIsSquare = false,
-        recordingFontSize = aynSp(12f),
         bluetoothIconSize = aynDp(16f),
         wifiWidth = aynDp(17f),
         wifiHeight = aynDp(17f),
         batteryWidth = aynDp(25f),
         batteryHeight = aynDp(14f),
-        batteryPercentGap = aynDp(4f),
-        useSegmentedPixelBattery = false
+        batteryPercentGap = aynDp(4f)
     ),
     tile = TileButtonLookSpec(
-        outerFocusShape = RoundedCornerShape(aynDp(10f)),
         buttonShape = CircleShape,
         modeTileSize = aynDp(50.5f),
         qsTileSize = aynDp(50.5f),
@@ -439,20 +348,14 @@ val AynLookSpec = TccLookSpec(
         modeTitleHeight = aynDp(29f),
         qsTitleHeight = aynDp(29f),
         compactTitleHeight = aynDp(29f),
-        labelHorizontalPadding = 1.dp,
         modeLabelFontSize = aynSp(11f),
         qsLabelFontSize = aynSp(11f),
         modeLabelLineHeight = aynSp(12.5f),
-        qsLabelLineHeight = aynSp(12.5f),
-        alignNonCompactLabelTop = false,
-        singleLineWhenCompact = false,
-        useRetroidAccentContrast = false
+        qsLabelLineHeight = aynSp(12.5f)
     ),
     slider = SliderLookSpec(
         controlShape = RoundedCornerShape(aynDp(15f)),
         trackShape = RoundedCornerShape(aynDp(15f)),
-        clipFillToTrackShape = false,
-        useDarkPixelTrackOverrides = false,
         labelStartPadding = aynDp(5f),
         labelWidth = aynDp(42f),
         labelFontSize = aynSp(11.3f),
@@ -460,11 +363,9 @@ val AynLookSpec = TccLookSpec(
         trackHorizontalPadding = aynDp(8f),
         trackVerticalPaddingRatio = 0.19f,
         iconHeightRatio = 0.55f,
-        iconStartPadding = aynDp(7.5f),
-        dimZeroIconInDark = false
+        iconStartPadding = aynDp(7.5f)
     ),
     modeTab = ModeTabLookSpec(
-        reserveFourSliderLowerHeight = true,
         upperCardWeight = 0.50f,
         lowerRowWeight = 0.50f,
         upperCardTopPadding = aynDp(8f),
@@ -477,8 +378,7 @@ val AynLookSpec = TccLookSpec(
         cardHorizontalPadding = aynDp(10f),
         fixedCardVerticalPadding = aynDp(9f),
         threeSliderRowHeight = aynDp(43f),
-        fourSliderRowHeight = aynDp(43f),
-        referenceHalfGapSubtractor = aynDp(10f)
+        fourSliderRowHeight = aynDp(43f)
     ),
     settingsTab = SettingsTabLookSpec(
         topRowWeight = 0.70f,
@@ -493,9 +393,6 @@ val AynLookSpec = TccLookSpec(
         indicatorDotSize = aynDp(6f),
         indicatorDotSpacing = aynDp(8f),
         indicatorShape = CircleShape,
-        fpsTopWeight = 0.30f,
-        fpsCenterWeight = 0.40f,
-        fpsBottomWeight = 0.30f,
         fpsBadgeShape = RoundedCornerShape(aynDp(25f)),
         fpsBadgePreferredWidth = null,
         fpsBadgeHeight = null,
@@ -503,24 +400,12 @@ val AynLookSpec = TccLookSpec(
         fpsBadgeVerticalPadding = aynDp(3f),
         fpsBadgeFontSize = aynSp(16f),
         fpsTipFontSize = aynSp(16f),
-        fpsCanvasPadDp = aynDp(5f),
-        fpsNumberHeightRatio = 0.75f,
-        fpsUnitHeightRatio = 0.20f,
-        fpsBaselineShiftByPad = true,
-        fpsUsePixelCanvasFonts = false,
         tempFanGap = aynDp(10f),
         ringsHorizontalPadding = aynDp(12f),
         ringsVerticalPadding = aynDp(12f),
-        tempFanIconScaleMultiplier = 1.0f,
-        tempFanTitleScale = 0.12f,
         tempFanValueScale = 0.25f,
-        tempFanSideInsetRatio = 0.20f,
         ringDiameterRatio = 1.0f,
-        ringTitleScale = 0.13f,
-        ringValueScale = 0.25f,
-        ringUnitScale = 0.13f,
-        ringTitleBoxRatio = 0.44f,
-        ringUnitBoxRatio = 0.52f
+        ringValueScale = 0.25f
     ),
     navBar = NavBarLookSpec(
         fixedOuterHeight = null,
@@ -539,35 +424,19 @@ val AynLookSpec = TccLookSpec(
         narrowPreferredWidth = aynDp(301f),
         widePreferredWidth = aynDp(328f),
         maxViewportWidthFraction = 0.78f,
-        maxViewportHeightFraction = 0.90f,
         verticalPadding = aynDp(12f),
-        showHeaderIconAndDivider = false,
         headerBottomPadding = aynDp(8f),
         headerIconSize = aynDp(20f),
-        headerIconGap = aynDp(8f),
         titleFontSize = aynSp(16f),
-        headerDividerHorizontalPadding = aynDp(24f),
-        headerAfterDividerSpacer = 0.dp,
         maxScrollHeight = aynDp(320f),
         rowHeight = aynDp(46f),
         rowHorizontalPadding = aynDp(20f),
-        optionEndPadding = aynDp(12f),
         swatchShape = CircleShape,
         swatchOuterSize = aynDp(20f),
-        swatchBorderWidth = aynDp(1.5f),
-        swatchInnerSize = aynDp(9f),
         optionIconSize = aynDp(20f),
         optionIconGap = aynDp(14f),
         optionFontSize = aynSp(14f),
         checkIndicatorSize = aynDp(18f),
-        pixelCheckCutSize = 0.dp,
-        showInterRowDividers = true,
-        dividerHorizontalPadding = aynDp(16f),
-        accentRowHorizontalPadding = aynDp(18f),
-        accentRowVerticalPadding = aynDp(10f),
-        accentSwatchSpacing = aynDp(10f),
-        accentSwatchSize = aynDp(26f),
-        accentSelectedBorderWidth = aynDp(2f),
         toggleRowHeight = aynDp(42f),
         toggleRowHorizontalPadding = aynDp(20f),
         toggleFontSize = aynSp(13f),
@@ -575,37 +444,9 @@ val AynLookSpec = TccLookSpec(
         switchThumbShape = CircleShape,
         switchWidth = aynDp(38f),
         switchHeight = aynDp(20f),
-        switchThumbSize = aynDp(16f),
-        switchHorizontalPadding = aynDp(2f),
-        fanSliderRowHeight = aynDp(50f),
-        fanSliderIconSize = aynDp(20f),
-        fanSliderIconGap = aynDp(12f),
-        fanSliderValueGap = aynDp(8f),
         segmentedOuterShape = RoundedCornerShape(aynDp(10f)),
         segmentedInnerShape = RoundedCornerShape(aynDp(8f)),
-        segmentedContainerPadding = aynDp(2f),
-        segmentedItemSpacing = aynDp(2f),
-        segmentedPillHorizontalPadding = aynDp(9f),
-        segmentedPillVerticalPadding = aynDp(4f),
-        segmentedPillFontSize = aynSp(11f),
-        tipDialogPreferredWidth = aynDp(420f),
-        tipTopPadding = aynDp(18f),
-        tipIconSize = aynDp(22f),
-        tipIconGap = aynDp(8f),
-        tipTitleFontSize = aynSp(17f),
-        tipSectionGap = aynDp(14f),
-        tipBodyFontSize = aynSp(14f),
-        tipBodyLineHeight = aynSp(18f),
-        tipBodyHorizontalPadding = aynDp(24f),
-        tipCheckboxSize = aynDp(18f),
-        tipCheckboxGap = aynDp(8f),
-        tipCheckboxFontSize = aynSp(13f),
-        tipCheckboxRowHorizontalPadding = aynDp(16f),
-        tipCheckboxRowVerticalPadding = aynDp(6f),
-        tipBeforeButtonsGap = aynDp(12f),
-        tipButtonRowHeight = aynDp(46f),
-        tipButtonFontSize = aynSp(15f),
-        tipSolidDividers = false
+        segmentedPillFontSize = aynSp(11f)
     )
 )
 
@@ -615,7 +456,6 @@ val RetroidLookSpec = TccLookSpec(
     outerHorizontalPadding = 14.dp,
     contentBottomPadding = 3.dp,
     panelCardShape = RoundedCornerShape(22.dp),
-    useAsciiDegreeSymbol = true,
     statusBar = StatusBarLookSpec(
         topPadding = 34.5.dp,
         bottomPadding = 28.5.dp,
@@ -623,24 +463,14 @@ val RetroidLookSpec = TccLookSpec(
         timeHorizontalPadding = 0.dp,
         itemSpacing = 10.dp,
         fontSize = 20.5.sp,
-        fontWeight = FontWeight.Normal,
-        recordingCornerRadius = 4.dp,
-        recordingHorizontalPadding = 8.dp,
-        recordingVerticalPadding = 3.dp,
-        recordingItemSpacing = 5.dp,
-        recordingDotSize = 7.dp,
-        recordingDotIsSquare = true,
-        recordingFontSize = 15.sp,
         bluetoothIconSize = 21.dp,
         wifiWidth = 28.dp,
         wifiHeight = 21.5.dp,
         batteryWidth = 39.dp,
         batteryHeight = 21.5.dp,
-        batteryPercentGap = 7.dp,
-        useSegmentedPixelBattery = true
+        batteryPercentGap = 7.dp
     ),
     tile = TileButtonLookSpec(
-        outerFocusShape = RoundedCornerShape(10.dp),
         buttonShape = PixelCornerCutShape(9.dp),
         modeTileSize = 67.5.dp,
         qsTileSize = 52.5.dp,
@@ -657,20 +487,14 @@ val RetroidLookSpec = TccLookSpec(
         modeTitleHeight = 26.dp,
         qsTitleHeight = 36.dp,
         compactTitleHeight = 22.dp,
-        labelHorizontalPadding = 2.dp,
         modeLabelFontSize = 15.sp,
         qsLabelFontSize = 14.sp,
         modeLabelLineHeight = 18.sp,
-        qsLabelLineHeight = 16.5.sp,
-        alignNonCompactLabelTop = true,
-        singleLineWhenCompact = true,
-        useRetroidAccentContrast = true
+        qsLabelLineHeight = 16.5.sp
     ),
     slider = SliderLookSpec(
         controlShape = RoundedCornerShape(12.dp),
         trackShape = PixelNotchedShape(9.dp),
-        clipFillToTrackShape = true,
-        useDarkPixelTrackOverrides = true,
         labelStartPadding = 2.dp,
         labelWidth = 56.dp,
         labelFontSize = 14.sp,
@@ -678,11 +502,9 @@ val RetroidLookSpec = TccLookSpec(
         trackHorizontalPadding = 10.dp,
         trackVerticalPaddingRatio = 9.5f / 54f,
         iconHeightRatio = 0.58f,
-        iconStartPadding = 10.dp,
-        dimZeroIconInDark = true
+        iconStartPadding = 10.dp
     ),
     modeTab = ModeTabLookSpec(
-        reserveFourSliderLowerHeight = false,
         upperCardWeight = 0.44f,
         lowerRowWeight = 0.56f,
         upperCardTopPadding = 0.dp,
@@ -695,8 +517,7 @@ val RetroidLookSpec = TccLookSpec(
         cardHorizontalPadding = 16.dp,
         fixedCardVerticalPadding = 14.dp,
         threeSliderRowHeight = 54.dp,
-        fourSliderRowHeight = 44.dp,
-        referenceHalfGapSubtractor = 10.dp
+        fourSliderRowHeight = 44.dp
     ),
     settingsTab = SettingsTabLookSpec(
         topRowWeight = 0.68f,
@@ -711,9 +532,6 @@ val RetroidLookSpec = TccLookSpec(
         indicatorDotSize = 8.dp,
         indicatorDotSpacing = 10.dp,
         indicatorShape = RectangleShape,
-        fpsTopWeight = 0.34f,
-        fpsCenterWeight = 0.38f,
-        fpsBottomWeight = 0.28f,
         fpsBadgeShape = PixelCornerCutShape(3.5.dp),
         fpsBadgePreferredWidth = 220.dp,
         fpsBadgeHeight = 38.dp,
@@ -721,24 +539,12 @@ val RetroidLookSpec = TccLookSpec(
         fpsBadgeVerticalPadding = 0.dp,
         fpsBadgeFontSize = 19.sp,
         fpsTipFontSize = 18.sp,
-        fpsCanvasPadDp = 5.dp,
-        fpsNumberHeightRatio = 0.76f,
-        fpsUnitHeightRatio = 0.18f,
-        fpsBaselineShiftByPad = false,
-        fpsUsePixelCanvasFonts = true,
         tempFanGap = 15.dp,
         ringsHorizontalPadding = 16.dp,
         ringsVerticalPadding = 12.dp,
-        tempFanIconScaleMultiplier = 1.15f,
-        tempFanTitleScale = 0.135f,
         tempFanValueScale = 0.215f,
-        tempFanSideInsetRatio = 0.16f,
         ringDiameterRatio = 0.90f,
-        ringTitleScale = 0.13f,
-        ringValueScale = 0.185f,
-        ringUnitScale = 0.125f,
-        ringTitleBoxRatio = 0.46f,
-        ringUnitBoxRatio = 0.48f
+        ringValueScale = 0.185f
     ),
     navBar = NavBarLookSpec(
         fixedOuterHeight = 155.5.dp,
@@ -757,35 +563,19 @@ val RetroidLookSpec = TccLookSpec(
         narrowPreferredWidth = 528.dp,
         widePreferredWidth = 528.dp,
         maxViewportWidthFraction = 0.72f,
-        maxViewportHeightFraction = 0.90f,
         verticalPadding = 22.dp,
-        showHeaderIconAndDivider = true,
         headerBottomPadding = 18.dp,
         headerIconSize = 33.dp,
-        headerIconGap = 12.dp,
         titleFontSize = 26.sp,
-        headerDividerHorizontalPadding = 44.dp,
-        headerAfterDividerSpacer = 8.dp,
         maxScrollHeight = 380.dp,
         rowHeight = 76.dp,
         rowHorizontalPadding = 64.dp,
-        optionEndPadding = 12.dp,
         swatchShape = PixelCornerCutShape(3.dp),
         swatchOuterSize = 30.dp,
-        swatchBorderWidth = 1.5.dp,
-        swatchInnerSize = 14.dp,
         optionIconSize = 34.dp,
         optionIconGap = 26.dp,
         optionFontSize = 21.sp,
         checkIndicatorSize = 34.dp,
-        pixelCheckCutSize = 3.dp,
-        showInterRowDividers = false,
-        dividerHorizontalPadding = 28.dp,
-        accentRowHorizontalPadding = 28.dp,
-        accentRowVerticalPadding = 12.dp,
-        accentSwatchSpacing = 12.dp,
-        accentSwatchSize = 32.dp,
-        accentSelectedBorderWidth = 2.dp,
         toggleRowHeight = 54.dp,
         toggleRowHorizontalPadding = 34.dp,
         toggleFontSize = 16.sp,
@@ -793,37 +583,9 @@ val RetroidLookSpec = TccLookSpec(
         switchThumbShape = PixelCornerCutShape(2.dp),
         switchWidth = 46.dp,
         switchHeight = 24.dp,
-        switchThumbSize = 20.dp,
-        switchHorizontalPadding = 2.dp,
-        fanSliderRowHeight = 60.dp,
-        fanSliderIconSize = 26.dp,
-        fanSliderIconGap = 16.dp,
-        fanSliderValueGap = 10.dp,
         segmentedOuterShape = PixelCornerCutShape(3.5.dp),
         segmentedInnerShape = PixelCornerCutShape(2.5.dp),
-        segmentedContainerPadding = 3.dp,
-        segmentedItemSpacing = 3.dp,
-        segmentedPillHorizontalPadding = 12.dp,
-        segmentedPillVerticalPadding = 5.dp,
-        segmentedPillFontSize = 14.sp,
-        tipDialogPreferredWidth = 520.dp,
-        tipTopPadding = 24.dp,
-        tipIconSize = 28.dp,
-        tipIconGap = 10.dp,
-        tipTitleFontSize = 22.sp,
-        tipSectionGap = 18.dp,
-        tipBodyFontSize = 17.sp,
-        tipBodyLineHeight = 22.sp,
-        tipBodyHorizontalPadding = 30.dp,
-        tipCheckboxSize = 28.dp,
-        tipCheckboxGap = 10.dp,
-        tipCheckboxFontSize = 16.sp,
-        tipCheckboxRowHorizontalPadding = 16.dp,
-        tipCheckboxRowVerticalPadding = 6.dp,
-        tipBeforeButtonsGap = 16.dp,
-        tipButtonRowHeight = 58.dp,
-        tipButtonFontSize = 18.sp,
-        tipSolidDividers = true
+        segmentedPillFontSize = 14.sp
     )
 )
 

@@ -79,8 +79,6 @@ val TccPixelLabelFontFamily: FontFamily = FontFamily(
     Font(R.font.tcc_pixel_label, FontWeight.Bold)
 )
 
-val TccPixelFontFamily: FontFamily = TccPixelLabelFontFamily
-
 @Composable
 fun tccFontFamily(): FontFamily? =
     if (LocalTccUiLook.current == TccUiLook.RETROID) TccPixelLabelFontFamily else null
@@ -689,13 +687,11 @@ fun TccTheme(
 
 @DrawableRes
 internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (resId) {
-    R.drawable.ic_app_manage -> R.drawable.rp_ic_app_manage
     R.drawable.ic_ban_on_use -> R.drawable.rp_ic_ban_on_use
     R.drawable.ic_bluetooth -> R.drawable.rp_ic_bluetooth
     R.drawable.ic_brightness_0 -> R.drawable.rp_ic_brightness_0
     R.drawable.ic_brightness_1 -> R.drawable.rp_ic_brightness_1
     R.drawable.ic_brightness_2 -> R.drawable.rp_ic_brightness_2
-    R.drawable.ic_close_screen -> R.drawable.rp_ic_close_screen
     R.drawable.ic_controller__xbox_style -> R.drawable.rp_ic_controller_xbox_style
     R.drawable.ic_controller_odin_style -> R.drawable.rp_ic_controller_odin_style
     R.drawable.ic_dual_screen_display -> R.drawable.rp_ic_dual_screen_display
@@ -705,7 +701,6 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_fan_quiet_mode -> R.drawable.rp_ic_fan_quiet_mode
     R.drawable.ic_fan_smart_mode -> R.drawable.rp_ic_fan_smart_mode
     R.drawable.ic_fan_sport_mode -> R.drawable.rp_ic_fan_sport_mode
-    R.drawable.ic_headset -> R.drawable.rp_ic_headset
     R.drawable.ic_height_performance_mode -> R.drawable.rp_ic_height_performance_mode
     R.drawable.ic_just_screen_above -> R.drawable.rp_ic_just_screen_above
     R.drawable.ic_just_screen_below -> R.drawable.rp_ic_just_screen_below
@@ -724,7 +719,6 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_qs_fan_control -> R.drawable.rp_ic_qs_fan_control
     R.drawable.ic_qs_keep_awake -> R.drawable.rp_ic_qs_keep_awake
     R.drawable.ic_qs_key_mapper -> R.drawable.rp_ic_qs_key_mapper
-    R.drawable.ic_qs_keyboard -> R.drawable.rp_ic_qs_keyboard
     R.drawable.ic_qs_mouse_mode -> R.drawable.rp_ic_qs_mouse_mode
     R.drawable.ic_qs_performance -> R.drawable.rp_ic_qs_performance
     R.drawable.ic_qs_prevent_home -> R.drawable.rp_ic_qs_prevent_home
