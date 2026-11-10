@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <path
-        android:fillColor="#4DFFFFFF"
-        android:pathData="M6,3H18V4H6ZM6,4H18V5H6Z" />
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- Back stacked pixel window card -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M2,6H15V7H2ZM2,7H15V8H2ZM2,8H4V9H2ZM13,8H15V9H13ZM2,9H4V10H2ZM13,9H15V10H13ZM2,10H4V11H2ZM13,10H15V11H13ZM2,11H4V12H2ZM13,11H15V12H13ZM16,11H18V12H16ZM20,11H22V12H20ZM2,12H4V13H2ZM13,12H15V13H13ZM16,12H18V13H16ZM20,12H22V13H20ZM2,13H4V14H2ZM13,13H15V14H13ZM18,13H20V14H18ZM2,14H4V15H2ZM13,14H15V15H13ZM18,14H20V15H18ZM2,15H4V16H2ZM13,15H15V16H13ZM16,15H18V16H16ZM20,15H22V16H20ZM2,16H4V17H2ZM13,16H15V17H13ZM16,16H18V17H16ZM20,16H22V17H20ZM2,17H4V18H2ZM13,17H15V18H13ZM2,18H15V19H2ZM2,19H15V20H2Z" />
+        android:pathData="M7,0H35V5H7V0ZM2,5H7V30H2V5Z" />
+    <!-- Front hollow pixel window card with open stepped corners -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17,10H40V15H17V10ZM12,15H17V38H12V15ZM17,38H26V43H17V38ZM40,15H45V26H40V15Z" />
+    <!-- Crisp 5x5-stepped pixel X badge at bottom-right -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,30H35V35H30V30ZM43,30H48V35H43V30ZM35,35H43V43H35V35ZM30,43H35V48H30V43ZM43,43H48V48H43V43Z" />
 </vector>

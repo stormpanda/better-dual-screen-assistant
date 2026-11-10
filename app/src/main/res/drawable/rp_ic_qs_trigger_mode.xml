@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="50dp"
+    android:height="40dp"
+    android:viewportWidth="50"
+    android:viewportHeight="40">
+    <!-- Hollow 5px-stroke pixel shoulder trigger contour with stepped shoulder slope -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M4,6H20V7H4ZM3,7H21V8H3ZM3,8H5V9H3ZM19,8H21V9H19ZM3,9H5V10H3ZM19,9H21V10H19ZM3,10H5V11H3ZM6,10H8V11H6ZM13,10H18V11H13ZM19,10H21V11H19ZM3,11H5V12H3ZM6,11H8V12H6ZM13,11H18V12H13ZM19,11H21V12H19ZM3,12H5V13H3ZM6,12H8V13H6ZM13,12H15V13H13ZM19,12H21V13H19ZM3,13H5V14H3ZM6,13H10V14H6ZM13,13H15V14H13ZM19,13H21V14H19ZM3,14H5V15H3ZM6,14H10V15H6ZM13,14H15V15H13ZM19,14H21V15H19ZM3,15H21V16H3ZM4,16H20V17H4Z" />
+        android:pathData="M15,0H40V5H15V0ZM10,5H15V10H10V5ZM5,10H10V15H5V10ZM0,15H5V35H0V15ZM40,5H45V10H40V5ZM45,10H50V35H45V10ZM5,35H45V40H5V35Z" />
+    <!-- Inner pixel L2 label -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,14H15V29H11V14ZM15,25H22V29H15V25Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M26,14H38V17H26V14ZM34,17H38V20H34V17ZM26,20H38V23H26V20ZM26,23H30V26H26V23ZM26,26H38V29H26V26Z" />
 </vector>

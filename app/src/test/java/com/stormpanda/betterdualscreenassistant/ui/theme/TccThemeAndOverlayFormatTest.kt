@@ -252,6 +252,10 @@ class TccThemeAndOverlayFormatTest {
             R.drawable.ic_fan_smart_mode,
             R.drawable.ic_fan_sport_mode,
             R.drawable.ic_fan_custom_mode,
+            R.drawable.ic_fan_custom_progress,
+            R.drawable.ic_qs_system_theme,
+            R.drawable.ic_qs_light_theme,
+            R.drawable.ic_qs_dark_theme,
             R.drawable.ic_ban_on_use,
             R.drawable.ic_brightness_0,
             R.drawable.ic_brightness_1,
@@ -273,11 +277,6 @@ class TccThemeAndOverlayFormatTest {
             assertNotNull("Expected rp_ic_* mapping for resId=$resId", mapped)
             assertNotEquals(resId, mapped)
         }
-
-        // Preserved multi-color theme preview icons stay untouched
-        assertNull(retroidPixelDrawableOrNull(R.drawable.ic_qs_system_theme))
-        assertNull(retroidPixelDrawableOrNull(R.drawable.ic_qs_light_theme))
-        assertNull(retroidPixelDrawableOrNull(R.drawable.ic_qs_dark_theme))
     }
 
     @Test

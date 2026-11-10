@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="45dp"
+    android:viewportWidth="50"
+    android:viewportHeight="45">
+    <!-- Shoulder tops -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,0H18V5H10V0ZM32,0H40V5H32V0Z" />
+    <!-- Stepped pixel collar -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,5H32V10H18V5Z" />
+    <!-- Left pixel sleeve -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,5H10V10H5V5ZM0,10H5V20H0V10ZM5,20H10V25H5V20Z" />
+    <!-- Right pixel sleeve -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,5H45V10H40V5ZM45,10H50V20H45V10ZM40,20H45V25H40V20Z" />
+    <!-- Hollow torso walls & bottom hem -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,20H15V40H10V20ZM35,20H40V40H35V20ZM15,40H35V45H15V40Z" />
+</vector>

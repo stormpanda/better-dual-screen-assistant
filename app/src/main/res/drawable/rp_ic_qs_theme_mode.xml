@@ -1,11 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp"
-    android:height="48dp"
-    android:viewportWidth="48"
-    android:viewportHeight="48">
-    <!-- Crisp pixel-stepped contrast circle (left half filled, right half hollow) -->
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- Stepped 40x40 pixel contrast circle matching rp_ic_ban_on_use -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M14,2H34V7H14V2ZM9,7H14V12H9V7ZM34,7H39V12H34V7ZM4,12H9V36H4V12ZM39,12H44V36H39V12ZM9,36H14V41H9V36ZM34,36H39V41H34V36ZM14,41H34V46H14V41ZM14,7H24V41H14V7ZM9,12H14V36H9V12Z" />
+        android:pathData="M8.16,39.9844H31.824V35.9044H8.16V39.9844Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16,4.0801H31.824V0H8.16V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,8.1602H4.08V31.8242H0V8.1602Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042,8.1602H39.9842V31.8242H35.9042V8.1602Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08,4.0801H8.16V8.1601H4.08V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08,31.8243H8.16V35.9043H4.08V31.8243Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31.8242,4.0801H35.9042V8.1601H31.8242V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31.8242,31.8243H35.9042V35.9043H31.8242V31.8243Z" />
+    <!-- Left-half pixel fill -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16,4.0801H20V35.9043H8.16V4.0801ZM4.08,8.1602H8.16V31.8242H4.08V8.1602Z" />
 </vector>

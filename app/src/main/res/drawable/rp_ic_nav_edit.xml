@@ -4,13 +4,12 @@
     android:height="48dp"
     android:viewportWidth="48"
     android:viewportHeight="48">
-    <!-- Crisp 48x48 pixel-art sliders/edit icon matching Stock Retroid's 5px stroke weight -->
-    <!-- Top slider track + knob -->
+    <!-- Top pixel slider track + hollow 5px-walled pixel knob -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M2,10H14V15H2V10ZM26,10H46V15H26V10ZM14,5H26V20H14V5Z" />
-    <!-- Bottom slider track + knob -->
+        android:pathData="M0,11H12V16H0V11ZM29,11H48V16H29V11ZM17,3H24V8H17V3ZM17,19H24V24H17V19ZM12,8H17V19H12V8ZM24,8H29V19H24V8Z" />
+    <!-- Bottom pixel slider track + hollow 5px-walled pixel knob -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M2,33H22V38H2V33ZM34,33H46V38H34V33ZM22,28H34V43H22V28Z" />
+        android:pathData="M0,32H19V37H0V32ZM36,32H48V37H36V32ZM24,24H31V29H24V24ZM24,40H31V45H24V40ZM19,29H24V40H19V29ZM31,29H36V40H31V29Z" />
 </vector>

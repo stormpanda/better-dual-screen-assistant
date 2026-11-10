@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="45dp"
+    android:height="41dp"
+    android:viewportWidth="45"
+    android:viewportHeight="41">
+    <!-- Authentic 5px-grid pixel Wi-Fi signal arcs matching rp_ic_status_wifi_3 -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M5,4H19V5H5ZM5,5H19V6H5ZM2,6H5V7H2ZM19,6H22V7H19ZM2,7H5V8H2ZM19,7H22V8H19ZM2,8H5V9H2ZM19,8H22V9H19ZM7,9H17V10H7ZM7,10H17V11H7ZM5,11H7V12H5ZM17,11H19V12H17ZM5,12H7V13H5ZM17,12H19V13H17ZM9,14H15V15H9ZM9,15H15V16H9ZM10,18H14V19H10ZM10,19H14V20H10ZM10,20H14V21H10Z" />
+        android:pathData="M10,3H35V8H10V3ZM5,8H10V13H5V8ZM35,8H40V13H35V8ZM0,13H5V18H0V13ZM40,13H45V18H40V13Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,18H30V23H15V18ZM10,23H15V28H10V23ZM30,23H35V28H30V23Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,33H25V38H20V33Z" />
 </vector>

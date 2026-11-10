@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="50dp"
+    android:height="36dp"
+    android:viewportWidth="50"
+    android:viewportHeight="36">
+    <!-- Hollow 5px-stroke pixel eye outline with open stepped arcs -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M6,6H18V7H6ZM6,7H18V8H6ZM3,8H6V9H3ZM18,8H21V9H18ZM3,9H6V10H3ZM18,9H21V10H18ZM3,10H6V11H3ZM10,10H14V11H10ZM18,10H21V11H18ZM2,11H4V12H2ZM10,11H14V12H10ZM20,11H22V12H20ZM2,12H4V13H2ZM10,12H14V13H10ZM20,12H22V13H20ZM3,13H6V14H3ZM10,13H14V14H10ZM18,13H21V14H18ZM3,14H6V15H3ZM18,14H21V15H18ZM3,15H6V16H3ZM18,15H21V16H18ZM6,16H18V17H6ZM6,17H18V18H6Z" />
+        android:pathData="M15,0H35V5H15V0ZM5,5H15V10H5V5ZM35,5H45V10H35V5ZM0,10H5V26H0V10ZM45,10H50V26H45V10ZM5,26H15V31H5V26ZM35,26H45V31H35V26ZM15,31H35V36H15V31Z" />
+    <!-- Hollow pixel iris ring in center -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M21,9H29V13H21V9ZM21,23H29V27H21V23ZM17,13H21V23H17V13ZM29,13H33V23H29V13Z" />
 </vector>

@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="50dp"
+    android:height="40dp"
+    android:viewportWidth="50"
+    android:viewportHeight="40">
+    <!-- Hollow 5px-stroke pixel camcorder body with open stepped corners -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M3,6H15V7H3ZM2,7H16V8H2ZM2,8H4V9H2ZM14,8H16V9H14ZM19,8H22V9H19ZM2,9H4V10H2ZM14,9H16V10H14ZM19,9H22V10H19ZM2,10H4V11H2ZM7,10H11V11H7ZM14,10H22V11H14ZM2,11H4V12H2ZM7,11H11V12H7ZM14,11H22V12H14ZM2,12H4V13H2ZM7,12H11V13H7ZM14,12H22V13H14ZM2,13H4V14H2ZM7,13H11V14H7ZM14,13H22V14H14ZM2,14H4V15H2ZM14,14H16V15H14ZM19,14H22V15H19ZM2,15H4V16H2ZM14,15H16V16H14ZM19,15H22V16H19ZM2,16H16V17H2ZM3,17H15V18H3Z" />
+        android:pathData="M5,5H30V10H5V5ZM5,30H30V35H5V30ZM0,10H5V30H0V10ZM30,10H35V30H30V10Z" />
+    <!-- Center pixel record square -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,16H21V24H14V16Z" />
+    <!-- Stepped pixel lens cone on right -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35,10H40V15H35V10ZM35,25H40V30H35V25ZM40,5H45V10H40V5ZM40,30H45V35H40V30ZM45,5H50V35H45V5Z" />
 </vector>

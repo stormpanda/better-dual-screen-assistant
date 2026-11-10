@@ -716,16 +716,19 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_qs_clean -> R.drawable.rp_ic_qs_clean
     R.drawable.ic_qs_clear_tasks -> R.drawable.rp_ic_qs_clear_tasks
     R.drawable.ic_qs_controller_style -> R.drawable.rp_ic_qs_controller_style
+    R.drawable.ic_qs_dark_theme -> R.drawable.rp_ic_qs_dark_theme
     R.drawable.ic_qs_dnd -> R.drawable.rp_ic_qs_dnd
     R.drawable.ic_qs_fan_control -> R.drawable.rp_ic_qs_fan_control
     R.drawable.ic_qs_keep_awake -> R.drawable.rp_ic_qs_keep_awake
     R.drawable.ic_qs_key_mapper -> R.drawable.rp_ic_qs_key_mapper
+    R.drawable.ic_qs_light_theme -> R.drawable.rp_ic_qs_light_theme
     R.drawable.ic_qs_mouse_mode -> R.drawable.rp_ic_qs_mouse_mode
     R.drawable.ic_qs_performance -> R.drawable.rp_ic_qs_performance
     R.drawable.ic_qs_prevent_home -> R.drawable.rp_ic_qs_prevent_home
     R.drawable.ic_qs_screen_record -> R.drawable.rp_ic_qs_screen_record
     R.drawable.ic_qs_screenshot -> R.drawable.rp_ic_qs_screenshot
     R.drawable.ic_qs_swap_screens -> R.drawable.rp_ic_qs_swap_screens
+    R.drawable.ic_qs_system_theme -> R.drawable.rp_ic_qs_system_theme
     R.drawable.ic_qs_theme_mode -> R.drawable.rp_ic_qs_theme_mode
     R.drawable.ic_qs_touch_lock -> R.drawable.rp_ic_qs_touch_lock
     R.drawable.ic_qs_trigger_mode -> R.drawable.rp_ic_qs_trigger_mode

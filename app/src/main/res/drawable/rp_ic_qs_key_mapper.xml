@@ -1,10 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- Stepped 40x40 pixel circle ring matching rp_ic_ban_on_use & rp_ic_qs_performance -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M11,1H13V2H11ZM11,2H13V3H11ZM11,3H13V4H11ZM5,4H19V5H5ZM4,5H20V6H4ZM4,6H6V7H4ZM11,6H13V7H11ZM18,6H20V7H18ZM4,7H6V8H4ZM18,7H20V8H18ZM4,8H6V9H4ZM18,8H20V9H18ZM4,9H6V10H4ZM18,9H20V10H18ZM4,10H6V11H4ZM18,10H20V11H18ZM1,11H7V12H1ZM11,11H13V12H11ZM17,11H23V12H17ZM1,12H7V13H1ZM11,12H13V13H11ZM17,12H23V13H17ZM4,13H6V14H4ZM18,13H20V14H18ZM4,14H6V15H4ZM18,14H20V15H18ZM4,15H6V16H4ZM18,15H20V16H18ZM4,16H6V17H4ZM18,16H20V17H18ZM4,17H6V18H4ZM11,17H13V18H11ZM18,17H20V18H18ZM4,18H20V19H4ZM5,19H19V20H5ZM11,20H13V21H11ZM11,21H13V22H11ZM11,22H13V23H11Z" />
+        android:pathData="M8.16,39.9844H31.824V35.9044H8.16V39.9844Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16,4.0801H31.824V0H8.16V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,8.1602H4.08V31.8242H0V8.1602Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042,8.1602H39.9842V31.8242H35.9042V8.1602Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08,4.0801H8.16V8.1601H4.08V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08,31.8243H8.16V35.9043H4.08V31.8243Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31.8242,4.0801H35.9042V8.1601H31.8242V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31.8242,31.8243H35.9042V35.9043H31.8242V35.9043Z" />
+    <!-- 4 inward pixel crosshair ticks + center pixel reticle dot -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.952,4.08H22.032V11.2H17.952V4.08ZM17.952,28.8H22.032V35.904H17.952V28.8ZM4.08,17.952H11.2V22.032H4.08V17.952ZM28.8,17.952H35.904V22.032H28.8V17.952ZM17,17H23V23H17V17Z" />
 </vector>

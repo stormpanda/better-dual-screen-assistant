@@ -1080,7 +1080,7 @@ fun TccOptionDialog(
                                     )
                                 }
                             } else {
-                                val resolvedIcon = if (option.preserveIconColors) {
+                                val resolvedIcon = if (option.preserveIconColors && !isRetroid) {
                                     option.iconRes
                                 } else {
                                     tccDrawable(option.iconRes)
@@ -1088,7 +1088,11 @@ fun TccOptionDialog(
                                 Image(
                                     painter = painterResource(id = resolvedIcon),
                                     contentDescription = option.label,
-                                    colorFilter = if (option.preserveIconColors) null else ColorFilter.tint(colors.primary),
+                                    colorFilter = if (option.preserveIconColors && !isRetroid) {
+                                        null
+                                    } else {
+                                        ColorFilter.tint(colors.primary)
+                                    },
                                     modifier = Modifier.size(dialogSpec.optionIconSize)
                                 )
                             }

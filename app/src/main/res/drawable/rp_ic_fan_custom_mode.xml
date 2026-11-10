@@ -4,48 +4,36 @@
     android:height="40dp"
     android:viewportWidth="40"
     android:viewportHeight="40">
-    <!-- Outer 40x40 pixel rounded-square frame matching rp_ic_fan_smart_mode & rp_ic_fan_sport_mode -->
+    <!-- Outer 40x40 pixel circle ring matching rp_ic_fan_smart_mode & rp_ic_fan_sport_mode -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M8.16 39.9843L31.824 39.9843V35.9043H8.16V39.9843Z"/>
+        android:pathData="M8.16,39.9843H31.824V35.9043H8.16V39.9843Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M8.16 4.07996L31.824 4.07996V0H8.16V4.07996Z"/>
+        android:pathData="M8.16,4.08H31.824V0H8.16V4.08Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M4.08 31.8241L4.08 8.1601L0 8.1601L0 31.8241L4.08 31.8241Z"/>
+        android:pathData="M0,8.1601H4.08V31.8241H0V8.1601Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M39.9842 31.8241L39.9842 8.1601L35.9042 8.1601L35.9042 31.8241L39.9842 31.8241Z"/>
+        android:pathData="M35.9042,8.1601H39.9842V31.8241H35.9042V8.1601Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M8.16 4.07996L4.08 4.07996V8.15996H8.16V4.07996Z"/>
+        android:pathData="M4.08,4.08H8.16V8.16H4.08V4.08Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M8.16 35.9042L4.08 35.9042V31.8242H8.16V35.9042Z"/>
+        android:pathData="M4.08,31.8242H8.16V35.9042H4.08V31.8242Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M35.9042 4.07996L31.8242 4.07996V8.15996H35.9042V4.07996Z"/>
+        android:pathData="M31.8242,4.08H35.9042V8.16H31.8242V4.08Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M35.9042 35.9042L31.8242 35.9042V31.8242H35.9042V35.9042Z"/>
-    <!-- Inner two pixel tuning sliders -->
+        android:pathData="M31.8242,31.8242H35.9042V35.9042H31.8242V35.9042Z" />
+    <!-- Inner two 4px-grid pixel tuning sliders -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M9,14H15V17H9Z"/>
+        android:pathData="M8,13H15V17H8V13ZM15,9H19V21H15V9ZM21,13H32V17H21V13Z" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M17,11H21V20H17Z"/>
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M23,14H31V17H23Z"/>
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M9,23H19V26H9Z"/>
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M21,20H25V29H21Z"/>
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M27,23H31V26H27Z"/>
+        android:pathData="M8,23H19V27H8V23ZM21,19H25V31H21V19ZM27,23H32V27H27V23Z" />
 </vector>

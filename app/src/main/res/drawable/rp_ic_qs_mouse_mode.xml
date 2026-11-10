@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="44dp"
+    android:height="50dp"
+    android:viewportWidth="44"
+    android:viewportHeight="50">
+    <!-- Hollow 5px-stroke pixel mouse with open stepped corners & button divider -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M6,3H8V4H6ZM6,4H9V5H6ZM6,5H10V6H6ZM6,6H11V7H6ZM6,7H12V8H6ZM6,8H13V9H6ZM6,9H14V10H6ZM6,10H15V11H6ZM6,11H16V12H6ZM6,12H10V13H6ZM6,13H10V14H6ZM6,14H10V15H6ZM6,15H10V16H6ZM11,15H14V16H11ZM11,16H14V17H11ZM11,17H14V18H11ZM11,18H14V19H11ZM11,19H14V20H11Z" />
+        android:pathData="M14,0H30V5H14V0ZM9,5H14V10H9V5ZM30,5H35V10H30V5ZM4,10H9V40H4V10ZM35,10H40V40H35V10ZM9,40H14V45H9V40ZM30,40H35V45H30V40ZM14,45H30V50H14V45Z" />
+    <!-- Left/right button split & scroll wheel -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,5H24V22H20V5ZM9,22H35V27H9V22Z" />
 </vector>

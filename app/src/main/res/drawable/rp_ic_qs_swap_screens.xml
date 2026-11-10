@@ -4,17 +4,16 @@
     android:height="50dp"
     android:viewportWidth="50"
     android:viewportHeight="50">
-    <!-- Crisp 50x50 pixel-art dual-screen swap arrows matching Stock Retroid's 5px stroke weight -->
-    <!-- Top bar & Bottom bar -->
+    <!-- Top & bottom screen bars -->
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M5,0H45V5H5V0ZM5,45H45V50H5V45Z" />
-    <!-- Left UP pixel arrow -->
+    <!-- Left UP pixel arrow (non-overlapping 5x5 steps) -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M15,10H20V38H15V10ZM10,15H15V20H10V15ZM20,15H25V20H20V15ZM5,20H10V25H5V20ZM25,20H30V25H25V20Z" />
-    <!-- Right DOWN pixel arrow -->
+        android:pathData="M12,10H17V38H12V10ZM7,15H12V20H7V15ZM17,15H22V20H17V15ZM2,20H7V25H2V20ZM22,20H27V25H22V20Z" />
+    <!-- Right DOWN pixel arrow (non-overlapping 5x5 steps) -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M30,12H35V40H30V12ZM25,30H30V35H25V30ZM35,30H40V35H35V30ZM20,25H25V30H20V25ZM40,25H45V30H40V25Z" />
+        android:pathData="M33,12H38V40H33V12ZM28,30H33V35H28V30ZM38,30H43V35H38V30ZM23,25H28V30H23V25ZM43,25H48V30H43V25Z" />
 </vector>
