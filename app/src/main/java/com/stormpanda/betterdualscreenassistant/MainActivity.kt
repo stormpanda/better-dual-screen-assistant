@@ -2346,4 +2346,9 @@ private fun DiagnosticsSettingsTabContent(
         },
         onClick = {}
     )
+
+    GamepadInfoBox(
+        text = "Open-Source Font Credits",
+        description = "Fusion Pixel © 2022 TakWolf (SIL OFL 1.1) • DOSIyagiBoldface © 2022 Damheo Lee (MIT / SIL OFL 1.1)"
+    )
 }

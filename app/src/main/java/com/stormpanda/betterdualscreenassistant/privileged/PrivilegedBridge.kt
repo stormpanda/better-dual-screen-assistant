@@ -1168,9 +1168,9 @@ object PrivilegedBridge {
      * `com.odin.dualscreen.assistant` process around foreground ordered screen broadcasts so
      * `system_server`'s `BroadcastQueue` never stalls or ANR-respawns `TccServices`.
      */
-    fun setStockProcessFrozenForBroadcast(freeze: Boolean) {
+    fun setStockProcessFrozenForBroadcast(freeze: Boolean, context: Context? = null) {
         if (freeze && PServerClient.hasFallbackUnfrozenStockPid()) {
-            PServerClient.setStockProcessFrozenForBroadcastFallback(true)
+            PServerClient.setStockProcessFrozenForBroadcastFallback(true, context)
         }
         if (!replaceStockPreferred) return
         val binder = helperBinder
@@ -1195,7 +1195,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze)
+        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze, context)
     }
 
     data class ScreenRecordHelperStatus(

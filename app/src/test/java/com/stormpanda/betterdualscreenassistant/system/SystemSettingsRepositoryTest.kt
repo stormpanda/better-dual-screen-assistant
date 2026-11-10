@@ -36,6 +36,8 @@ class SystemSettingsRepositoryTest {
 
     @Before
     fun setUp() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -142,6 +144,8 @@ class SystemSettingsRepositoryTest {
 
     @After
     fun tearDown() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         val field = PrivilegedBridge::class.java.getDeclaredField("helperBinder").apply {
             isAccessible = true
         }
@@ -395,6 +399,37 @@ class SystemSettingsRepositoryTest {
     }
 
     @Test
+    fun `moveActiveQuickTile on Retroid Pocket Duo aligns indices with visible supported tiles`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val repo = SystemSettingsRepository(context)
+        repo.resetQuickTilesToDefault()
+        // Also enable unsupported PREVENT_ACCIDENTAL_HOME in prefs to ensure both hidden tiles are skipped cleanly
+        repo.setQuickTileEnabled(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME, true)
+
+        fun visibleActiveTiles(): List<QuickSettingTileId> {
+            val supported = QuickSettingTileId.supportedEntries(DeviceProfile.RETROID_POCKET_DUO).toSet()
+            return repo.quickTileOrder.value.filter { it in supported && it !in repo.disabledQuickTiles.value }
+        }
+
+        val initialVisible = visibleActiveTiles()
+        // Default visible active order on Duo has FORCE_LANDSCAPE at index 7 and THEME_MODE at index 8
+        assertEquals(QuickSettingTileId.FORCE_LANDSCAPE, initialVisible[7])
+        assertEquals(QuickSettingTileId.THEME_MODE, initialVisible[8])
+
+        // Moving THEME_MODE (8) left to FORCE_LANDSCAPE (7) must swap them visibly (not swap with hidden AMBIENT_LIGHT)
+        repo.moveActiveQuickTile(fromActiveIndex = 8, toActiveIndex = 7)
+        val afterSwap = visibleActiveTiles()
+        assertEquals(QuickSettingTileId.THEME_MODE, afterSwap[7])
+        assertEquals(QuickSettingTileId.FORCE_LANDSCAPE, afterSwap[8])
+
+        // Moving FORCE_LANDSCAPE (now at visible index 8) to slot 0 moves FORCE_LANDSCAPE to the front
+        repo.moveActiveQuickTile(fromActiveIndex = 8, toActiveIndex = 0)
+        assertEquals(QuickSettingTileId.FORCE_LANDSCAPE, visibleActiveTiles()[0])
+
+        repo.unregister()
+    }
+
+    @Test
     fun `theme mode custom accent and UI visibility preferences update stateFlows`() {
         val repo = SystemSettingsRepository(context)
 
@@ -408,6 +443,33 @@ class SystemSettingsRepositoryTest {
         assertFalse(SystemSettingsRepository(context).retroidReadabilityBoost.value)
         repo.setRetroidReadabilityBoost(true)
         assertTrue(repo.retroidReadabilityBoost.value)
+
+        // External SharedPreferences edits & refreshAll() resync uiLookMode and retroidReadabilityBoost
+        repo.register()
+        val prefs = context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt(SystemSettingsRepository.PREF_UI_LOOK_MODE, 2)
+            .putBoolean(SystemSettingsRepository.PREF_RETROID_READABILITY_BOOST, false)
+            .commit()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertEquals(2, repo.uiLookMode.value)
+        assertFalse(repo.retroidReadabilityBoost.value)
+
+        prefs.edit()
+            .putBoolean(SystemSettingsRepository.PREF_RETROID_READABILITY_BOOST, true)
+            .commit()
+        repo.refreshAll(refreshDisplayBrightness = false, refreshMegingiardTheme = false)
+        assertTrue(repo.retroidReadabilityBoost.value)
+
+        // Unsupported preventAccidentalHome reads false without side effects and resets via background helper
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_PREVENT_ACCIDENTAL_HOME, 1)
+        repo.refreshAll(refreshDisplayBrightness = false, refreshMegingiardTheme = false)
+        assertFalse(repo.preventAccidentalHome.value)
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_PREVENT_ACCIDENTAL_HOME, -1))
+        repo.resetUnsupportedPreventAccidentalHomeIfNeeded()
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_PREVENT_ACCIDENTAL_HOME, -1))
+        DeviceProfile.testOverride = null
 
         repo.setCustomAccentArgb(0xFF112233.toInt())
         assertEquals(0xFF112233.toInt(), repo.customAccentArgb.value)

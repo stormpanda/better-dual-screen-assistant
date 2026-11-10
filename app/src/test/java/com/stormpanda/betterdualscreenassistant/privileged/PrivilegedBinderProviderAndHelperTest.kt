@@ -714,13 +714,26 @@ class PrivilegedBinderProviderAndHelperTest {
     }
 
     @Test
-    fun `HelperBinder TRANSACTION_WINDOW_SESSION_TRANSACT forwards parcel payload and reply`() {
+    fun `HelperBinder TRANSACTION_WINDOW_SESSION_TRANSACT validates IWindowSession descriptor token and code`() {
         val helperBinder = createAuthorizedHelperBinder()
+        helperBinder.allowedWindowSessionCodesOverride = setOf(42)
+
+        var transactCount = 0
         var receivedCode = -1
         var receivedFlags = -1
         var receivedWindowType = -1
         val mockSessionBinder = object : Binder() {
+            init {
+                attachInterface(null, PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            }
+
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (code == IBinder.INTERFACE_TRANSACTION) {
+                    reply?.writeString(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+                    return true
+                }
+                transactCount++
+                data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
                 receivedCode = code
                 receivedFlags = flags
                 receivedWindowType = data.readInt()
@@ -730,13 +743,20 @@ class PrivilegedBinderProviderAndHelperTest {
             }
         }
 
+        // 1. Valid IWindowSession binder, allowlisted addToDisplay code, and valid interface token -> forwarded
+        val validForwardPayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(2038) // TYPE_APPLICATION_OVERLAY
+        }
         val data = Parcel.obtain().apply {
             writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
             writeStrongBinder(mockSessionBinder)
-            writeInt(42) // targetCode
+            writeInt(42) // allowlisted targetCode
             writeInt(0)  // targetFlags
-            writeInt(2021) // windowType payload
+            appendFrom(validForwardPayload, 0, validForwardPayload.dataSize())
         }
+        validForwardPayload.recycle()
+
         val reply = Parcel.obtain()
         assertTrue(
             helperBinder.transact(
@@ -751,11 +771,84 @@ class PrivilegedBinderProviderAndHelperTest {
         assertEquals(1, reply.readInt()) // ok == 1
         reply.readException() // forwarded reply exception header
         assertEquals(7, reply.readInt()) // forwarded result
+        assertEquals(1, transactCount)
         assertEquals(42, receivedCode)
         assertEquals(0, receivedFlags)
-        assertEquals(2021, receivedWindowType)
+        assertEquals(2038, receivedWindowType)
         data.recycle()
         reply.recycle()
+
+        // 2. Non-IWindowSession system service binder (e.g. IActivityManager) -> rejected
+        val nonWindowBinder = object : Binder() {
+            init {
+                attachInterface(null, "android.app.IActivityManager")
+            }
+
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (code == IBinder.INTERFACE_TRANSACTION) {
+                    reply?.writeString("android.app.IActivityManager")
+                    return true
+                }
+                transactCount++
+                return true
+            }
+        }
+        val wrongServicePayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(1)
+        }
+        val wrongServiceData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(nonWindowBinder)
+            writeInt(42)
+            writeInt(0)
+            appendFrom(wrongServicePayload, 0, wrongServicePayload.dataSize())
+        }
+        wrongServicePayload.recycle()
+        val wrongServiceReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                wrongServiceData,
+                wrongServiceReply,
+                0
+            )
+        )
+        wrongServiceReply.setDataPosition(0)
+        wrongServiceReply.readException()
+        assertEquals(0, wrongServiceReply.readInt())
+        assertEquals(1, transactCount)
+        wrongServiceData.recycle()
+        wrongServiceReply.recycle()
+
+        // 3. Disallowed transaction code -> rejected
+        val badCodePayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(2038)
+        }
+        val badCodeData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(mockSessionBinder)
+            writeInt(999) // non-addToDisplay code
+            writeInt(0)
+            appendFrom(badCodePayload, 0, badCodePayload.dataSize())
+        }
+        badCodePayload.recycle()
+        val badCodeReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                badCodeData,
+                badCodeReply,
+                0
+            )
+        )
+        badCodeReply.setDataPosition(0)
+        badCodeReply.readException()
+        assertEquals(0, badCodeReply.readInt())
+        assertEquals(1, transactCount)
+        badCodeData.recycle()
+        badCodeReply.recycle()
     }
 
     @Test

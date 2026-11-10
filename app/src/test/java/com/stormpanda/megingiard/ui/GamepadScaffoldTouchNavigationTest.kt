@@ -99,6 +99,8 @@ class GamepadScaffoldTouchNavigationTest {
 
     @Before
     fun setUp() {
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride = null
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.resetCacheForTesting()
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         resetComposeUiDispatcher(installFactory = true)
         resetSystemSettingsRepositorySingleton()
@@ -124,6 +126,8 @@ class GamepadScaffoldTouchNavigationTest {
         PrimaryOverlayInputBridge.resetJoystickState()
         DialogToastManager.clear()
         unmockkAll()
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride = null
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.resetCacheForTesting()
         resetSystemSettingsRepositorySingleton()
         resetComposeUiDispatcher(installFactory = false)
         shadowOf(Looper.getMainLooper()).idle()

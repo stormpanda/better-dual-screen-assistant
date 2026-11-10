@@ -95,14 +95,15 @@ class AssistantForegroundService : Service() {
      */
     private val preOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val appCtx = context ?: this@AssistantForegroundService
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                 }
                 Intent.ACTION_SCREEN_OFF,
                 Intent.ACTION_SHUTDOWN,
                 "android.intent.action.REBOOT" -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                     stopActiveRecordingOnPowerTransition(
                         if (intent.action == Intent.ACTION_SCREEN_OFF) "screen_off" else "shutdown"
                     )
@@ -117,10 +118,11 @@ class AssistantForegroundService : Service() {
      */
     private val postOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val appCtx = context ?: this@AssistantForegroundService
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON,
                 Intent.ACTION_SCREEN_OFF -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true)
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
                 }
             }
         }

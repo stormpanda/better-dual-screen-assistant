@@ -490,6 +490,9 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_UI_LOOK_MODE -> {
                 _uiLookMode.value = prefs.getInt(PREF_UI_LOOK_MODE, 0).coerceIn(0, 2)
             }
+            PREF_RETROID_READABILITY_BOOST -> {
+                _retroidReadabilityBoost.value = prefs.getBoolean(PREF_RETROID_READABILITY_BOOST, true)
+            }
             PREF_CUSTOM_ACCENT_ARGB -> {
                 val saved = prefs.getInt(
                     PREF_CUSTOM_ACCENT_ARGB,
@@ -693,32 +696,35 @@ class SystemSettingsRepository(private val context: Context) {
     fun register() {
         if (isRegistered) return
         isRegistered = true
-        val keys = listOf(
-            KEY_DUAL_SCREEN_DISPLAY_MODE,
-            KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL,
-            KEY_SCREEN_FOCUS_LOCK,
-            KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-            KEY_SECONDARY_SCREEN_VOLUME_LEVEL,
-            KEY_SECONDARY_SCREEN_VOLUME_HEADPHONES,
-            KEY_PERFORMANCE_MODE,
-            KEY_FAN_MODE,
-            KEY_FAN_SPEED,
-            KEY_TEMP_ABXY_LAYOUT_MODE,
-            KEY_CHARGING_SEPARATION,
-            KEY_VIBRATE_ON,
-            KEY_JOYSTICK_LIGHT_ENABLED,
-            KEY_FORCE_LANDSCAPE,
-            KEY_TCC_THEME_MODE,
-            KEY_PEAK_REFRESH_RATE,
-            KEY_LED_BRIGHTNESS_PERCENT,
-            KEY_TRIGGER_INPUT_MODE,
-            KEY_CHARGE_LIMIT_80,
-            KEY_GAMEPAD_MOUSE_MODE,
-            KEY_ADAPTER_ENABLE,
-            KEY_KEEP_SCREEN_ON,
-            KEY_PREVENT_ACCIDENTAL_HOME,
-            "screen_brightness"
-        )
+        val profile = DeviceProfile.current(context)
+        val keys = buildList {
+            add(KEY_DUAL_SCREEN_DISPLAY_MODE)
+            add(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL)
+            add(KEY_SCREEN_FOCUS_LOCK)
+            add(KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK)
+            add(KEY_SECONDARY_SCREEN_VOLUME_LEVEL)
+            add(KEY_SECONDARY_SCREEN_VOLUME_HEADPHONES)
+            add(KEY_PERFORMANCE_MODE)
+            add(KEY_FAN_MODE)
+            add(KEY_FAN_SPEED)
+            add(KEY_TEMP_ABXY_LAYOUT_MODE)
+            add(KEY_CHARGING_SEPARATION)
+            add(KEY_VIBRATE_ON)
+            add(KEY_JOYSTICK_LIGHT_ENABLED)
+            add(KEY_FORCE_LANDSCAPE)
+            add(KEY_TCC_THEME_MODE)
+            add(KEY_PEAK_REFRESH_RATE)
+            add(KEY_LED_BRIGHTNESS_PERCENT)
+            add(KEY_TRIGGER_INPUT_MODE)
+            add(KEY_CHARGE_LIMIT_80)
+            add(KEY_GAMEPAD_MOUSE_MODE)
+            add(KEY_ADAPTER_ENABLE)
+            add(KEY_KEEP_SCREEN_ON)
+            if (profile.supportsPreventAccidentalHome) {
+                add(KEY_PREVENT_ACCIDENTAL_HOME)
+            }
+            add("screen_brightness")
+        }
         for (key in keys) {
             contentResolver.registerContentObserver(
                 Settings.System.getUriFor(key),
@@ -772,6 +778,11 @@ class SystemSettingsRepository(private val context: Context) {
         refreshAll()
         dispatchOrDeferLauncherAliasSync()
         resyncFloatingIconGestureGuard()
+        if (!profile.supportsPreventAccidentalHome) {
+            themeSyncExecutor.execute {
+                resetUnsupportedPreventAccidentalHomeIfNeeded()
+            }
+        }
     }
 
     fun unregister() {
@@ -867,6 +878,7 @@ class SystemSettingsRepository(private val context: Context) {
         _forceLandscape.value = getInt(KEY_FORCE_LANDSCAPE, 1) == 1
         _themeMode.value = readSavedThemeMode()
         _uiLookMode.value = prefs.getInt(PREF_UI_LOOK_MODE, 0).coerceIn(0, 2)
+        _retroidReadabilityBoost.value = prefs.getBoolean(PREF_RETROID_READABILITY_BOOST, true)
         _customAccentArgb.value = prefs.getInt(
             PREF_CUSTOM_ACCENT_ARGB,
             DEFAULT_MEGINGIARD_ACCENT_ARGB
@@ -2025,12 +2037,17 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun readPreventAccidentalHome(): Boolean {
         if (!DeviceProfile.current(context).supportsPreventAccidentalHome) {
-            if (getInt(KEY_PREVENT_ACCIDENTAL_HOME, 0) != 0) {
-                PrivilegedBridge.putSystemSettingInt(context, KEY_PREVENT_ACCIDENTAL_HOME, 0)
-            }
             return false
         }
         return getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
+    }
+
+    internal fun resetUnsupportedPreventAccidentalHomeIfNeeded() {
+        if (!DeviceProfile.current(context).supportsPreventAccidentalHome &&
+            getInt(KEY_PREVENT_ACCIDENTAL_HOME, 0) != 0
+        ) {
+            PrivilegedBridge.putSystemSettingInt(context, KEY_PREVENT_ACCIDENTAL_HOME, 0)
+        }
     }
 
     fun togglePreventAccidentalHome() {
@@ -2054,9 +2071,13 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun moveActiveQuickTile(fromActiveIndex: Int, toActiveIndex: Int) {
+        val profile = DeviceProfile.current(context)
         val currentOrder = _quickTileOrder.value
         val disabled = _disabledQuickTiles.value
-        val activeList = currentOrder.filter { it !in disabled }.toMutableList()
+        fun isActiveOnDevice(tile: QuickSettingTileId): Boolean =
+            tile !in disabled && tile.isSupportedOn(profile)
+
+        val activeList = currentOrder.filter(::isActiveOnDevice).toMutableList()
         if (fromActiveIndex !in activeList.indices || toActiveIndex !in activeList.indices) return
         if (fromActiveIndex == toActiveIndex) return
 
@@ -2065,7 +2086,7 @@ class SystemSettingsRepository(private val context: Context) {
 
         val activeIterator = activeList.iterator()
         val rebuilt = currentOrder.map { item ->
-            if (item in disabled) item else activeIterator.next()
+            if (!isActiveOnDevice(item)) item else activeIterator.next()
         }
         setQuickTileOrder(rebuilt)
     }

@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit
  *   the stock `com.odin.dualscreen.assistant` if our app is uninstalled, disabled, opted out, or
  *   trips the crash-loop circuit breaker.
  */
-@SuppressLint("PrivateApi", "DiscouragedPrivateApi")
+@SuppressLint("PrivateApi", "DiscouragedPrivateApi", "BlockedPrivateApi")
 object PrivilegedHelperMain {
     private const val TAG = "PrivilegedHelperMain"
     const val APP_PACKAGE_NAME = "com.stormpanda.betterdualscreenassistant"
@@ -82,7 +82,8 @@ object PrivilegedHelperMain {
     const val TRANSACTION_WINDOW_SESSION_TRANSACT = IBinder.FIRST_CALL_TRANSACTION + 26
     const val TRANSACTION_CAPTURE_SCREENSHOT = IBinder.FIRST_CALL_TRANSACTION + 27
 
-    const val HELPER_PROTOCOL_VERSION = 22
+    const val HELPER_PROTOCOL_VERSION = 23
+    const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -396,6 +397,17 @@ object PrivilegedHelperMain {
         @Volatile
         private var lastOverlayColorValues: IntArray = IntArray(0)
 
+        @Volatile
+        private var pendingThemeRestoreJson: String = ""
+
+        private val finishThemeJsonRestoreRunnable = Runnable {
+            val json = pendingThemeRestoreJson
+            pendingThemeRestoreJson = ""
+            if (json.isNotEmpty() && !osThemeOverlayActive && !isShuttingDown) {
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, json)
+            }
+        }
+
         private val reassertOverlayPriorityRunnable = Runnable {
             if (!osThemeOverlayActive || isShuttingDown) return@Runnable
             val names = lastOverlayResourceNames
@@ -435,6 +447,11 @@ object PrivilegedHelperMain {
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
         internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
+        internal var allowedWindowSessionCodesOverride: Set<Int>? = null
+
+        private val allowedWindowSessionCodes: Set<Int> by lazy {
+            resolveAllowedWindowSessionCodes()
+        }
 
         @Volatile
         private var panel0BacklightBlanked: Boolean = false
@@ -896,6 +913,7 @@ object PrivilegedHelperMain {
                         mainHandler.removeCallbacks(watchdogCheckRunnable)
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                        mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
                         unregisterFpsListenerInternal()
                         stopScreenRecordIfActiveInternal("shutdown")
                         mainHandler.post {
@@ -1037,6 +1055,15 @@ object PrivilegedHelperMain {
                             val rem = data.dataAvail()
                             if (rem > 0) {
                                 forwardData.appendFrom(data, data.dataPosition(), rem)
+                            }
+                            if (!isAuthorizedWindowSessionCall(sessionBinder, targetCode, forwardData)) {
+                                Log.w(
+                                    TAG,
+                                    "Rejected unauthorized TRANSACTION_WINDOW_SESSION_TRANSACT (code=$targetCode)"
+                                )
+                                reply?.writeNoException()
+                                reply?.writeInt(0)
+                                return true
                             }
                             val callingToken = Binder.clearCallingIdentity()
                             val ok = try {
@@ -1683,7 +1710,11 @@ object PrivilegedHelperMain {
                 setPinScreenModeInternal(0)
 
                 // 2.5. Restore stock OS theme overlay and night mode if injected
-                clearOsThemeOverlayInternal(savedStockNightMode, savedStockThemeJson)
+                clearOsThemeOverlayInternal(
+                    restoreNightMode = savedStockNightMode,
+                    restoreThemeJson = savedStockThemeJson,
+                    synchronous = true
+                )
 
                 // 3. Re-enable and start stock DualScreenAssistant
                 execRootCommand("pm enable $stockPkg")
@@ -1719,6 +1750,8 @@ object PrivilegedHelperMain {
             savedThemeJson: String
         ) {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
+            pendingThemeRestoreJson = ""
             if (savedNightMode == 1 || savedNightMode == 2) {
                 savedStockNightMode = savedNightMode
             }
@@ -1934,8 +1967,14 @@ object PrivilegedHelperMain {
             }
         }
 
-        private fun clearOsThemeOverlayInternal(restoreNightMode: Int, restoreThemeJson: String) {
+        private fun clearOsThemeOverlayInternal(
+            restoreNightMode: Int,
+            restoreThemeJson: String,
+            synchronous: Boolean = false
+        ) {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
+            pendingThemeRestoreJson = ""
             lastOverlayResourceNames = emptyArray()
             lastOverlayColorValues = IntArray(0)
             val hadOverlay = hasRegisteredBdsaThemeOverlay()
@@ -1950,7 +1989,7 @@ object PrivilegedHelperMain {
                 savedStockThemeJson.isNotBlank() ||
                 restoreThemeJson.isNotBlank()
             ) {
-                restoreStockThemeJsonInternal(restoreThemeJson)
+                restoreStockThemeJsonInternal(restoreThemeJson, synchronous = synchronous)
             }
             savedStockThemeJson = ""
             val nightToRestore = if (restoreNightMode == 1 || restoreNightMode == 2) {
@@ -1964,7 +2003,10 @@ object PrivilegedHelperMain {
             savedStockNightMode = -1
         }
 
-        private fun restoreStockThemeJsonInternal(candidateJson: String) {
+        private fun restoreStockThemeJsonInternal(
+            candidateJson: String,
+            synchronous: Boolean = false
+        ) {
             val raw = if (candidateJson.isNotBlank() && !candidateJson.contains("\"999\"")) {
                 candidateJson
             } else {
@@ -1987,6 +2029,7 @@ object PrivilegedHelperMain {
             } else {
                 fallback
             }
+            var nudged = false
             try {
                 val nudgeObj = org.json.JSONObject(jsonToApply)
                 val curStyle = nudgeObj.optString("android.theme.customization.theme_style", "TONAL_SPOT")
@@ -1996,14 +2039,24 @@ object PrivilegedHelperMain {
                 )
                 nudgeObj.put("_applied_timestamp", now - 1L)
                 putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, nudgeObj.toString())
-                Thread.sleep(75L)
+                nudged = true
+                if (synchronous) {
+                    Thread.sleep(75L)
+                }
             } catch (_: Throwable) {
             }
-            putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, jsonToApply)
+            if (nudged && !synchronous && !isShuttingDown) {
+                pendingThemeRestoreJson = jsonToApply
+                mainHandler.postDelayed(finishThemeJsonRestoreRunnable, 75L)
+            } else {
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, jsonToApply)
+            }
         }
 
         private fun unregisterOsThemeOverlayOnly() {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
+            pendingThemeRestoreJson = ""
             val om = overlayManagerProxy ?: return
             try {
                 val idClass = Class.forName("android.content.om.OverlayIdentifier")
@@ -2014,13 +2067,13 @@ object PrivilegedHelperMain {
                 val txBuilderClass = Class.forName(
                     "android.content.om.OverlayManagerTransaction\$Builder"
                 )
-                val txBuilder = txBuilderClass.getConstructor().newInstance()
                 val unregMethod = txBuilderClass.getMethod(
                     "unregisterFabricatedOverlay",
                     idClass
                 )
                 val buildTx = txBuilderClass.getMethod("build")
 
+                val txBuilder = txBuilderClass.getConstructor().newInstance()
                 unregMethod.invoke(txBuilder, shellOverlayId)
                 unregMethod.invoke(txBuilder, legacyOverlayId)
                 val tx = buildTx.invoke(txBuilder)
@@ -2028,6 +2081,20 @@ object PrivilegedHelperMain {
                 val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
                 commitMethod.invoke(om, tx)
                 osThemeOverlayActive = false
+
+                // Also unregister our fabricated com.android.systemui overlays so residual palettes
+                // never linger if SystemUI's ThemeOverlayController short-circuits regeneration.
+                try {
+                    val sysUiTxBuilder = txBuilderClass.getConstructor().newInstance()
+                    unregMethod.invoke(sysUiTxBuilder, idCtor.newInstance(SYSUI_PACKAGE, "neutral"))
+                    unregMethod.invoke(sysUiTxBuilder, idCtor.newInstance(SYSUI_PACKAGE, "accent"))
+                    if (android.os.Build.VERSION.SDK_INT >= 34) {
+                        unregMethod.invoke(sysUiTxBuilder, idCtor.newInstance(SYSUI_PACKAGE, "dynamic"))
+                    }
+                    commitMethod.invoke(om, buildTx.invoke(sysUiTxBuilder))
+                } catch (t: Throwable) {
+                    Log.w(TAG, "unregisterOsThemeOverlayOnly sysui cleanup skipped", t)
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "unregisterOsThemeOverlayOnly failed", t)
             }
@@ -3015,6 +3082,40 @@ object PrivilegedHelperMain {
             }
         }
 
+        private fun isAuthorizedWindowSessionCall(
+            sessionBinder: IBinder?,
+            targetCode: Int,
+            forwardData: Parcel
+        ): Boolean {
+            if (sessionBinder == null) return false
+            val descriptor = try {
+                sessionBinder.interfaceDescriptor
+            } catch (_: Throwable) {
+                null
+            }
+            if (descriptor != DESCRIPTOR_WINDOW_SESSION) return false
+
+            val allowedCodes = allowedWindowSessionCodesOverride ?: allowedWindowSessionCodes
+            val codeAllowed = if (allowedCodes.isNotEmpty()) {
+                targetCode in allowedCodes
+            } else {
+                targetCode in IBinder.FIRST_CALL_TRANSACTION..(IBinder.FIRST_CALL_TRANSACTION + 16)
+            }
+            if (!codeAllowed) return false
+
+            if (forwardData.dataSize() <= 0) return false
+            val savedPos = forwardData.dataPosition()
+            return try {
+                forwardData.setDataPosition(0)
+                forwardData.enforceInterface(DESCRIPTOR_WINDOW_SESSION)
+                true
+            } catch (_: Throwable) {
+                false
+            } finally {
+                forwardData.setDataPosition(savedPos)
+            }
+        }
+
         private fun deleteEmptyFileQuietly(file: File) {
             try {
                 if (file.exists() && file.length() == 0L) {
@@ -3022,6 +3123,24 @@ object PrivilegedHelperMain {
                 }
             } catch (_: Throwable) {
             }
+        }
+    }
+
+    internal fun resolveAllowedWindowSessionCodes(): Set<Int> {
+        return try {
+            val stubClass = Class.forName("android.view.IWindowSession\$Stub")
+            stubClass.declaredFields.mapNotNull { field ->
+                if (field.type == Int::class.javaPrimitiveType &&
+                    field.name.startsWith("TRANSACTION_addToDisplay")
+                ) {
+                    field.isAccessible = true
+                    field.getInt(null)
+                } else {
+                    null
+                }
+            }.toSet()
+        } catch (_: Throwable) {
+            emptySet()
         }
     }
 

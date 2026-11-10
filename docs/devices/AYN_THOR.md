@@ -202,8 +202,9 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 | **Performance Modes (`0/1/2`)** | **Yes** | `performance_mode` | Standard / Performance / High Performance |
 | **Active Fan Control (`0/1/4/5/6`)** | **Yes** | `fan_mode`, `fan_speed`, `IFanControlProvider` | Off / Quiet / Smart / Sport / Custom (`35%–100%`) |
 | **Joystick RGB Ambient Light & Slider** | **Yes** | `joystick_light_enabled`, `led_light_brightness_percent`, `sys.light.curr.is.show` | Enables **Ambient Light** quick tile & 4th **Stick LED** slider |
+| **Double-Tap HOME (Prevent Accidental Home)** | **Yes** | `prevent_accidental_touch_home` | Requires double-tapping HOME when enabled |
 | **Bypass Charging & 80% Limit** | **Yes** | `is_charging_separation`, `percent_80_charge_limit` | Both supported in hardware |
-| **OS Monet Theme Injection** | **Yes** | `FabricatedOverlay("com.android.shell", "os_theme")` | Android 13 dynamic 65-color Monet resource table |
+| **OS Monet Theme Injection** | **Yes** | `FabricatedOverlay("com.android.shell", "os_theme")` | Dynamic 221-color Material 3 Monet resource table |
 | **Default Native `TccUiLook`** | — | **`TccUiLook.AYN`** (`AYN Smooth`) | Can also switch live to `TccUiLook.RETROID` (`Retroid Pixel`) |
 
 ---
@@ -227,7 +228,9 @@ Exact `AYN_THOR` enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/
 | `mappingPackages` | `["com.odin.mapping", "com.rp.mapping"]` |
 | `protectedVendorPackages` | `["com.odin.dualscreen.assistant", "com.odin.gameassistant", "com.odin.mapping", "com.odin.settings"]` |
 | `supportsAmbientLight` | `true` |
+| `supportsPreventAccidentalHome` | `true` |
 | `standardControllerLabel` / `controllerStyleOptionLabel` | `"Odin"` / `"Standard Style"` |
+| `closeBottomTipText` | `"Press the AYN key to turn on the bottom screen again"` |
 | `topPanelTeClockRatio` | `118.412f / 120f` (`0.9867667f`) |
 | `longPressTogglesBottom` | `false` |
 | `dismissOverlayOnBackMapping` | `false` |

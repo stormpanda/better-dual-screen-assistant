@@ -6,8 +6,10 @@ This file provides essential context, architectural invariants, hardware quirks,
 
 ## 1. Project Overview & Reference Material
 
-- **Target Device**: **AYN Thor** (`kalama` / Snapdragon 8 Gen 2, Android 13 / SDK 33).
-- **Goal**: A standard user-installable APK that replaces the built-in system app `DualScreenAssistant` (`com.odin.dualscreen.assistant`) with 1:1 visual and functional parity (and future enhancements).
+- **Target Devices**:
+  - **AYN Thor** (`kalama` / Snapdragon 8 Gen 2, Android 13 / SDK 33; Top `displayId = 0` `1920×1080`, Bottom `displayId = 4` `1240×1080`, `369 dpi`).
+  - **Retroid Pocket Duo** (`sun` / `CQ7790S`, Android 16 / SDK 36; Top `displayId = 0` `1920×1080`, Bottom `displayId = 2` `1280×960`, `320 dpi`).
+- **Goal**: A standard user-installable APK that replaces the built-in system app `DualScreenAssistant` (`com.odin.dualscreen.assistant` on AYN Thor / `com.retroidpocket.dualscreen.assistant` on Retroid Pocket Duo) with 1:1 visual and functional parity (and cross-device enhancements).
 - **Decompiled Stock Reference**:
   - Stock APK: `reference/DualScreenAssistant/DualScreenAssistant.apk`
   - Decompiled Java/Smali sources: `reference/decompiled/DualScreenAssistant/sources/`
@@ -111,21 +113,23 @@ The AYN Thor framework broadcasts `"action.tcc.button.key.event"` when the physi
 
 ## 7. Multi-Display Topology, Window Manager & UI Invariants
 
-### Display Topology
-- **Top Screen (`displayId = 0`)**: `1920×1080` landscape (`369 dpi`).
-- **Bottom Screen (`displayId = 4`)**: `1240×1080` landscape (`369 dpi`, ~`840dp × 732dp`).
+### Display Topology (`DeviceProfile.kt`)
+- **Top Screen (`displayId = 0`)**: `1920×1080` landscape (`port=131` on AYN Thor, `port=146` on Retroid Pocket Duo).
+- **Bottom Screen**:
+  - **AYN Thor (`displayId = 4`, `port=132`)**: `1240×1080` landscape (`369 dpi`).
+  - **Retroid Pocket Duo (`displayId = 2`, `port=147`)**: `1280×960` landscape (`320 dpi`).
 
 ### Overlay Window Rules (`ScreenOverlayManager.kt`)
-- **Display Context & Sizing**: Always obtain the `WindowManager` from `context.createDisplayContext(display4)` and pass explicit pixel dimensions (`1240×1080` via `display.getRealSize()`) with `Gravity.CENTER` and `TYPE_APPLICATION_OVERLAY`.
-- **Never Use `FLAG_LAYOUT_NO_LIMITS` on Display 4**: Including `FLAG_LAYOUT_NO_LIMITS` causes `WindowManagerService` to lay out the surface at the primary display's width (`1920px`), clipping the right ~680px of the UI off the bottom screen.
+- **Display Context & Sizing**: Always obtain the `WindowManager` from `context.createDisplayContext(bottomDisplay)` (`profile.bottomDisplayId`) and pass explicit pixel dimensions (`display.getRealSize()`) with `Gravity.CENTER` and `TYPE_APPLICATION_OVERLAY` (bridged via `PrivilegedBridge.installPrivilegedWindowSession()` on Android 16 secondary displays).
+- **Never Use `FLAG_LAYOUT_NO_LIMITS` on Secondary Display**: Including `FLAG_LAYOUT_NO_LIMITS` causes `WindowManagerService` to lay out the surface at the primary display's width (`1920px`), clipping the right edge of the UI off the bottom screen.
 - **Enter / Exit Animations**: `WindowManagerService` ignores custom app-resource `windowAnimations` (`R.style.tcc_anim`) on `TYPE_APPLICATION_OVERLAY` windows for non-system apps. Always animate `composeView` directly via `ViewPropertyAnimator` (`200ms`, `translationY` between `height * 0.90f` and `0f`, `alpha` between `0f` and `1f`) and only call `removeViewImmediate` in the exit animation's end action.
 
-### How Screen "Off" (Blanking) Works on AYN Thor
-Turning off the Top or Bottom screen via `dual_screen_display_mode` (`0` = Dual, `1` = Only Top, `2` = Only Bottom) does **not** power off the display panel at the HWC level:
+### How Screen "Off" (Blanking) Works
+Turning off the Top or Bottom screen via `dual_screen_display_mode` (`0` = Dual, `1` = Only Top, `2` = Only Bottom):
 1. Writes `Settings.System["dual_screen_display_mode"]`.
 2. Sets `sys.temp.disabled.touch` to `"0,0"` (both active), `"0,1"` (bottom touch disabled), or `"1,0"` (top touch disabled).
-3. Fades in a full-screen solid black overlay view (`200ms` alpha animation) on the blanked display and sets its display brightness to `-1.0f` (`setBrightness(displayId, -1.0f)`), restoring the saved brightness prior to device sleep or unblanking.
+3. On **AYN Thor** (`blankViaBacklightSysfs = false`), fades in a full-screen solid black overlay view (`200ms` alpha animation) on the blanked display and sets its display brightness to `-1.0f` (`setBrightness(displayId, -1.0f)`), restoring saved brightness prior to device sleep or unblanking. On **Retroid Pocket Duo** (`blankViaBacklightSysfs = true`), toggles `/sys/class/backlight/panel{0,1}-backlight/bl_power` (`"1"` = blanked, `"0"` = unblanked) via `PrivilegedHelperMain` (`TRANSACTION_SET_BACKLIGHT_POWER`) with automatic reset on daemon exit/uninstall.
 
-### UI & Layout Parity (`AssistantOverlayScreen.kt`, `TccWidgets.kt`, `StatusBarRow.kt`)
-- The stock UI uses custom non-Material widgets (`VerticalProgressBar`, `CustomSeekBar`, `SpeedView`, `PercentageRingView`) and a custom `@dimen/dp_*` resource table scaled for `840dp × 732dp`.
-- Maintain the exact vertical heights (`44dp` status bar, `578dp` main panel card, `80dp` bottom navigation bar pill) and custom canvas components in `TccWidgets.kt` rather than substituting standard Material 3 sliders or cards.
+### UI & Layout Parity (`OverlayViewport`, `TccLookSpec.kt`, `AssistantOverlayScreen.kt`, `TccWidgets.kt`)
+- `OverlayViewport` (`TccTheme.kt`) normalizes the bottom display onto a canonical `720dp` vertical coordinate space (`heightPx / 720f` density override) so both `1240×1080` and `1280×960` panels render without vertical clipping.
+- Visual geometry, typography, and iconography are driven by `LocalTccLookSpec` (`TccLookSpec.AynMinimal` vs `TccLookSpec.RetroidPixel` + optional `retroidReadabilityBoost`) with custom canvas widgets in `TccWidgets.kt` rather than standard Material 3 sliders or cards.

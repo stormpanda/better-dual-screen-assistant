@@ -62,6 +62,26 @@ class DeviceProfileTest {
         assertEquals(DeviceProfile.RETROID_POCKET_DUO, DeviceProfile.current(mockCtx))
 
         DeviceProfile.resetCacheForTesting()
+        // Transient runtime error must not permanently latch AYN_THOR into cachedProfile
+        var shouldThrowTransientError = true
+        every {
+            mockPm.getApplicationInfo(
+                DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE,
+                PackageManager.MATCH_UNINSTALLED_PACKAGES
+            )
+        } answers {
+            if (shouldThrowTransientError) {
+                throw RuntimeException("Transient binder failure")
+            }
+            ApplicationInfo().apply {
+                packageName = DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE
+            }
+        }
+        assertEquals(DeviceProfile.AYN_THOR, DeviceProfile.current(mockCtx))
+        shouldThrowTransientError = false
+        assertEquals(DeviceProfile.RETROID_POCKET_DUO, DeviceProfile.current(mockCtx))
+
+        DeviceProfile.resetCacheForTesting()
         every {
             mockPm.getApplicationInfo(
                 DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE,

@@ -255,8 +255,11 @@ object PServerClient {
      * Fallback via `PServerBinder` when [PrivilegedHelperMain] is not yet connected during an
      * early ordered screen broadcast (`ACTION_SCREEN_ON` / `ACTION_SCREEN_OFF`).
      */
-    fun setStockProcessFrozenForBroadcastFallback(freeze: Boolean) = synchronized(stockAssistantLock) {
-        val stockPkg = resolveStockPackageName()
+    fun setStockProcessFrozenForBroadcastFallback(
+        freeze: Boolean,
+        context: Context? = null
+    ) = synchronized(stockAssistantLock) {
+        val stockPkg = resolveStockPackageName(context)
         if (!freeze) {
             val pidOut = exec("pidof $stockPkg", wait = true).getOrDefault("")
             val firstPid = parseNumericPids(pidOut).firstOrNull().orEmpty()

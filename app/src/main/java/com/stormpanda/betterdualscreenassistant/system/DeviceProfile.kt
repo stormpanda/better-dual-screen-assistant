@@ -162,28 +162,28 @@ enum class DeviceProfile(
             }
 
             if (context != null) {
-                val resolved = if (isPackageInstalled(context, RETROID_STOCK_ASSISTANT_PACKAGE)) {
-                    RETROID_POCKET_DUO
-                } else {
-                    AYN_THOR
+                return when (checkPackageInstalled(context, RETROID_STOCK_ASSISTANT_PACKAGE)) {
+                    true -> RETROID_POCKET_DUO.also { cachedProfile = it }
+                    false -> AYN_THOR.also { cachedProfile = it }
+                    null -> AYN_THOR
                 }
-                cachedProfile = resolved
-                return resolved
             }
 
             return AYN_THOR
         }
 
-        private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+        private fun checkPackageInstalled(context: Context, packageName: String): Boolean? {
             return try {
                 @Suppress("DEPRECATION")
                 val info = context.packageManager.getApplicationInfo(
                     packageName,
                     PackageManager.MATCH_UNINSTALLED_PACKAGES
                 )
-                info.packageName == packageName
-            } catch (_: Throwable) {
+                if (info.packageName == packageName) true else null
+            } catch (_: PackageManager.NameNotFoundException) {
                 false
+            } catch (_: Throwable) {
+                null
             }
         }
     }

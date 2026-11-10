@@ -7,6 +7,7 @@ import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.megingiard.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,13 @@ object UpdateManager {
     private const val PREF_LATEST_RELEASE_URL = "latest_release_url"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val checkLock = Any()
+
+    @Volatile
+    private var activeCheckJob: Job? = null
+
+    @Volatile
+    private var checkGeneration: Long = 0L
 
     @Volatile
     private var appContext: Context? = null
@@ -110,46 +118,63 @@ object UpdateManager {
         currentVersion: String = BuildConfig.VERSION_NAME,
         releasesApiUrl: String = DEFAULT_RELEASES_API_URL
     ) {
-        scope.launch {
-            if (!force) {
-                if (!_autoUpdateCheckEnabled.value) {
-                    AppLog.d(TAG, "Auto update check is disabled; skipping")
-                    return@launch
-                }
-                val now = System.currentTimeMillis()
-                if (lastCheckTimeMs > 0L && (now - lastCheckTimeMs) < AUTO_UPDATE_CHECK_INTERVAL_MS) {
-                    AppLog.d(TAG, "Auto update check already performed recently; skipping")
-                    return@launch
-                }
+        if (!force) {
+            if (!_autoUpdateCheckEnabled.value) {
+                AppLog.d(TAG, "Auto update check is disabled; skipping")
+                return
             }
+            val now = System.currentTimeMillis()
+            if (lastCheckTimeMs > 0L && (now - lastCheckTimeMs) < AUTO_UPDATE_CHECK_INTERVAL_MS) {
+                AppLog.d(TAG, "Auto update check already performed recently; skipping")
+                return
+            }
+        }
 
-            if (_isChecking.value) return@launch
+        val myGeneration: Long
+        synchronized(checkLock) {
+            if (_isChecking.value || activeCheckJob?.isActive == true) return
             _isChecking.value = true
             _checkError.value = null
-
-            try {
-                val releaseInfo = fetchLatestRelease(releasesApiUrl)
-                if (releaseInfo != null) {
-                    lastCheckTimeMs = System.currentTimeMillis()
-                    applyReleaseInfo(releaseInfo, currentVersion)
-                    runCatching {
-                        getPrefs()?.edit()
-                            ?.putString(PREF_LATEST_RELEASE_TAG, releaseInfo.tagName)
-                            ?.putString(PREF_LATEST_RELEASE_URL, releaseInfo.htmlUrl)
-                            ?.apply()
+            myGeneration = ++checkGeneration
+            activeCheckJob = scope.launch {
+                try {
+                    val releaseInfo = fetchLatestRelease(releasesApiUrl)
+                    synchronized(checkLock) {
+                        if (myGeneration != checkGeneration) return@launch
+                        if (releaseInfo != null) {
+                            lastCheckTimeMs = System.currentTimeMillis()
+                            applyReleaseInfo(releaseInfo, currentVersion)
+                            runCatching {
+                                getPrefs()?.edit()
+                                    ?.putString(PREF_LATEST_RELEASE_TAG, releaseInfo.tagName)
+                                    ?.putString(PREF_LATEST_RELEASE_URL, releaseInfo.htmlUrl)
+                                    ?.apply()
+                            }
+                            AppLog.i(
+                                TAG,
+                                "Update check complete: latest=${releaseInfo.tagName}, current=$currentVersion, available=${_updateAvailable.value}"
+                            )
+                        } else {
+                            _checkError.value = "Failed to fetch release info"
+                        }
                     }
-                    AppLog.i(
-                        TAG,
-                        "Update check complete: latest=${releaseInfo.tagName}, current=$currentVersion, available=${_updateAvailable.value}"
-                    )
-                } else {
-                    _checkError.value = "Failed to fetch release info"
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    synchronized(checkLock) {
+                        if (myGeneration == checkGeneration) {
+                            AppLog.e(TAG, "Error checking for updates", e)
+                            _checkError.value = e.message ?: "Network error"
+                        }
+                    }
+                } finally {
+                    synchronized(checkLock) {
+                        if (myGeneration == checkGeneration) {
+                            _isChecking.value = false
+                            activeCheckJob = null
+                        }
+                    }
                 }
-            } catch (e: Exception) {
-                AppLog.e(TAG, "Error checking for updates", e)
-                _checkError.value = e.message ?: "Network error"
-            } finally {
-                _isChecking.value = false
             }
         }
     }
@@ -202,12 +227,17 @@ object UpdateManager {
         }.getOrNull()
 
     internal fun resetForTesting() {
-        prefsLoaded = false
-        lastCheckTimeMs = 0L
-        _autoUpdateCheckEnabled.value = true
-        _updateAvailable.value = false
-        _latestReleaseInfo.value = null
-        _isChecking.value = false
-        _checkError.value = null
+        synchronized(checkLock) {
+            checkGeneration++
+            activeCheckJob?.cancel()
+            activeCheckJob = null
+            prefsLoaded = false
+            lastCheckTimeMs = 0L
+            _autoUpdateCheckEnabled.value = true
+            _updateAvailable.value = false
+            _latestReleaseInfo.value = null
+            _isChecking.value = false
+            _checkError.value = null
+        }
     }
 }

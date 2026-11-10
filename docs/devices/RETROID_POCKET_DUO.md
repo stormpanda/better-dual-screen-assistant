@@ -202,6 +202,7 @@ The **Retroid Pocket Duo** (`sun` / `CQ7790S`) is a clamshell dual-screen Androi
 | **Performance Modes (`0/1/2`)** | **Yes** | `performance_mode` | Standard / Performance / High Performance |
 | **Active Fan Control (`0/1/4/5/6`)** | **Yes** | `fan_mode`, `fan_speed`, `IFanControlProvider` | Off / Quiet / Smart / Sport / Custom (`35%–100%`) |
 | **Joystick RGB Ambient Light & Slider** | **No** | — | Hidden via `supportsAmbientLight = false` |
+| **Double-Tap HOME (Prevent Accidental Home)** | **No** | — | Hidden via `supportsPreventAccidentalHome = false` |
 | **Bypass Charging & 80% Limit** | **Yes** | `is_charging_separation`, `percent_80_charge_limit` | Both supported in hardware |
 | **OS Monet Theme Injection** | **Yes** | `FabricatedOverlay("com.android.shell", "os_theme")` | Verified live on Android 16 `OverlayManagerService` |
 | **Default Native `TccUiLook`** | — | **`TccUiLook.RETROID`** (`Retroid Pixel`) | Can also switch live to `TccUiLook.AYN` (`AYN Smooth`) |
@@ -227,7 +228,9 @@ Exact `RETROID_POCKET_DUO` enum entry in [`DeviceProfile.kt`](../../app/src/main
 | `mappingPackages` | `["com.rp.mapping", "com.odin.mapping"]` |
 | `protectedVendorPackages` | `["com.retroidpocket.dualscreen.assistant", "com.retroidpocket.gamelauncher", "com.rp.gameassistant", "com.rp.mapping", "com.rp.settings"]` |
 | `supportsAmbientLight` | `false` |
+| `supportsPreventAccidentalHome` | `false` |
 | `standardControllerLabel` / `controllerStyleOptionLabel` | `"Retro"` / `"Retro"` |
+| `closeBottomTipText` | `"Long press or press Dual Screen key to wake up the screen again"` |
 | `topPanelTeClockRatio` | `1.0f` |
 | `longPressTogglesBottom` | `true` |
 | `dismissOverlayOnBackMapping` | `true` |

@@ -201,6 +201,7 @@
 | **Performance Modes (`0/1/2`)** | `<Yes/No>` | `performance_mode` | |
 | **Active Fan Control (`0/1/4/5/6`)** | `<Yes/No>` | `fan_mode`, `fan_speed`, `IFanControlProvider` | |
 | **Joystick RGB Ambient Light & Slider** | `<Yes/No>` | `joystick_light_enabled`, `led_light_brightness_percent` | Gated by `profile.supportsAmbientLight` |
+| **Double-Tap HOME (Prevent Accidental Home)** | `<Yes/No>` | `prevent_accidental_touch_home` | Gated by `profile.supportsPreventAccidentalHome` |
 | **Bypass Charging & 80% Limit** | `<Yes/No>` | `is_charging_separation`, `percent_80_charge_limit` | |
 | **OS Monet Theme Injection** | `<Yes/No>` | `FabricatedOverlay("com.android.shell", "os_theme")` | |
 | **Default Native `TccUiLook`** | — | `TccUiLook.<AYN \| RETROID>` | Both looks selectable via `ui_look_mode` |
@@ -226,7 +227,9 @@ Exact enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/stormpanda/
 | `mappingPackages` | `<list>` |
 | `protectedVendorPackages` | `<list>` |
 | `supportsAmbientLight` | `<true / false>` |
+| `supportsPreventAccidentalHome` | `<true / false>` |
 | `standardControllerLabel` / `controllerStyleOptionLabel` | `"<short label>"` / `"<dialog & tile label>"` |
+| `closeBottomTipText` | `"<Wake-up prompt string>"` |
 | `topPanelTeClockRatio` | `<float>` |
 | `longPressTogglesBottom` | `<true / false>` |
 | `dismissOverlayOnBackMapping` | `<true / false>` |

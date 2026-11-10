@@ -1799,9 +1799,9 @@ class ScreenRecorderEngine(
                 topInputSurface = topSurf
                 bottomInputSurface = botSurf
 
-                val mTop = createDisplayMirror("bdsa_rec_dual_0", topSpec, topSurf) ?: return false
+                val mTop = createDisplayMirror("bdsa_rec_dual_${topSpec.displayId}", topSpec, topSurf) ?: return false
                 topMirror = mTop
-                val mBot = createDisplayMirror("bdsa_rec_dual_4", bottomSpec, botSurf) ?: return false
+                val mBot = createDisplayMirror("bdsa_rec_dual_${bottomSpec.displayId}", bottomSpec, botSurf) ?: return false
                 bottomMirror = mBot
 
                 baseNs = System.nanoTime()

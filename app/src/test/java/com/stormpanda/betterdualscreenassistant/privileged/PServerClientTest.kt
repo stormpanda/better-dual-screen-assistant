@@ -280,4 +280,33 @@ class PServerClientTest {
         val restoreCmds = executedCommands.map { it.first }
         assertTrue(restoreCmds.contains("am startservice -n com.retroidpocket.dualscreen.assistant/.services.TccServices"))
     }
+
+    @Test
+    fun `setStockProcessFrozenForBroadcastFallback resolves Retroid stock package via context when Build MODEL is spoofed`() {
+        val mockPm = mockk<PackageManager>()
+        val mockCtx = mockk<Context>()
+        every { mockCtx.packageManager } returns mockPm
+        every {
+            mockPm.getApplicationInfo(
+                DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE,
+                PackageManager.MATCH_UNINSTALLED_PACKAGES
+            )
+        } returns android.content.pm.ApplicationInfo().apply {
+            packageName = DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE
+        }
+
+        commandResponder = { cmd ->
+            when {
+                cmd.startsWith("pidof com.retroidpocket.dualscreen.assistant") -> "9123"
+                cmd.startsWith("cat /proc/9123/stat") -> "9123 (reen.assistant) T 1 9123 1 0"
+                else -> ""
+            }
+        }
+
+        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze = false, context = mockCtx)
+        assertTrue(executedCommands.any { it.first == "kill -CONT 9123" })
+
+        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze = true, context = mockCtx)
+        assertTrue(executedCommands.any { it.first == "kill -STOP 9123" })
+    }
 }

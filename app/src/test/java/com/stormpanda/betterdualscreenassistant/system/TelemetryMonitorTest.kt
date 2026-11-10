@@ -25,6 +25,8 @@ class TelemetryMonitorTest {
 
     @Before
     fun setUp() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -35,6 +37,8 @@ class TelemetryMonitorTest {
 
     @After
     fun tearDown() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         setHelperBinder(null)
     }
 
@@ -161,14 +165,14 @@ class TelemetryMonitorTest {
     }
 
     @Test
-    fun `scaleGpuFrequency dynamically switches between MHz and GHz across Adreno 740 and Adreno 830`() {
+    fun `scaleGpuFrequency dynamically switches between MHz and GHz across Adreno 740 and Adreno 722`() {
         // Adreno 740 (680 MHz max)
         val (curMhz, maxMhz, unitMhz) = TelemetryMonitor.scaleGpuFrequency(315_000_000L, 680_000_000L)
         assertEquals(315f, curMhz, 0.01f)
         assertEquals(680f, maxMhz, 0.01f)
         assertEquals("MHz", unitMhz)
 
-        // Adreno 830 (1.15 GHz max): switches dynamically between MHz when <1 GHz and GHz when >=1 GHz
+        // Adreno 722 (1.15 GHz max): switches dynamically between MHz when <1 GHz and GHz when >=1 GHz
         val (idleCur, idleMax, idleUnit) = TelemetryMonitor.scaleGpuFrequency(225_000_000L, 1_150_000_000L)
         assertEquals(225f, idleCur, 0.01f)
         assertEquals(1150f, idleMax, 0.01f)
