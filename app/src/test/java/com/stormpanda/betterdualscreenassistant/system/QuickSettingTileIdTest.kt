@@ -61,10 +61,13 @@ class QuickSettingTileIdTest {
     fun `profile-aware filtering and labels adapt cleanly for Retroid Pocket Duo`() {
         assertTrue(QuickSettingTileId.AMBIENT_LIGHT.isSupportedOn(DeviceProfile.AYN_THOR))
         assertFalse(QuickSettingTileId.AMBIENT_LIGHT.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
+        assertTrue(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME.isSupportedOn(DeviceProfile.AYN_THOR))
+        assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
 
         val retroidSupported = QuickSettingTileId.supportedEntries(DeviceProfile.RETROID_POCKET_DUO)
         assertFalse(QuickSettingTileId.AMBIENT_LIGHT in retroidSupported)
-        assertEquals(QuickSettingTileId.entries.size - 1, retroidSupported.size)
+        assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME in retroidSupported)
+        assertEquals(QuickSettingTileId.entries.size - 2, retroidSupported.size)
 
         assertEquals(
             "Stock AYN Toggles",

@@ -372,7 +372,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val _keepScreenOn = MutableStateFlow(getInt(KEY_KEEP_SCREEN_ON, 0) == 1)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
-    private val _preventAccidentalHome = MutableStateFlow(getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1)
+    private val _preventAccidentalHome = MutableStateFlow(readPreventAccidentalHome())
     val preventAccidentalHome: StateFlow<Boolean> = _preventAccidentalHome.asStateFlow()
 
     private val _quickTileOrder = MutableStateFlow(readSavedQuickTileOrder())
@@ -892,7 +892,7 @@ class SystemSettingsRepository(private val context: Context) {
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
         _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
         _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
-        _preventAccidentalHome.value = getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
+        _preventAccidentalHome.value = readPreventAccidentalHome()
         _quickTileOrder.value = readSavedQuickTileOrder()
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         if (refreshMegingiardTheme) {
@@ -2023,7 +2023,18 @@ class SystemSettingsRepository(private val context: Context) {
         _keepScreenOn.value = next
     }
 
+    private fun readPreventAccidentalHome(): Boolean {
+        if (!DeviceProfile.current(context).supportsPreventAccidentalHome) {
+            if (getInt(KEY_PREVENT_ACCIDENTAL_HOME, 0) != 0) {
+                PrivilegedBridge.putSystemSettingInt(context, KEY_PREVENT_ACCIDENTAL_HOME, 0)
+            }
+            return false
+        }
+        return getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
+    }
+
     fun togglePreventAccidentalHome() {
+        if (!DeviceProfile.current(context).supportsPreventAccidentalHome) return
         val next = !_preventAccidentalHome.value
         PrivilegedBridge.putSystemSettingInt(
             context,

@@ -31,6 +31,7 @@ enum class DeviceProfile(
     val mappingPackages: List<String>,
     val protectedVendorPackages: List<String>,
     val supportsAmbientLight: Boolean,
+    val supportsPreventAccidentalHome: Boolean,
     val standardControllerLabel: String,
     val controllerStyleOptionLabel: String,
     val topPanelTeClockRatio: Float,
@@ -61,6 +62,7 @@ enum class DeviceProfile(
             "com.odin.settings"
         ),
         supportsAmbientLight = true,
+        supportsPreventAccidentalHome = true,
         standardControllerLabel = "Odin",
         controllerStyleOptionLabel = "Standard Style",
         topPanelTeClockRatio = 118.412f / 120f,
@@ -92,6 +94,7 @@ enum class DeviceProfile(
             "com.rp.settings"
         ),
         supportsAmbientLight = false,
+        supportsPreventAccidentalHome = false,
         standardControllerLabel = "Retro",
         controllerStyleOptionLabel = "Retro",
         topPanelTeClockRatio = 1.0f,

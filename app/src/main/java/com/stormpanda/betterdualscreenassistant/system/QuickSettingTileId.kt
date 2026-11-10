@@ -222,8 +222,11 @@ enum class QuickSettingTileId(
         category = QuickSettingCategory.TOOLS
     );
 
-    fun isSupportedOn(profile: DeviceProfile): Boolean =
-        this != AMBIENT_LIGHT || profile.supportsAmbientLight
+    fun isSupportedOn(profile: DeviceProfile): Boolean = when (this) {
+        AMBIENT_LIGHT -> profile.supportsAmbientLight
+        PREVENT_ACCIDENTAL_HOME -> profile.supportsPreventAccidentalHome
+        else -> true
+    }
 
     fun descriptionFor(
         promotedToManager: Boolean,
