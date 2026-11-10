@@ -60,6 +60,13 @@ class TelemetryMonitorTest {
         assertEquals(0f, defaultState.powerWatts, 0.001f)
         assertEquals(0f, defaultState.ramUsedGb, 0.001f)
         assertEquals(12f, defaultState.ramTotalGb, 0.001f)
+        assertEquals(0, defaultState.cpuTotalUsagePercent)
+        assertEquals(0, defaultState.cpuSilverUsagePercent)
+        assertEquals(0, defaultState.cpuGoldUsagePercent)
+        assertEquals(0, defaultState.cpuPrimeUsagePercent)
+        assertEquals(0, defaultState.gpuBusyPercent)
+        assertEquals(0, defaultState.ramPercent)
+        assertEquals(0, defaultState.swapPercent)
     }
 
     @Test

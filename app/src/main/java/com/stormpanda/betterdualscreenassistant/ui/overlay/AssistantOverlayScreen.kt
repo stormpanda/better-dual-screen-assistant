@@ -197,12 +197,12 @@ fun AssistantOverlayScreen(
 
     val telemetry by telemetryMonitor.state.collectAsState()
 
-    val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
+    val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings, 2 = Monitor
     var activeDialog by remember { mutableStateOf(ActiveDialog.NONE) }
     val coroutineScope = rememberCoroutineScope()
 
     DisposableEffect(activeTab) {
-        if (activeTab == 1) {
+        if (activeTab == 1 || activeTab == 2) {
             telemetryMonitor.start()
         } else {
             telemetryMonitor.stop()
@@ -260,110 +260,145 @@ fun AssistantOverlayScreen(
                         .padding(start = 15.dp, end = 15.dp, bottom = 5.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (activeTab == 0) {
-                        ScreenControlTab(
-                            dualScreenMode = dualScreenMode,
-                            dualBrightness = dualBrightness,
-                            topBrightness = topBrightness,
-                            bottomBrightness = bottomBrightness,
-                            isDualBrightnessActive = isDualBrightnessActive,
-                            showSwapScreensButton = showSwapScreensButton,
-                            showLedBrightnessSlider = showLedBrightnessSlider,
-                            ledBrightnessPercent = ledBrightnessPercent,
-                            ambientLightEnabled = ambientLight,
-                            dualVolume = dualVolume,
-                            primaryVolume = primaryVolume,
-                            secondaryVolume = secondaryVolume,
-                            isDualVolumeActive = isDualVolumeActive,
-                            onSelectDisplayMode = { mode ->
-                                if (mode == 1 && dualScreenMode != 1) {
-                                    // Replicate ScreenModeControlPanel.java line 286:
-                                    // Tapping "Only top screen" shows the Tip dialog if enabled
-                                    if (repository.shouldShowCloseBottomScreenTip()) {
-                                        activeDialog = ActiveDialog.CLOSE_BOTTOM_TIP
+                    when (activeTab) {
+                        0 -> {
+                            ScreenControlTab(
+                                dualScreenMode = dualScreenMode,
+                                dualBrightness = dualBrightness,
+                                topBrightness = topBrightness,
+                                bottomBrightness = bottomBrightness,
+                                isDualBrightnessActive = isDualBrightnessActive,
+                                showSwapScreensButton = showSwapScreensButton,
+                                showLedBrightnessSlider = showLedBrightnessSlider,
+                                ledBrightnessPercent = ledBrightnessPercent,
+                                ambientLightEnabled = ambientLight,
+                                dualVolume = dualVolume,
+                                primaryVolume = primaryVolume,
+                                secondaryVolume = secondaryVolume,
+                                isDualVolumeActive = isDualVolumeActive,
+                                onSelectDisplayMode = { mode ->
+                                    if (mode == 1 && dualScreenMode != 1) {
+                                        // Replicate ScreenModeControlPanel.java line 286:
+                                        // Tapping "Only top screen" shows the Tip dialog if enabled
+                                        if (repository.shouldShowCloseBottomScreenTip()) {
+                                            activeDialog = ActiveDialog.CLOSE_BOTTOM_TIP
+                                        } else {
+                                            repository.setDualScreenDisplayMode(1)
+                                        }
                                     } else {
-                                        repository.setDualScreenDisplayMode(1)
+                                        repository.setDualScreenDisplayMode(mode)
                                     }
-                                } else {
-                                    repository.setDualScreenDisplayMode(mode)
+                                },
+                                onSwapScreens = onSwapScreensRequest,
+                                onDualBrightnessChange = { pct, temp ->
+                                    repository.setDualScreenBrightnessPercent(pct, temp)
+                                },
+                                onTopBrightnessChange = { pct, temp ->
+                                    repository.setDisplayBrightnessPercent(0, pct, temp)
+                                },
+                                onBottomBrightnessChange = { pct, temp ->
+                                    repository.setDisplayBrightnessPercent(4, pct, temp)
+                                },
+                                onLedBrightnessChange = { pct ->
+                                    repository.setLedBrightnessPercent(pct)
+                                },
+                                onDualVolumeChange = { pct ->
+                                    repository.setDualVolumePercent(pct)
+                                },
+                                onPrimaryVolumeChange = { pct ->
+                                    repository.setPrimaryVolumePercent(pct)
+                                },
+                                onSecondaryVolumeChange = { pct ->
+                                    repository.setSecondaryVolumePercent(pct)
                                 }
-                            },
-                            onSwapScreens = onSwapScreensRequest,
-                            onDualBrightnessChange = { pct, temp ->
-                                repository.setDualScreenBrightnessPercent(pct, temp)
-                            },
-                            onTopBrightnessChange = { pct, temp ->
-                                repository.setDisplayBrightnessPercent(0, pct, temp)
-                            },
-                            onBottomBrightnessChange = { pct, temp ->
-                                repository.setDisplayBrightnessPercent(4, pct, temp)
-                            },
-                            onLedBrightnessChange = { pct ->
-                                repository.setLedBrightnessPercent(pct)
-                            },
-                            onDualVolumeChange = { pct ->
-                                repository.setDualVolumePercent(pct)
-                            },
-                            onPrimaryVolumeChange = { pct ->
-                                repository.setPrimaryVolumePercent(pct)
-                            },
-                            onSecondaryVolumeChange = { pct ->
-                                repository.setSecondaryVolumePercent(pct)
-                            }
-                        )
-                    } else {
-                        SystemSettingsTab(
-                            telemetry = telemetry,
-                            tempFahrenheit = tempFahrenheit,
-                            refreshRate = refreshRate,
-                            dualScreenMode = dualScreenMode,
-                            focusLock = focusLock,
-                            performanceMode = performanceMode,
-                            fanMode = fanMode,
-                            controllerStyle = controllerStyle,
-                            chargingSeparation = chargingSeparation,
-                            vibrateOn = vibrateOn,
-                            ambientLight = ambientLight,
-                            forceLandscape = forceLandscape,
-                            themeMode = themeMode,
-                            isMegingiardAvailable = isMegingiardAvailable,
-                            syncedMegingiardOption = syncedMegingiardOption,
-                            wifiEnabled = wifiEnabled,
-                            bluetoothEnabled = bluetoothEnabled,
-                            dndEnabled = dndEnabled,
-                            airplaneModeEnabled = airplaneModeEnabled,
-                            touchLockEnabled = touchLockEnabled,
-                            triggerMode = triggerMode,
-                            chargeLimit80 = chargeLimit80,
-                            gamepadMouseMode = gamepadMouseMode,
-                            keyMapperEnabled = keyMapperEnabled,
-                            keepScreenOn = keepScreenOn,
-                            preventAccidentalHome = preventAccidentalHome,
-                            isRecordingScreen = screenRecordingState.isRecording,
-                            recordingElapsedText = recordingElapsedText,
-                            quickTileOrder = quickTileOrder,
-                            disabledQuickTiles = disabledQuickTiles,
-                            onToggleRefreshRate = { repository.toggleRefreshRate() },
-                            onToggleTempUnit = { repository.toggleTempFahrenheit() },
-                            onOpenDialog = { dialog -> activeDialog = dialog },
-                            onStopScreenRecording = onStopScreenRecordingRequest,
-                            onToggleChargingSeparation = { repository.toggleChargingSeparation() },
-                            onToggleVibrate = { repository.toggleVibrate() },
-                            onCleanMemory = onCleanMemoryRequest,
-                            onClearAllTasks = onClearAllTasksRequest,
-                            onToggleAmbientLight = { repository.toggleAmbientLight() },
-                            onToggleForceLandscape = { repository.toggleForceLandscape() },
-                            onToggleWifi = { repository.toggleWifi() },
-                            onToggleBluetooth = { repository.toggleBluetooth() },
-                            onToggleDnd = { repository.toggleDnd() },
-                            onToggleAirplaneMode = { repository.toggleAirplaneMode() },
-                            onToggleTouchLock = onToggleTouchLockRequest,
-                            onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
-                            onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
-                            onToggleKeyMapper = { repository.toggleKeyMapper() },
-                            onToggleKeepScreenOn = { repository.toggleKeepScreenOn() },
-                            onTogglePreventAccidentalHome = { repository.togglePreventAccidentalHome() }
-                        )
+                            )
+                        }
+                        1 -> {
+                            SystemSettingsTab(
+                                telemetry = telemetry,
+                                tempFahrenheit = tempFahrenheit,
+                                refreshRate = refreshRate,
+                                dualScreenMode = dualScreenMode,
+                                focusLock = focusLock,
+                                performanceMode = performanceMode,
+                                fanMode = fanMode,
+                                controllerStyle = controllerStyle,
+                                chargingSeparation = chargingSeparation,
+                                vibrateOn = vibrateOn,
+                                ambientLight = ambientLight,
+                                forceLandscape = forceLandscape,
+                                themeMode = themeMode,
+                                isMegingiardAvailable = isMegingiardAvailable,
+                                syncedMegingiardOption = syncedMegingiardOption,
+                                wifiEnabled = wifiEnabled,
+                                bluetoothEnabled = bluetoothEnabled,
+                                dndEnabled = dndEnabled,
+                                airplaneModeEnabled = airplaneModeEnabled,
+                                touchLockEnabled = touchLockEnabled,
+                                triggerMode = triggerMode,
+                                chargeLimit80 = chargeLimit80,
+                                gamepadMouseMode = gamepadMouseMode,
+                                keyMapperEnabled = keyMapperEnabled,
+                                keepScreenOn = keepScreenOn,
+                                preventAccidentalHome = preventAccidentalHome,
+                                isRecordingScreen = screenRecordingState.isRecording,
+                                recordingElapsedText = recordingElapsedText,
+                                quickTileOrder = quickTileOrder,
+                                disabledQuickTiles = disabledQuickTiles,
+                                onToggleRefreshRate = { repository.toggleRefreshRate() },
+                                onToggleTempUnit = { repository.toggleTempFahrenheit() },
+                                onOpenDialog = { dialog -> activeDialog = dialog },
+                                onStopScreenRecording = onStopScreenRecordingRequest,
+                                onToggleChargingSeparation = { repository.toggleChargingSeparation() },
+                                onToggleVibrate = { repository.toggleVibrate() },
+                                onCleanMemory = onCleanMemoryRequest,
+                                onClearAllTasks = onClearAllTasksRequest,
+                                onToggleAmbientLight = { repository.toggleAmbientLight() },
+                                onToggleForceLandscape = { repository.toggleForceLandscape() },
+                                onToggleWifi = { repository.toggleWifi() },
+                                onToggleBluetooth = { repository.toggleBluetooth() },
+                                onToggleDnd = { repository.toggleDnd() },
+                                onToggleAirplaneMode = { repository.toggleAirplaneMode() },
+                                onToggleTouchLock = onToggleTouchLockRequest,
+                                onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
+                                onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
+                                onToggleKeyMapper = { repository.toggleKeyMapper() },
+                                onToggleKeepScreenOn = { repository.toggleKeepScreenOn() },
+                                onTogglePreventAccidentalHome = { repository.togglePreventAccidentalHome() }
+                            )
+                        }
+                        2 -> {
+                            HardwareMonitorTab(
+                                telemetry = telemetry,
+                                tempFahrenheit = tempFahrenheit
+                            )
+                        }
+                        else -> {
+                            ScreenControlTab(
+                                dualScreenMode = dualScreenMode,
+                                dualBrightness = dualBrightness,
+                                topBrightness = topBrightness,
+                                bottomBrightness = bottomBrightness,
+                                isDualBrightnessActive = isDualBrightnessActive,
+                                showSwapScreensButton = showSwapScreensButton,
+                                showLedBrightnessSlider = showLedBrightnessSlider,
+                                ledBrightnessPercent = ledBrightnessPercent,
+                                ambientLightEnabled = ambientLight,
+                                dualVolume = dualVolume,
+                                primaryVolume = primaryVolume,
+                                secondaryVolume = secondaryVolume,
+                                isDualVolumeActive = isDualVolumeActive,
+                                onSelectDisplayMode = { mode -> repository.setDualScreenDisplayMode(mode) },
+                                onSwapScreens = onSwapScreensRequest,
+                                onDualBrightnessChange = { pct, temp -> repository.setDualScreenBrightnessPercent(pct, temp) },
+                                onTopBrightnessChange = { pct, temp -> repository.setDisplayBrightnessPercent(0, pct, temp) },
+                                onBottomBrightnessChange = { pct, temp -> repository.setDisplayBrightnessPercent(4, pct, temp) },
+                                onLedBrightnessChange = { pct -> repository.setLedBrightnessPercent(pct) },
+                                onDualVolumeChange = { pct -> repository.setDualVolumePercent(pct) },
+                                onPrimaryVolumeChange = { pct -> repository.setPrimaryVolumePercent(pct) },
+                                onSecondaryVolumeChange = { pct -> repository.setSecondaryVolumePercent(pct) }
+                            )
+                        }
                     }
                 }
 
@@ -1842,7 +1877,7 @@ private fun NavigationBarSection(
         contentAlignment = Alignment.Center
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(if (showEditButton) 0.82f else 0.70f),
+            modifier = Modifier.fillMaxWidth(if (showEditButton) 0.94f else 0.86f),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1851,7 +1886,7 @@ private fun NavigationBarSection(
                 iconRes = R.drawable.ic_screen_control,
                 selected = activeTab == 0,
                 onClick = { onSelectTab(0) },
-                modifier = Modifier.padding(horizontal = 8.dp)
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
 
             TccButton(
@@ -1859,7 +1894,7 @@ private fun NavigationBarSection(
                 iconRes = R.drawable.ic_task_manage,
                 selected = false,
                 onClick = onOpenRecents,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
 
             TccButton(
@@ -1867,7 +1902,15 @@ private fun NavigationBarSection(
                 iconRes = R.drawable.ic_system_set,
                 selected = activeTab == 1,
                 onClick = { onSelectTab(1) },
-                modifier = Modifier.padding(horizontal = 8.dp)
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+
+            TccButton(
+                label = stringResource(R.string.navigation_hardware_monitor_text),
+                iconRes = R.drawable.ic_nav_monitor,
+                selected = activeTab == 2,
+                onClick = { onSelectTab(2) },
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
 
             if (showEditButton) {
@@ -1876,7 +1919,7 @@ private fun NavigationBarSection(
                     iconRes = R.drawable.ic_nav_edit,
                     selected = false,
                     onClick = onOpenEdit,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
         }

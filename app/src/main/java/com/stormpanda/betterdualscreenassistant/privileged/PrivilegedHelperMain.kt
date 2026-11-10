@@ -797,7 +797,7 @@ object PrivilegedHelperMain {
                     TRANSACTION_READ_FILE -> {
                         val path = data.readString() ?: ""
                         val content = if (!path.contains("..") &&
-                            (path.startsWith("/sys/") || path == "/proc/stat")
+                            (path.startsWith("/sys/") || path.startsWith("/proc/"))
                         ) {
                             try {
                                 File(path).readText().trim()

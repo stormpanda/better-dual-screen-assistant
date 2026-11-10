@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:height="30dp"
+    android:width="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="30">
+    <!-- Speedometer dial arch -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7e7e7e"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M6,23 C4,19 4,11 9,6 C14,1 22,1 27,6 C32,11 32,19 30,23" />
+    <!-- Ticks / markings -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7e7e7e"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M11,10 L13,12 M18,5 L18,8 M25,10 L23,12" />
+    <!-- Center needle hub -->
+    <path
+        android:fillColor="#7e7e7e"
+        android:pathData="M18,19 A3,3 0 1,0 18,25 A3,3 0 1,0 18,19 Z" />
+    <!-- Needle pointing high -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7e7e7e"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M18,22 L24,11" />
+</vector>

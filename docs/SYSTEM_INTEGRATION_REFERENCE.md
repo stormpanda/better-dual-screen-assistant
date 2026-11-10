@@ -172,12 +172,16 @@ Polled by [`TelemetryMonitor.kt`](file:///Users/maikthomalla/Development/better-
 | :--- | :--- | :--- | :--- |
 | **CPU Current Frequency** | `/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_cur_freq` | kHz | `kHz / 1000 = MHz` (or `/ 1000.0 = GHz` if `≥ 1000 MHz`) |
 | **CPU Max Frequency** | `/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_max_freq` | kHz | `cur_freq * 100 / max_freq = CPU %` |
+| **CPU Cluster Frequencies** | `/sys/devices/system/cpu/cpufreq/policy{0,3,7}/scaling_cur_freq` | kHz | `kHz / 1000 = MHz` for Silver (0-2), Gold (3-6), and Prime (7) clusters |
+| **CPU Multi-Core Load** | `/proc/stat` differential ticks | Jiffies / ticks | `(activeDelta * 100.0) / totalDelta = %` (Total, Silver, Gold, Prime) |
 | **GPU Current Frequency** | `/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq` | Hz | `Hz / 1,000,000 = MHz` |
 | **GPU Max Frequency** | `/sys/class/kgsl/kgsl-3d0/devfreq/max_freq` | Hz | `cur_freq * 100 / max_freq = GPU %` |
+| **GPU Busy Load** | `/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage` | Percentage string | Direct core load percentage (`0%..100%`) |
 | **SoC Temperature** | `/sys/devices/virtual/thermal/thermal_zone48/temp` | m°C (`millidegrees`) | `round(raw / 1000.0) = ℃` |
 | **Battery Current** | `/sys/class/power_supply/battery/current_now` | µA (`microamperes`) | `current_now / 1,000,000.0 = Amperes` |
 | **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | µV (`microvolts`) | `-(Amperes * Volts) = Watts` mapped onto `-20W..+25W` ring |
 | **System RAM** | `ActivityManager.getMemoryInfo()` | Bytes | `(totalMem - availMem) / 1024³ = Used GB` |
+| **RAM & ZRAM Details** | `/proc/meminfo` (`MemTotal`, `MemAvailable`, `SwapTotal`, `SwapFree`) | kB | `usedRamBytes = (total - avail) * 1024`, `zramBytes = (swapTotal - swapFree) * 1024` |
 | **Live Frame Rate (FPS)** | `ServiceManager.getService("SurfaceFlinger")` transaction `1013` (`android.ui.ISurfaceComposer`) | Cumulative page-flip count (`int32`) | `(flipsDelta * 1e9) / nanoTimeDelta`, clamped to current display refresh rate (`60` or `120`) |
 
 ---

@@ -210,7 +210,7 @@ class ScreenOverlayManager(
     fun showAssistantOverlay(initialTab: Int? = null) {
         mainHandler.post {
             if (initialTab != null) {
-                activeTabState.value = initialTab.coerceIn(0, 1)
+                activeTabState.value = initialTab.coerceIn(0, 2)
             } else if (!isAssistantShowing && !repository.rememberLastTab.value) {
                 activeTabState.value = 0
             }
@@ -244,7 +244,7 @@ class ScreenOverlayManager(
                         repository = repository,
                         telemetryMonitor = telemetryMonitor,
                         activeTabFlow = activeTabState.asStateFlow(),
-                        onSelectTab = { tab -> activeTabState.value = tab.coerceIn(0, 1) },
+                        onSelectTab = { tab -> activeTabState.value = tab.coerceIn(0, 2) },
                         onOpenRecentsRequest = {
                             hideAssistantOverlay()
                             overviewProxyClient.toggleRecentAppsOnBottomScreen()

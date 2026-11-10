@@ -593,6 +593,7 @@ fun tccDrawable(@DrawableRes lightResId: Int): Int {
         R.drawable.ic_status_wifi_1 -> R.drawable.ic_status_wifi_1_black
         R.drawable.ic_status_wifi_2 -> R.drawable.ic_status_wifi_2_black
         R.drawable.ic_status_wifi_3 -> R.drawable.ic_status_wifi_3_black
+        R.drawable.ic_nav_monitor -> R.drawable.ic_nav_monitor_black
         R.drawable.ic_system_set -> R.drawable.ic_system_set_black
         R.drawable.ic_task_manage -> R.drawable.ic_task_manage_black
         R.drawable.ic_temp -> R.drawable.ic_temp_black
