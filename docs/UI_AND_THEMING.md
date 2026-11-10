@@ -10,6 +10,7 @@ This document specifies the visual layout geometry, custom non-Material canvas w
    - [1.1 Vertical Stack & Fixed Heights](#11-vertical-stack--fixed-heights)
    - [1.2 Mode Tab (`Tab 0`) Layout Proportions](#12-mode-tab-tab-0-layout-proportions)
    - [1.3 Settings Tab (`Tab 1`) Layout Proportions](#13-settings-tab-tab-1-layout-proportions)
+   - [1.4 Hardware Monitor Tab (`Tab 2`) Layout Proportions](#14-hardware-monitor-tab-tab-2-layout-proportions)
 2. [Custom Non-Material Canvas & Touch Widgets (`TccWidgets.kt`)](#2-custom-non-material-canvas--touch-widgets-tccwidgetskt)
    - [2.1 `VerticalProgressBar` & `TccSliderRow`](#21-verticalprogressbar--tccsliderrow)
    - [2.2 `TccButton` (Dual-Mode Action & Tile Button)](#22-tccbutton-dual-mode-action--tile-button)
@@ -41,13 +42,13 @@ The AYN Thor's bottom screen (`displayId = 4`) has a physical resolution of `124
 │ │ Main Panel Card (height = @dimen/dp_578, radius = @dimen/dp_16)      │ │
 │ │ paddingHorizontal = @dimen/dp_15, paddingTop = @dimen/dp_8           │ │
 │ │                                                                      │ │
-│ │   [ Tab 0: ScreenControlTab ]  OR  [ Tab 1: SystemSettingsTab ]      │ │
+│ │   [ Tab 0: ScreenControlTab ]  OR  [ Tab 1: SystemSettingsTab ]  OR  [ Tab 2: HardwareMonitorTab ]   │ │
 │ │                                                                      │ │
 │ └──────────────────────────────────────────────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────────────────────┤
 │      ┌────────────────────────────────────────────────────────────┐      │
 │      │ NavigationBarSection Pill (height = @dimen/dp_80)          │      │
-│      │ [ Mode ]      [ Task ]      [ Settings ]      [ Edit* ]    │      │
+│      │ [ Mode ]    [ Task ]    [ Settings ]    [ Monitor ] [Edit*]│      │
 │      └────────────────────────────────────────────────────────────┘      │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -71,6 +72,20 @@ Inside the `578dp` Main Panel Card (`padding = 15dp`), `SystemSettingsTab` uses 
   - **TEMP Card** (`weight = 2f`, `20%` width)
   - **FAN Card** (`weight = 2f`, `20%` width, left spacer `@dimen/dp_15`)
   - **4 Ring Gauges Card** (`weight = 6f`, `60%` width, left spacer `@dimen/dp_15`): `CPU`, `GPU`, `PWR`, and `RAM` `HardwareRingGauge`s arranged in an evenly spaced row.
+
+### 1.4 Hardware Monitor Tab (`Tab 2`) Layout Proportions
+
+Inside the `578dp` Main Panel Card (`padding = 15dp`), `HardwareMonitorTab` provides a dedicated high-density hardware telemetry dashboard styled after MSI Afterburner / RivaTuner, arranged in a balanced 2-column layout:
+- **Left Column (`weight = 1f`, right spacer `@dimen/dp_15`)**:
+  - **GPU Subsystem Card**: Real-time GPU load percentage bar (`/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage`), current clock in MHz (`cur_freq`), and dynamic max frequency (scaling dynamically up to 680–692 MHz).
+  - **Memory Subsystem Card**: RAM usage (used GB / total GB and percentage) and compressed ZRAM swap usage parsed from `/proc/meminfo`.
+  - **Power & Battery Card**: Real-time battery discharge rate in Watts (`current_now * voltage_now`), current in mA, and voltage in V.
+- **Right Column (`weight = 1f`)**:
+  - **CPU Subsystem Card**: Total CPU load percentage calculated from differential `/proc/stat` ticks with animated progress bar.
+  - **CPU Clusters Subsystem Card**: Three dedicated sub-bars detailing load and live scaling frequency for each physical cluster of the Snapdragon 8 Gen 2:
+    - **Silver Cluster** (Cores 0–2 / Cortex-A510): Efficiency cores.
+    - **Gold Cluster** (Cores 3–6 / Cortex-A715 & Cortex-A710): Performance cores.
+    - **Prime Cluster** (Core 7 / Cortex-X3): Maximum performance prime core.
 
 ---
 

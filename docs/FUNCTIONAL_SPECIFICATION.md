@@ -15,7 +15,8 @@ This document provides a complete functional reference for **Better Dual Screen 
    - [3.4 Quick Setting Tiles Reference (23 Tiles)](#34-quick-setting-tiles-reference-23-tiles)
    - [3.5 Modal Configuration Dialogs](#35-modal-configuration-dialogs)
    - [3.6 Live Hardware Telemetry Panel](#36-live-hardware-telemetry-panel)
-   - [3.7 Bottom Navigation Bar](#37-bottom-navigation-bar)
+   - [3.7 Hardware Monitor Tab (`Tab 2`)](#37-hardware-monitor-tab-tab-2)
+   - [3.8 Bottom Navigation Bar](#38-bottom-navigation-bar)
 4. [Top-Screen Companion Settings App (`MainActivity`)](#4-top-screen-companion-settings-app-mainactivity)
    - [4.1 Gamepad & Touch Navigation Controls](#41-gamepad--touch-navigation-controls)
    - [4.2 Live Dual-Screen Preview Behavior](#42-live-dual-screen-preview-behavior)
@@ -250,14 +251,31 @@ Located along the bottom `30%` of the **Settings** tab (`Tab 1`), the telemetry 
 
 ---
 
-### 3.7 Bottom Navigation Bar
+### 3.7 Hardware Monitor Tab (`Tab 2`)
 
-Centered at the bottom of the overlay (`80dp` height pill container in `NavigationBarSection`), the navigation bar contains 3 buttons (or 4 when **Show Edit Button in Overlay** is enabled):
+The **Hardware Monitor** tab (`HardwareMonitorTab` in `HardwareMonitorTab.kt`) provides a comprehensive real-time system performance monitor styled after MSI Afterburner and RivaTuner, arranged in a balanced two-column dashboard:
+
+| Card / Subsystem | Data Sources & Parsing | Visual Presentation |
+| :--- | :--- | :--- |
+| **GPU Subsystem** | `/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage`<br>`/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq`<br>`/sys/class/kgsl/kgsl-3d0/devfreq/max_freq` | Horizontal progress bar displaying core load percentage (`0%..100%`) alongside live clock speed in MHz (`XXX MHz / YYY MHz`). |
+| **Memory Subsystem** | `/proc/meminfo` (`MemTotal`, `MemAvailable`, `SwapTotal`, `SwapFree`) | Progress bar displaying total used system RAM (in GB and percentage) along with compressed ZRAM swap usage. |
+| **Battery & Power** | `/sys/class/power_supply/battery/current_now`<br>`/sys/class/power_supply/battery/voltage_now` | Real-time discharge rate in Watts (`-X.XX W`), battery voltage (`X.XX V`), and instantaneous current (`±XXXX mA`). |
+| **CPU Overall** | Differential ticks from `/proc/stat` (`user + nice + system + irq + softirq` vs total delta) | High-contrast progress bar showing aggregate multi-core CPU utilization percentage. |
+| **CPU Cluster 0 (Silver)** | Differential ticks from `/proc/stat` (Cores 0–2)<br>`/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq` | Dedicated cluster bar showing efficiency core load percentage and live scaling frequency in MHz/GHz. |
+| **CPU Cluster 1 (Gold)** | Differential ticks from `/proc/stat` (Cores 3–6)<br>`/sys/devices/system/cpu/cpufreq/policy3/scaling_cur_freq` | Dedicated cluster bar showing performance core load percentage and live scaling frequency. |
+| **CPU Cluster 2 (Prime)** | Differential ticks from `/proc/stat` (Core 7)<br>`/sys/devices/system/cpu/cpufreq/policy7/scaling_cur_freq` | Dedicated cluster bar showing Cortex-X3 super core load percentage and live scaling frequency. |
+
+---
+
+### 3.8 Bottom Navigation Bar
+
+Centered at the bottom of the overlay (`80dp` height pill container in `NavigationBarSection`), the navigation bar contains 4 buttons (or 5 when **Show Edit Button in Overlay** is enabled):
 
 1. **Mode** (`Tab 0`): Switches the main card to the **Mode** tab (Screen Modes, Swap Screens, Brightness, Volume). Highlighted when active.
 2. **Task**: Dismisses the Assistant Overlay (`hideOverlay()`) and invokes `OverviewProxyClient.toggleRecentAppsOnBottomScreen()` (`IOverviewProxy` transaction `6` with `displayId = 4`) to open the Android Recents / Task Switcher specifically for the bottom screen.
 3. **Settings** (`Tab 1`): Switches the main card to the **Settings** tab (Frame Rate, Quick Settings Pager, Live Telemetry). Highlighted when active.
-4. **Edit** *(Optional, ON by default)*: Launches the **Companion Settings App** (`MainActivity`) on the Top Screen (`displayId = 0` via `ActivityOptions.setLaunchDisplayId(0)`), while keeping the Assistant Overlay open on the Bottom Screen (`displayId = 4`) for side-by-side live editing.
+4. **Monitor** (`Tab 2`): Switches the main card to the **Hardware Monitor** tab (MSI Afterburner-style real-time GPU/CPU clusters/RAM/Power dashboard). Highlighted when active.
+5. **Edit** *(Optional, ON by default)*: Launches the **Companion Settings App** (`MainActivity`) on the Top Screen (`displayId = 0` via `ActivityOptions.setLaunchDisplayId(0)`), while keeping the Assistant Overlay open on the Bottom Screen (`displayId = 4`) for side-by-side live editing.
 
 ---
 

@@ -46,6 +46,7 @@ class AssistantForegroundService : Service() {
         const val ACTION_SHOW_OVERLAY = "com.stormpanda.betterdualscreenassistant.action.SHOW_OVERLAY"
         const val ACTION_SHOW_MODE = "com.stormpanda.betterdualscreenassistant.action.SHOW_MODE"
         const val ACTION_SHOW_SETTINGS = "com.stormpanda.betterdualscreenassistant.action.SHOW_SETTINGS"
+        const val ACTION_SHOW_MONITOR = "com.stormpanda.betterdualscreenassistant.action.SHOW_MONITOR"
         const val ACTION_HIDE_OVERLAY = "com.stormpanda.betterdualscreenassistant.action.HIDE_OVERLAY"
         const val ACTION_STOP_RECORDING = "com.stormpanda.betterdualscreenassistant.action.STOP_RECORDING"
         const val ACTION_TCC_KEY = "com.stormpanda.betterdualscreenassistant.action.TCC_KEY"
@@ -265,9 +266,14 @@ class AssistantForegroundService : Service() {
         enforceStockTakeoverIfPreferred()
         when (intent?.action) {
             ACTION_TOGGLE_OVERLAY -> overlayManager.toggleAssistantOverlay()
-            ACTION_SHOW_OVERLAY -> overlayManager.showAssistantOverlay()
+            ACTION_SHOW_OVERLAY -> {
+                val tab = intent.getIntExtra("initial_tab", -1)
+                if (tab >= 0) overlayManager.showAssistantOverlay(initialTab = tab)
+                else overlayManager.showAssistantOverlay()
+            }
             ACTION_SHOW_MODE -> overlayManager.showAssistantOverlay(initialTab = 0)
             ACTION_SHOW_SETTINGS -> overlayManager.showAssistantOverlay(initialTab = 1)
+            ACTION_SHOW_MONITOR -> overlayManager.showAssistantOverlay(initialTab = 2)
             ACTION_HIDE_OVERLAY -> overlayManager.hideAssistantOverlay()
             ACTION_STOP_RECORDING -> overlayManager.performStopScreenRecordingWithToast("notification")
             ACTION_TCC_KEY -> {

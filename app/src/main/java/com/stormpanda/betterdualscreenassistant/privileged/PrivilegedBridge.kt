@@ -578,7 +578,7 @@ object PrivilegedBridge {
     }
 
     fun readSysfsFile(path: String): String {
-        if (path.contains("..") || (!path.startsWith("/sys/") && path != "/proc/stat")) {
+        if (path.contains("..") || (!path.startsWith("/sys/") && !path.startsWith("/proc/"))) {
             return ""
         }
         val binder = helperBinder

@@ -47,9 +47,19 @@ Full functional and technical documentation is available in [`docs/`](docs/):
     - **Android System Toggles (4 — Optional)**: *Wi-Fi*, *Bluetooth*, *Do Not Disturb*, and *Airplane Mode*.
     - **Tools (9 — Optional)**: *Bottom Touch Lock*, *Screenshot* (Top / Bottom / Both screens saved to `/sdcard/Pictures/Screenshots`), *L2/R2 Trigger Mode* (Analog / Digital / Both), *80% Charge Limit*, *Virtual Mouse*, *Key Mapper Overlay*, *Keep Screen On*, *Double-Tap HOME*, and *Clear All Tasks*.
   - **Live Hardware Telemetry Panel**: Real-time **SoC Temperature** (`thermal_zone48` with dynamic thermal tinting), **Fan Speed %** (`IFanControlProvider`), and 4 animated `270°` circular ring gauges for **CPU Frequency** (`cpu7`), **GPU Frequency** (`kgsl-3d0`), **Battery Power Draw** (`-20W..+25W`), and **RAM Usage**.
+- **Monitor Tab (`Tab 2`)**:
+  - Dedicated hardware telemetry HUD inspired by MSI Afterburner / RivaTuner with percentage gauges and progress bars for deep performance profiling on the secondary screen.
+  - **Balanced 2-Column Dashboard**:
+    - **GPU Cluster**: Real-time GPU load percentage (`gpu_busy_percentage`), live clock frequency (`cur_freq`), and maximum frequency (scaling dynamically up to 680–692 MHz).
+    - **Memory Subsystem**: Real-time RAM percentage and usage (e.g. `11.8 GB / 15.1 GB`), plus compressed ZRAM usage (`/proc/meminfo`).
+    - **Battery & Power Draw**: Real-time power discharge rate in Watts (`-X.XX W`), battery voltage (`V`), and instantaneous current (`mA`) calculated from `voltage_now` and `current_now`.
+    - **CPU Overall & Cluster Breakdown**: Overall CPU utilization percentage calculated from differential `/proc/stat` ticks, alongside dedicated telemetry bars for each physical cluster:
+      - **Silver Cluster** (Cores 0–2): Efficiency cores usage and live scaling frequency.
+      - **Gold Cluster** (Cores 3–6): Performance cores usage and live scaling frequency.
+      - **Prime Cluster** (Core 7): Cortex-X3 super core usage and live scaling frequency.
 - **Top Status Bar & Bottom Navigation Bar**:
   - Status bar with live clock (tap to clean memory), Bluetooth indicator, live network RX speed (`KB/S` / `MB/S`), Wi-Fi signal bars, and custom battery icon with charging bolt.
-  - Bottom navigation pill with **Mode**, **Task** (opens bottom-screen Recents via `IOverviewProxy`), **Settings**, and **Edit** (launches the Companion App on the Top Screen).
+  - Bottom navigation pill with **Mode**, **Task** (opens bottom-screen Recents via `IOverviewProxy`), **Settings**, **Monitor** (speedometer HUD icon for real-time hardware telemetry), and **Edit** (launches the Companion App on the Top Screen).
 
 ### 2. Top-Screen Companion Settings App (`MainActivity` on `displayId = 0`)
 - **Gamepad-First Two-Pane UI**: Navigate with **D-Pad / Left Stick**, switch categories with **`L1` / `R1`**, adjust sliders with **`L2` fine-step modifier**, and preview every change live on the bottom screen (`displayId = 4`).
