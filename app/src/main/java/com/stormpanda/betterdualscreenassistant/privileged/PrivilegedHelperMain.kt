@@ -77,7 +77,7 @@ object PrivilegedHelperMain {
     const val TRANSACTION_GET_SCREEN_RECORD_STATE = IBinder.FIRST_CALL_TRANSACTION + 24
     const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
 
-    const val HELPER_PROTOCOL_VERSION = 19
+    const val HELPER_PROTOCOL_VERSION = 20
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -1719,6 +1719,7 @@ object PrivilegedHelperMain {
         ) {
             val om = overlayManagerProxy ?: return
             try {
+                val sysRes = android.content.res.Resources.getSystem()
                 val builderClass = Class.forName("android.content.om.FabricatedOverlay\$Builder")
                 val builderCtor = builderClass.getConstructor(
                     String::class.java,
@@ -1752,12 +1753,29 @@ object PrivilegedHelperMain {
                     "accent",
                     "android"
                 )
+                val includeDynamicOverlay = android.os.Build.VERSION.SDK_INT >= 34
+                val dynamicBuilder = if (includeDynamicOverlay) {
+                    builderCtor.newInstance(
+                        SYSUI_PACKAGE,
+                        "dynamic",
+                        "android"
+                    )
+                } else {
+                    null
+                }
                 setTargetOverlayable.invoke(shellBuilder, "")
                 setTargetOverlayable.invoke(neutralBuilder, "")
                 setTargetOverlayable.invoke(accentBuilder, "")
+                if (dynamicBuilder != null) {
+                    setTargetOverlayable.invoke(dynamicBuilder, "")
+                }
 
                 for (i in resourceNames.indices) {
                     val resName = resourceNames[i]
+                    val shortName = resName.substringAfter('/')
+                    if (sysRes.getIdentifier(shortName, "color", "android") == 0) {
+                        continue
+                    }
                     val colorVal = colorValues[i]
                     setResourceValue.invoke(
                         shellBuilder,
@@ -1765,16 +1783,23 @@ object PrivilegedHelperMain {
                         TYPED_VALUE_INT_COLOR_ARGB8,
                         colorVal
                     )
-                    if (resName.contains("system_neutral")) {
+                    if (shortName.startsWith("system_neutral")) {
                         setResourceValue.invoke(
                             neutralBuilder,
                             resName,
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
                         )
-                    } else if (resName.contains("system_accent")) {
+                    } else if (shortName.startsWith("system_accent")) {
                         setResourceValue.invoke(
                             accentBuilder,
+                            resName,
+                            TYPED_VALUE_INT_COLOR_ARGB8,
+                            colorVal
+                        )
+                    } else if (dynamicBuilder != null) {
+                        setResourceValue.invoke(
+                            dynamicBuilder,
                             resName,
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
@@ -1784,11 +1809,13 @@ object PrivilegedHelperMain {
                 val shellOverlay = buildOverlay.invoke(shellBuilder)
                 val neutralOverlay = buildOverlay.invoke(neutralBuilder)
                 val accentOverlay = buildOverlay.invoke(accentBuilder)
+                val dynamicOverlay = dynamicBuilder?.let { buildOverlay.invoke(it) }
 
                 val getIdentifier = shellOverlay.javaClass.getMethod("getIdentifier")
                 val shellId = getIdentifier.invoke(shellOverlay)
                 val neutralId = getIdentifier.invoke(neutralOverlay)
                 val accentId = getIdentifier.invoke(accentOverlay)
+                val dynamicId = dynamicOverlay?.let { getIdentifier.invoke(it) }
 
                 val idClass = Class.forName("android.content.om.OverlayIdentifier")
                 val idCtor = idClass.getConstructor(String::class.java, String::class.java)
@@ -1815,12 +1842,18 @@ object PrivilegedHelperMain {
                 val buildTx = txBuilderClass.getMethod("build")
 
                 unregMethod.invoke(txBuilder, legacyOverlayId)
-                regMethod.invoke(txBuilder, shellOverlay)
                 regMethod.invoke(txBuilder, neutralOverlay)
                 regMethod.invoke(txBuilder, accentOverlay)
-                setEnabledMethod.invoke(txBuilder, shellId, true, 0)
+                if (dynamicOverlay != null && dynamicId != null) {
+                    regMethod.invoke(txBuilder, dynamicOverlay)
+                    setEnabledMethod.invoke(txBuilder, dynamicId, true, 0)
+                }
+                // Register shellOverlay last so com.android.shell:os_theme always sits at the
+                // end of the overlay priority list.
+                regMethod.invoke(txBuilder, shellOverlay)
                 setEnabledMethod.invoke(txBuilder, neutralId, true, 0)
                 setEnabledMethod.invoke(txBuilder, accentId, true, 0)
+                setEnabledMethod.invoke(txBuilder, shellId, true, 0)
                 val tx = buildTx.invoke(txBuilder)
 
                 val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
@@ -1885,7 +1918,11 @@ object PrivilegedHelperMain {
                 savedStockThemeJson
             }
             val now = System.currentTimeMillis()
-            val fallback = """{"_applied_timestamp":$now,"android.theme.customization.color_index":"5","android.theme.customization.system_palette":"96CBFF","android.theme.customization.accent_color":"96CBFF","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"RAINBOW"}"""
+            val fallback = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                """{"_applied_timestamp":$now,"android.theme.customization.color_index":"1","android.theme.customization.color_source":"home_wallpaper","android.theme.customization.theme_style":"TONAL_SPOT","android.theme.customization.color_both":"1"}"""
+            } else {
+                """{"_applied_timestamp":$now,"android.theme.customization.color_index":"5","android.theme.customization.system_palette":"96CBFF","android.theme.customization.accent_color":"96CBFF","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"RAINBOW"}"""
+            }
             val jsonToApply = if (raw.isNotBlank() && !raw.contains("\"999\"")) {
                 try {
                     val obj = org.json.JSONObject(raw)
@@ -1896,6 +1933,18 @@ object PrivilegedHelperMain {
                 }
             } else {
                 fallback
+            }
+            try {
+                val nudgeObj = org.json.JSONObject(jsonToApply)
+                val curStyle = nudgeObj.optString("android.theme.customization.theme_style", "TONAL_SPOT")
+                nudgeObj.put(
+                    "android.theme.customization.theme_style",
+                    if (curStyle == "EXPRESSIVE") "SPRITZ" else "EXPRESSIVE"
+                )
+                nudgeObj.put("_applied_timestamp", now - 1L)
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, nudgeObj.toString())
+                Thread.sleep(75L)
+            } catch (_: Throwable) {
             }
             putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, jsonToApply)
         }

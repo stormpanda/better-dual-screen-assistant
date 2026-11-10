@@ -545,10 +545,10 @@ private fun Color.toOpaqueArgb(backdrop: Color): Int {
 }
 
 /**
- * Builds the 65 Android 13 dynamic color resource entries (`android:color/system_neutral1_*`,
- * `system_neutral2_*`, `system_accent1_*`, `system_accent2_*`, `system_accent3_*`) for a
- * `FabricatedOverlay` targeting `"android"` so SystemUI, Settings, and Material You apps
- * adopt the exact [palette] surfaces, text, and accent colors.
+ * Builds the Android 12–16 dynamic color resource entries for a `FabricatedOverlay` targeting
+ * `"android"` so SystemUI, Quick Settings, Settings, and Material You apps adopt the exact
+ * [palette] surfaces, text, and accent colors across both Android 13 (`system_neutral{1,2}_*`,
+ * `system_accent{1,2,3}_*`) and Android 14–16 (`com.android.systemui:dynamic` semantic tokens).
  */
 fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<String>, IntArray> {
     val bg = palette.primaryBackground.copy(alpha = 1f)
@@ -558,90 +558,356 @@ fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<Stri
     val textPrimary = palette.primary.toOpaqueColor(bg)
     val textSecondary = palette.secondary.toOpaqueColor(bg)
     val accent = palette.accent.toOpaqueColor(bg)
+    val errorColor = palette.error.toOpaqueColor(bg)
 
     val cardSurface = lerp(panel, elevated, 0.5f)
-    val activeAccentTile = if (accent.luminance() < 0.22f) {
-        lerp(accent, Color.White, 0.22f)
+    val primaryAccent = if (accent.luminance() < 0.12f) {
+        lerp(accent, Color.White, 0.24f)
     } else {
         accent
     }
-    val secBase = lerp(textSecondary, accent, 0.45f)
-    val tertBase = lerp(textPrimary, accent, 0.65f)
+    val activeAccentTile = if (primaryAccent.luminance() < 0.25f) {
+        lerp(primaryAccent, Color.White, 0.22f)
+    } else {
+        primaryAccent
+    }
+    val secBase = lerp(textSecondary, primaryAccent, 0.45f)
+    val tertBase = lerp(textPrimary, primaryAccent, 0.65f)
 
-    val entries = LinkedHashMap<String, Int>(68)
+    // Tonal step helpers (used for both tonal swatches and Android 14–16 semantic tokens)
+    val n1_10 = lerp(textPrimary, Color.White, 0.85f)
+    val n1_50 = lerp(textPrimary, Color.White, 0.45f)
+    val n1_100 = textPrimary
+    val n1_200 = lerp(textSecondary, textPrimary, 0.55f)
+    val n1_300 = textSecondary
+    val n1_400 = lerp(pressed, textSecondary, 0.60f)
+    val n1_500 = lerp(pressed, textSecondary, 0.30f)
+    val n1_600 = pressed
+    val n1_700 = elevated
+    val n1_800 = cardSurface
+    val n1_900 = bg
+
+    val n2_10 = lerp(textPrimary, Color.White, 0.85f)
+    val n2_50 = lerp(textPrimary, Color.White, 0.45f)
+    val n2_100 = textPrimary
+    val n2_200 = textSecondary
+    val n2_300 = lerp(pressed, textSecondary, 0.82f)
+    val n2_400 = lerp(pressed, textSecondary, 0.60f)
+    val n2_500 = lerp(pressed, textSecondary, 0.32f)
+    val n2_600 = pressed
+    val n2_700 = elevated
+    val n2_800 = panel
+    val n2_900 = bg
+
+    // Blend dark accent containers against panel (rather than pure black OLED bg) so Oklab lerp
+    // preserves visible chroma for dark containers (700/800/900).
+    val accentDarkAnchor = if (panel.luminance() > 0.005f) panel else Color(0xFF141418)
+    val a1_10 = lerp(primaryAccent, Color.White, 0.85f)
+    val a1_50 = lerp(primaryAccent, Color.White, 0.55f)
+    val a1_100 = activeAccentTile
+    val a1_200 = primaryAccent
+    val a1_300 = lerp(primaryAccent, accentDarkAnchor, 0.16f)
+    val a1_400 = lerp(primaryAccent, accentDarkAnchor, 0.30f)
+    val a1_500 = lerp(primaryAccent, accentDarkAnchor, 0.44f)
+    val a1_600 = lerp(primaryAccent, accentDarkAnchor, 0.56f)
+    val a1_700 = lerp(accentDarkAnchor, activeAccentTile, 0.36f)
+    val a1_800 = lerp(accentDarkAnchor, primaryAccent, 0.24f)
+    val a1_900 = lerp(bg, primaryAccent, 0.14f)
+
+    val a2_10 = lerp(secBase, Color.White, 0.85f)
+    val a2_50 = lerp(secBase, Color.White, 0.55f)
+    val a2_100 = lerp(secBase, Color.White, 0.25f)
+    val a2_200 = secBase
+    val a2_300 = lerp(secBase, accentDarkAnchor, 0.18f)
+    val a2_400 = lerp(secBase, accentDarkAnchor, 0.35f)
+    val a2_500 = lerp(secBase, accentDarkAnchor, 0.50f)
+    val a2_600 = lerp(secBase, accentDarkAnchor, 0.62f)
+    val a2_700 = lerp(pressed, primaryAccent, 0.25f)
+    val a2_800 = lerp(accentDarkAnchor, primaryAccent, 0.18f)
+    val a2_900 = lerp(bg, primaryAccent, 0.10f)
+
+    val a3_10 = lerp(tertBase, Color.White, 0.85f)
+    val a3_50 = lerp(tertBase, Color.White, 0.55f)
+    val a3_100 = lerp(tertBase, Color.White, 0.25f)
+    val a3_200 = tertBase
+    val a3_300 = lerp(tertBase, accentDarkAnchor, 0.18f)
+    val a3_400 = lerp(tertBase, accentDarkAnchor, 0.35f)
+    val a3_500 = lerp(tertBase, accentDarkAnchor, 0.50f)
+    val a3_600 = lerp(tertBase, accentDarkAnchor, 0.62f)
+    val a3_700 = lerp(pressed, tertBase, 0.25f)
+    val a3_800 = lerp(accentDarkAnchor, tertBase, 0.18f)
+    val a3_900 = lerp(bg, tertBase, 0.10f)
+
+    val entries = LinkedHashMap<String, Int>(240)
     fun putColor(name: String, color: Color) {
         entries["android:color/$name"] = color.toOpaqueArgb(bg)
     }
 
-    // system_neutral1: Main backgrounds (900), cards/inactive QS tiles (800), elevated (700), text (100/50)
-    putColor("system_neutral1_10", lerp(textPrimary, Color.White, 0.85f))
-    putColor("system_neutral1_50", lerp(textPrimary, Color.White, 0.45f))
-    putColor("system_neutral1_100", textPrimary)
-    putColor("system_neutral1_200", lerp(textSecondary, textPrimary, 0.55f))
-    putColor("system_neutral1_300", textSecondary)
-    putColor("system_neutral1_400", lerp(pressed, textSecondary, 0.60f))
-    putColor("system_neutral1_500", lerp(pressed, textSecondary, 0.30f))
-    putColor("system_neutral1_600", pressed)
-    putColor("system_neutral1_700", elevated)
-    putColor("system_neutral1_800", cardSurface)
-    putColor("system_neutral1_900", bg)
+    // 1. Tonal Palettes (Android 12–16 system_neutral{1,2}_* & system_accent{1,2,3}_*)
+    putColor("system_neutral1_0", Color.White)
+    putColor("system_neutral1_10", n1_10)
+    putColor("system_neutral1_50", n1_50)
+    putColor("system_neutral1_100", n1_100)
+    putColor("system_neutral1_200", n1_200)
+    putColor("system_neutral1_300", n1_300)
+    putColor("system_neutral1_400", n1_400)
+    putColor("system_neutral1_500", n1_500)
+    putColor("system_neutral1_600", n1_600)
+    putColor("system_neutral1_700", n1_700)
+    putColor("system_neutral1_800", n1_800)
+    putColor("system_neutral1_900", n1_900)
     putColor("system_neutral1_1000", Color.Black)
 
-    // system_neutral2: Surface variants (700), outlines (400), secondary text/icons (200)
-    putColor("system_neutral2_10", lerp(textPrimary, Color.White, 0.85f))
-    putColor("system_neutral2_50", lerp(textPrimary, Color.White, 0.45f))
-    putColor("system_neutral2_100", textPrimary)
-    putColor("system_neutral2_200", textSecondary)
-    putColor("system_neutral2_300", lerp(pressed, textSecondary, 0.82f))
-    putColor("system_neutral2_400", lerp(pressed, textSecondary, 0.60f))
-    putColor("system_neutral2_500", lerp(pressed, textSecondary, 0.32f))
-    putColor("system_neutral2_600", pressed)
-    putColor("system_neutral2_700", elevated)
-    putColor("system_neutral2_800", panel)
-    putColor("system_neutral2_900", bg)
+    putColor("system_neutral2_0", Color.White)
+    putColor("system_neutral2_10", n2_10)
+    putColor("system_neutral2_50", n2_50)
+    putColor("system_neutral2_100", n2_100)
+    putColor("system_neutral2_200", n2_200)
+    putColor("system_neutral2_300", n2_300)
+    putColor("system_neutral2_400", n2_400)
+    putColor("system_neutral2_500", n2_500)
+    putColor("system_neutral2_600", n2_600)
+    putColor("system_neutral2_700", n2_700)
+    putColor("system_neutral2_800", n2_800)
+    putColor("system_neutral2_900", n2_900)
     putColor("system_neutral2_1000", Color.Black)
 
-    // system_accent1: Primary accent (100 = active QS tiles/sliders, 200 = M3 primary, 700 = primaryContainer)
-    putColor("system_accent1_10", lerp(accent, Color.White, 0.85f))
-    putColor("system_accent1_50", lerp(accent, Color.White, 0.55f))
-    putColor("system_accent1_100", activeAccentTile)
-    putColor("system_accent1_200", accent)
-    putColor("system_accent1_300", lerp(accent, bg, 0.14f))
-    putColor("system_accent1_400", lerp(accent, bg, 0.28f))
-    putColor("system_accent1_500", lerp(accent, bg, 0.42f))
-    putColor("system_accent1_600", lerp(accent, bg, 0.56f))
-    putColor("system_accent1_700", lerp(accent, bg, 0.68f))
-    putColor("system_accent1_800", lerp(accent, bg, 0.80f))
-    putColor("system_accent1_900", lerp(accent, bg, 0.88f))
+    putColor("system_accent1_0", Color.White)
+    putColor("system_accent1_10", a1_10)
+    putColor("system_accent1_50", a1_50)
+    putColor("system_accent1_100", a1_100)
+    putColor("system_accent1_200", a1_200)
+    putColor("system_accent1_300", a1_300)
+    putColor("system_accent1_400", a1_400)
+    putColor("system_accent1_500", a1_500)
+    putColor("system_accent1_600", a1_600)
+    putColor("system_accent1_700", a1_700)
+    putColor("system_accent1_800", a1_800)
+    putColor("system_accent1_900", a1_900)
     putColor("system_accent1_1000", Color.Black)
 
-    // system_accent2: Secondary accent & containers (700 = M3 secondaryContainer & QS active subtitle)
-    putColor("system_accent2_10", lerp(secBase, Color.White, 0.85f))
-    putColor("system_accent2_50", lerp(secBase, Color.White, 0.55f))
-    putColor("system_accent2_100", lerp(secBase, Color.White, 0.25f))
-    putColor("system_accent2_200", secBase)
-    putColor("system_accent2_300", lerp(secBase, bg, 0.18f))
-    putColor("system_accent2_400", lerp(secBase, bg, 0.35f))
-    putColor("system_accent2_500", lerp(secBase, bg, 0.50f))
-    putColor("system_accent2_600", lerp(secBase, bg, 0.62f))
-    putColor("system_accent2_700", lerp(pressed, accent, 0.25f))
-    putColor("system_accent2_800", lerp(bg, accent, 0.18f))
-    putColor("system_accent2_900", lerp(bg, accent, 0.10f))
+    putColor("system_accent2_0", Color.White)
+    putColor("system_accent2_10", a2_10)
+    putColor("system_accent2_50", a2_50)
+    putColor("system_accent2_100", a2_100)
+    putColor("system_accent2_200", a2_200)
+    putColor("system_accent2_300", a2_300)
+    putColor("system_accent2_400", a2_400)
+    putColor("system_accent2_500", a2_500)
+    putColor("system_accent2_600", a2_600)
+    putColor("system_accent2_700", a2_700)
+    putColor("system_accent2_800", a2_800)
+    putColor("system_accent2_900", a2_900)
     putColor("system_accent2_1000", Color.Black)
 
-    // system_accent3: Tertiary accent
-    putColor("system_accent3_10", lerp(tertBase, Color.White, 0.85f))
-    putColor("system_accent3_50", lerp(tertBase, Color.White, 0.55f))
-    putColor("system_accent3_100", lerp(tertBase, Color.White, 0.25f))
-    putColor("system_accent3_200", tertBase)
-    putColor("system_accent3_300", lerp(tertBase, bg, 0.18f))
-    putColor("system_accent3_400", lerp(tertBase, bg, 0.35f))
-    putColor("system_accent3_500", lerp(tertBase, bg, 0.50f))
-    putColor("system_accent3_600", lerp(tertBase, bg, 0.62f))
-    putColor("system_accent3_700", lerp(pressed, tertBase, 0.25f))
-    putColor("system_accent3_800", lerp(bg, tertBase, 0.18f))
-    putColor("system_accent3_900", lerp(bg, tertBase, 0.10f))
+    putColor("system_accent3_0", Color.White)
+    putColor("system_accent3_10", a3_10)
+    putColor("system_accent3_50", a3_50)
+    putColor("system_accent3_100", a3_100)
+    putColor("system_accent3_200", a3_200)
+    putColor("system_accent3_300", a3_300)
+    putColor("system_accent3_400", a3_400)
+    putColor("system_accent3_500", a3_500)
+    putColor("system_accent3_600", a3_600)
+    putColor("system_accent3_700", a3_700)
+    putColor("system_accent3_800", a3_800)
+    putColor("system_accent3_900", a3_900)
     putColor("system_accent3_1000", Color.Black)
+
+    // 2. Android 14–16 Semantic Dynamic Color Tokens (com.android.systemui:dynamic)
+    val onPrimaryDark = primaryAccent.contrastingContentColor(
+        dark = lerp(bg, primaryAccent, 0.16f),
+        light = Color.White
+    )
+    val onSecondaryDark = secBase.contrastingContentColor(
+        dark = lerp(bg, secBase, 0.16f),
+        light = Color.White
+    )
+    val onTertiaryDark = tertBase.contrastingContentColor(
+        dark = lerp(bg, tertBase, 0.16f),
+        light = Color.White
+    )
+    val onShadeActive = activeAccentTile.contrastingContentColor(
+        dark = lerp(bg, Color.Black, 0.5f),
+        light = Color.White
+    )
+    val onShadeActiveVariant = if (activeAccentTile.luminance() > LUMINANCE_CONTRAST_THRESHOLD) {
+        lerp(bg, activeAccentTile, 0.25f)
+    } else {
+        lerp(Color.White, activeAccentTile, 0.20f)
+    }
+    val onErrorDark = errorColor.contrastingContentColor(
+        dark = Color(0xFF3B0000),
+        light = Color.White
+    )
+    val errorContainerDark = lerp(accentDarkAnchor, errorColor, 0.38f)
+    val onErrorContainerDark = lerp(errorColor, Color.White, 0.72f)
+
+    // Light-mode semantic tokens
+    putColor("system_primary_container_light", a1_100)
+    putColor("system_on_primary_container_light", a1_700)
+    putColor("system_primary_light", a1_600)
+    putColor("system_on_primary_light", Color.White)
+    putColor("system_secondary_container_light", a2_100)
+    putColor("system_on_secondary_container_light", a2_700)
+    putColor("system_secondary_light", a2_600)
+    putColor("system_on_secondary_light", Color.White)
+    putColor("system_tertiary_container_light", a3_100)
+    putColor("system_on_tertiary_container_light", a3_700)
+    putColor("system_tertiary_light", a3_600)
+    putColor("system_on_tertiary_light", Color.White)
+    putColor("system_background_light", n1_10)
+    putColor("system_on_background_light", n1_900)
+    putColor("system_surface_light", n1_10)
+    putColor("system_on_surface_light", n1_900)
+    putColor("system_surface_container_low_light", lerp(n1_50, Color.White, 0.25f))
+    putColor("system_surface_container_lowest_light", Color.White)
+    putColor("system_surface_container_light", n1_50)
+    putColor("system_surface_container_high_light", lerp(n1_100, n1_50, 0.5f))
+    putColor("system_surface_container_highest_light", n1_100)
+    putColor("system_surface_bright_light", n1_10)
+    putColor("system_surface_dim_light", lerp(n1_200, n1_100, 0.65f))
+    putColor("system_surface_variant_light", n2_100)
+    putColor("system_on_surface_variant_light", n2_700)
+    putColor("system_outline_light", n2_500)
+    putColor("system_outline_variant_light", n2_200)
+    putColor("system_error_light", Color(0xFFBA1A1A))
+    putColor("system_on_error_light", Color.White)
+    putColor("system_error_container_light", Color(0xFFFFDAD6))
+    putColor("system_on_error_container_light", Color(0xFF93000A))
+    putColor("system_control_activated_light", a1_100)
+    putColor("system_control_normal_light", n2_700)
+    putColor("system_control_highlight_light", n1_200)
+    putColor("system_text_primary_inverse_light", n1_100)
+    putColor("system_text_secondary_and_tertiary_inverse_light", n2_200)
+    putColor("system_text_primary_inverse_disable_only_light", n1_100)
+    putColor("system_text_secondary_and_tertiary_inverse_disabled_light", n1_100)
+    putColor("system_text_hint_inverse_light", n1_100)
+    putColor("system_palette_key_color_primary_light", primaryAccent)
+    putColor("system_palette_key_color_secondary_light", secBase)
+    putColor("system_palette_key_color_tertiary_light", tertBase)
+    putColor("system_palette_key_color_neutral_light", n1_500)
+    putColor("system_palette_key_color_neutral_variant_light", n2_500)
+
+    // Dark-mode semantic tokens
+    putColor("system_primary_container_dark", a1_700)
+    putColor("system_on_primary_container_dark", lerp(activeAccentTile, Color.White, 0.65f))
+    putColor("system_primary_dark", primaryAccent)
+    putColor("system_on_primary_dark", onPrimaryDark)
+    putColor("system_secondary_container_dark", a2_700)
+    putColor("system_on_secondary_container_dark", a2_100)
+    putColor("system_secondary_dark", a2_200)
+    putColor("system_on_secondary_dark", onSecondaryDark)
+    putColor("system_tertiary_container_dark", a3_700)
+    putColor("system_on_tertiary_container_dark", a3_100)
+    putColor("system_tertiary_dark", a3_200)
+    putColor("system_on_tertiary_dark", onTertiaryDark)
+    putColor("system_background_dark", bg)
+    putColor("system_on_background_dark", textPrimary)
+    putColor("system_surface_dark", bg)
+    putColor("system_on_surface_dark", textPrimary)
+    putColor("system_surface_container_low_dark", panel)
+    putColor("system_surface_container_lowest_dark", lerp(bg, Color.Black, 0.35f))
+    putColor("system_surface_container_dark", cardSurface)
+    putColor("system_surface_container_high_dark", elevated)
+    putColor("system_surface_container_highest_dark", pressed)
+    putColor("system_surface_bright_dark", lerp(pressed, textSecondary, 0.20f))
+    putColor("system_surface_dim_dark", bg)
+    putColor("system_surface_variant_dark", elevated)
+    putColor("system_on_surface_variant_dark", textSecondary)
+    putColor("system_outline_dark", n2_400)
+    putColor("system_outline_variant_dark", n2_600)
+    putColor("system_error_dark", errorColor)
+    putColor("system_on_error_dark", onErrorDark)
+    putColor("system_error_container_dark", errorContainerDark)
+    putColor("system_on_error_container_dark", onErrorContainerDark)
+    putColor("system_control_activated_dark", a1_700)
+    putColor("system_control_normal_dark", textSecondary)
+    putColor("system_control_highlight_dark", lerp(pressed, textPrimary, 0.25f))
+    putColor("system_text_primary_inverse_dark", bg)
+    putColor("system_text_secondary_and_tertiary_inverse_dark", panel)
+    putColor("system_text_primary_inverse_disable_only_dark", bg)
+    putColor("system_text_secondary_and_tertiary_inverse_disabled_dark", bg)
+    putColor("system_text_hint_inverse_dark", panel)
+    putColor("system_palette_key_color_primary_dark", primaryAccent)
+    putColor("system_palette_key_color_secondary_dark", secBase)
+    putColor("system_palette_key_color_tertiary_dark", tertBase)
+    putColor("system_palette_key_color_neutral_dark", n1_500)
+    putColor("system_palette_key_color_neutral_variant_dark", n2_500)
+
+    // Fixed accent tokens
+    putColor("system_primary_fixed", a1_100)
+    putColor("system_primary_fixed_dim", primaryAccent)
+    putColor("system_on_primary_fixed", onShadeActive)
+    putColor("system_on_primary_fixed_variant", onShadeActiveVariant)
+    putColor("system_secondary_fixed", a2_100)
+    putColor("system_secondary_fixed_dim", a2_200)
+    putColor("system_on_secondary_fixed", a2_900)
+    putColor("system_on_secondary_fixed_variant", a2_700)
+    putColor("system_tertiary_fixed", a3_100)
+    putColor("system_tertiary_fixed_dim", a3_200)
+    putColor("system_on_tertiary_fixed", a3_900)
+    putColor("system_on_tertiary_fixed_variant", a3_700)
+
+    // SystemUI Shade, Brand, Clock, App Theme & Widget tokens
+    putColor("system_brand_a_dark", primaryAccent)
+    putColor("system_brand_a_light", a1_600)
+    putColor("system_brand_b_dark", a1_100)
+    putColor("system_brand_b_light", a2_500)
+    putColor("system_brand_c_dark", a1_300)
+    putColor("system_brand_c_light", a1_500)
+    putColor("system_brand_d_dark", a3_100)
+    putColor("system_brand_d_light", a3_500)
+    putColor("system_clock_hour_dark", a2_200)
+    putColor("system_clock_hour_light", a2_700)
+    putColor("system_clock_minute_dark", a1_100)
+    putColor("system_clock_minute_light", a1_600)
+    putColor("system_clock_second_dark", a3_100)
+    putColor("system_clock_second_light", a3_600)
+    putColor("system_on_shade_active_dark", onShadeActive)
+    putColor("system_on_shade_active_light", onShadeActive)
+    putColor("system_on_shade_active_variant_dark", onShadeActiveVariant)
+    putColor("system_on_shade_active_variant_light", onShadeActiveVariant)
+    putColor("system_on_shade_inactive_dark", textPrimary)
+    putColor("system_on_shade_inactive_light", textPrimary)
+    putColor("system_on_shade_inactive_variant_dark", textSecondary)
+    putColor("system_on_shade_inactive_variant_light", textSecondary)
+    putColor("system_on_theme_app_dark", lerp(activeAccentTile, Color.White, 0.45f))
+    putColor("system_on_theme_app_light", a1_700)
+    putColor("system_overview_background_dark", panel)
+    putColor("system_overview_background_light", n2_200)
+    putColor("system_shade_active_dark", activeAccentTile)
+    putColor("system_shade_active_light", activeAccentTile)
+    putColor("system_shade_disabled_dark", lerp(bg, panel, 0.45f))
+    putColor("system_shade_disabled_light", lerp(bg, panel, 0.45f))
+    putColor("system_shade_inactive_dark", cardSurface)
+    putColor("system_shade_inactive_light", cardSurface)
+    putColor("system_theme_app_dark", a1_700)
+    putColor("system_theme_app_light", a1_100)
+    putColor("system_theme_app_ring_dark", a1_300)
+    putColor("system_theme_app_ring_light", a1_300)
+    putColor("system_theme_notif_dark", a3_100)
+    putColor("system_theme_notif_light", a3_200)
+    putColor("system_under_surface_dark", bg)
+    putColor("system_under_surface_light", bg)
+    putColor("system_weather_temp_dark", primaryAccent)
+    putColor("system_weather_temp_light", a1_600)
+    putColor("system_widget_background_dark", panel)
+    putColor("system_widget_background_light", n1_50)
+
+    // Inverse, Scrim, Shadow & Surface Tint tokens
+    putColor("system_inverse_on_surface_light", n1_50)
+    putColor("system_inverse_primary_light", primaryAccent)
+    putColor("system_inverse_surface_light", cardSurface)
+    putColor("system_scrim_light", Color.Black)
+    putColor("system_shadow_light", Color.Black)
+    putColor("system_surface_tint_light", a1_600)
+    putColor("system_inverse_on_surface_dark", panel)
+    putColor("system_inverse_primary_dark", a1_600)
+    putColor("system_inverse_surface_dark", textPrimary)
+    putColor("system_scrim_dark", Color.Black)
+    putColor("system_shadow_dark", Color.Black)
+    putColor("system_surface_tint_dark", primaryAccent)
 
     val keys = entries.keys.toTypedArray()
     val values = IntArray(keys.size) { idx -> entries[keys[idx]] ?: 0xFF000000.toInt() }

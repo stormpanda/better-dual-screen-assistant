@@ -104,20 +104,35 @@ class TccThemeAndOverlayFormatTest {
     }
 
     @Test
-    fun `buildOsDynamicColorOverlayEntries generates all 60 Android 13 Material You color keys with opaque ARGB`() {
+    fun `buildOsDynamicColorOverlayEntries generates all 65 tonal and 156 Android 14 to 16 semantic color keys with opaque ARGB`() {
         val palette = resolveTccPalette(AppThemeOption.MEGINGIARD_DARK, systemDark = true)
         val (keys, colors) = buildOsDynamicColorOverlayEntries(palette)
 
-        // 5 tonal palettes (accent1, accent2, accent3, neutral1, neutral2) * 12 steps = 60 entries
-        assertEquals(60, keys.size)
-        assertEquals(60, colors.size)
-        assertEquals(60, keys.toSet().size)
+        // 5 tonal palettes * 13 steps (65) + 156 Android 14-16 semantic dynamic tokens = 221 entries
+        assertEquals(221, keys.size)
+        assertEquals(221, colors.size)
+        assertEquals(221, keys.toSet().size)
 
+        // Tonal keys (Android 12-13+)
+        assertTrue(keys.contains("android:color/system_accent1_0"))
         assertTrue(keys.contains("android:color/system_accent1_500"))
         assertTrue(keys.contains("android:color/system_accent2_500"))
         assertTrue(keys.contains("android:color/system_accent3_500"))
         assertTrue(keys.contains("android:color/system_neutral1_900"))
         assertTrue(keys.contains("android:color/system_neutral2_800"))
+
+        // Semantic keys (Android 14-16 com.android.systemui:dynamic)
+        assertTrue(keys.contains("android:color/system_primary_dark"))
+        assertTrue(keys.contains("android:color/system_primary_container_dark"))
+        assertTrue(keys.contains("android:color/system_surface_dark"))
+        assertTrue(keys.contains("android:color/system_surface_container_dark"))
+        assertTrue(keys.contains("android:color/system_surface_container_high_dark"))
+        assertTrue(keys.contains("android:color/system_shade_active_dark"))
+        assertTrue(keys.contains("android:color/system_on_shade_active_dark"))
+        assertTrue(keys.contains("android:color/system_shade_inactive_dark"))
+        assertTrue(keys.contains("android:color/system_under_surface_dark"))
+        assertTrue(keys.contains("android:color/system_inverse_surface_dark"))
+        assertTrue(keys.contains("android:color/system_surface_tint_dark"))
 
         for (color in colors) {
             assertEquals(0xFF, (color ushr 24) and 0xFF)
