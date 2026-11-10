@@ -758,6 +758,100 @@ class PrivilegedBinderProviderAndHelperTest {
         reply.recycle()
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_CAPTURE_SCREENSHOT dispatches and parses physical display IDs`() {
+        // 1. Verify uniqueId and address extraction
+        assertEquals(
+            "4630946482288158084",
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId("local:4630946482288158084")
+        )
+        assertEquals(
+            "4630946671160541331",
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId("4630946671160541331")
+        )
+        val fakeAddress = object {
+            @Suppress("unused")
+            fun getPhysicalDisplayId(): Long = 4630946671160541331L
+        }
+        assertEquals(
+            "4630946671160541331",
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromAddress(fakeAddress)
+        )
+
+        // 2. Verify flattened single-line dumpsys SurfaceFlinger --display-id parsing for Thor & Duo
+        val thorSfFlattened =
+            "Display 4630946441858561667 (HWC display 0): port=131 pnpId=QCM displayName=\"\" " +
+                "Display 4630946482288158084 (HWC display 3): port=132 pnpId=QCM displayName=\"\""
+        assertEquals(
+            "4630946441858561667" to "4630946482288158084",
+            PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(thorSfFlattened)
+        )
+
+        val duoSfFlattened =
+            "Display 4630947039571902866 (HWC display 0): port=146 pnpId=QCM displayName=\"\" " +
+                "Display 4630946671160541331 (HWC display 3): port=147 pnpId=QCM displayName=\"\""
+        assertEquals(
+            "4630947039571902866" to "4630946671160541331",
+            PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(duoSfFlattened)
+        )
+
+        // 3. Verify screenshot output path validation
+        assertTrue(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertFalse(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/sdcard/Pictures/../Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertFalse(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/data/local/tmp/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+
+        // 4. Verify TRANSACTION_CAPTURE_SCREENSHOT binder transaction
+        val helperBinder = createAuthorizedHelperBinder()
+        val capturedCalls = mutableListOf<Triple<Int, String, String>>()
+        helperBinder.screenshotCaptureOverride = { mode, top, bottom ->
+            capturedCalls.add(Triple(mode, top, bottom))
+            true
+        }
+
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(2)
+            writeString("/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Top.png")
+            writeString("/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png")
+        }
+        val reply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_CAPTURE_SCREENSHOT,
+                data,
+                reply,
+                0
+            )
+        )
+        reply.setDataPosition(0)
+        reply.readException()
+        assertEquals(1, reply.readInt())
+        assertEquals(
+            listOf(
+                Triple(
+                    2,
+                    "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Top.png",
+                    "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png"
+                )
+            ),
+            capturedCalls
+        )
+        data.recycle()
+        reply.recycle()
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

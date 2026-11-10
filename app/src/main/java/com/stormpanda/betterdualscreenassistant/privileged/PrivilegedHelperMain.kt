@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.content.AttributionSource
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -24,7 +25,9 @@ import android.view.View
 import android.view.WindowManager
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.TimeUnit
 
 /**
  * Root companion process launched via PServerBinder using `app_process`.
@@ -77,8 +80,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_GET_SCREEN_RECORD_STATE = IBinder.FIRST_CALL_TRANSACTION + 24
     const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
     const val TRANSACTION_WINDOW_SESSION_TRANSACT = IBinder.FIRST_CALL_TRANSACTION + 26
+    const val TRANSACTION_CAPTURE_SCREENSHOT = IBinder.FIRST_CALL_TRANSACTION + 27
 
-    const val HELPER_PROTOCOL_VERSION = 21
+    const val HELPER_PROTOCOL_VERSION = 22
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -430,6 +434,7 @@ object PrivilegedHelperMain {
         internal var activityTaskManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
+        internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
 
         @Volatile
         private var panel0BacklightBlanked: Boolean = false
@@ -1053,6 +1058,20 @@ object PrivilegedHelperMain {
                             forwardData.recycle()
                             forwardReply.recycle()
                         }
+                        true
+                    }
+                    TRANSACTION_CAPTURE_SCREENSHOT -> {
+                        val targetMode = data.readInt()
+                        val topPath = data.readString() ?: ""
+                        val bottomPath = data.readString() ?: ""
+                        val callingToken = Binder.clearCallingIdentity()
+                        val ok = try {
+                            captureScreenshotInternal(targetMode, topPath, bottomPath)
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (ok) 1 else 0)
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)
@@ -2688,5 +2707,365 @@ object PrivilegedHelperMain {
             reply.writeString(status.lastCompletedPath)
             reply.writeString(status.lastStopReason)
         }
+
+        private fun captureScreenshotInternal(
+            targetMode: Int,
+            topPath: String,
+            bottomPath: String
+        ): Boolean {
+            screenshotCaptureOverride?.let { return it(targetMode, topPath, bottomPath) }
+            val wantTop = targetMode == 0 || targetMode == 2
+            val wantBottom = targetMode == 1 || targetMode == 2
+            if (!wantTop && !wantBottom) return false
+            if (wantTop && !isValidScreenshotOutputPath(topPath)) {
+                Log.w(TAG, "Rejected invalid top screenshot output path: $topPath")
+                return false
+            }
+            if (wantBottom && !isValidScreenshotOutputPath(bottomPath)) {
+                Log.w(TAG, "Rejected invalid bottom screenshot output path: $bottomPath")
+                return false
+            }
+
+            var allOk = true
+            if (wantTop) {
+                val topOk = captureSingleDisplayToFileInternal(0, File(topPath))
+                if (!topOk) allOk = false
+            }
+            if (wantBottom) {
+                val bottomDisplayId = resolveBottomDisplayIdInternal()
+                val bottomOk = captureSingleDisplayToFileInternal(bottomDisplayId, File(bottomPath))
+                if (!bottomOk) allOk = false
+            }
+            return allOk
+        }
+
+        private fun captureSingleDisplayToFileInternal(
+            logicalDisplayId: Int,
+            outFile: File
+        ): Boolean {
+            try {
+                outFile.parentFile?.mkdirs()
+                if (outFile.exists()) {
+                    outFile.delete()
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed preparing screenshot output file ${outFile.absolutePath}", t)
+                return false
+            }
+
+            val physId = resolvePhysicalDisplayIdInternal(logicalDisplayId)
+
+            // Tier 1: Native /system/bin/screencap with 64-bit physical display ID
+            if (captureDisplayViaScreencap(logicalDisplayId, physId, outFile)) {
+                return true
+            }
+
+            // Tier 2: Android 14-16 IWindowManager.captureDisplay(logicalDisplayId, captureArgs, syncListener)
+            if (captureDisplayViaWindowManager(logicalDisplayId, outFile)) {
+                return true
+            }
+
+            // Tier 3: Android 13 SurfaceControl.captureDisplay(DisplayCaptureArgs)
+            if (!physId.isNullOrEmpty() && captureDisplayViaSurfaceControl(physId, outFile)) {
+                return true
+            }
+
+            deleteEmptyFileQuietly(outFile)
+            return false
+        }
+
+        private fun resolvePhysicalDisplayIdInternal(logicalDisplayId: Int): String? {
+            // 1. Query IDisplayManager.getDisplayInfo(logicalDisplayId) (uniqueId / address)
+            val dm = displayManagerProxy
+            if (dm != null) {
+                try {
+                    val getInfo = dm.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                    val info = getInfo.invoke(dm, logicalDisplayId)
+                    if (info != null) {
+                        val infoClass = info.javaClass
+                        val uniqueId = try {
+                            infoClass.getField("uniqueId").get(info) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+                        val address = try {
+                            infoClass.getField("address").get(info)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromAddress(address)?.let { return it }
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "getDisplayInfo($logicalDisplayId) failed while resolving physical display ID", t)
+                }
+            }
+
+            // 2. Query DisplayManager.getDisplay(logicalDisplayId) (VMRuntime hidden-API exemptions active in UID 0)
+            val ctx = systemContext ?: getOrCreateDisplay0Context()
+            if (ctx != null) {
+                try {
+                    val display = ctx.getSystemService(DisplayManager::class.java)?.getDisplay(logicalDisplayId)
+                    if (display != null) {
+                        val uniqueId = try {
+                            display.javaClass.getMethod("getUniqueId").invoke(display) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+                        val address = try {
+                            display.javaClass.getMethod("getAddress").invoke(display)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromAddress(address)?.let { return it }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+
+            // 3. Fallback: dumpsys SurfaceFlinger --display-id (flattened to single line for pservice fgets)
+            val sfOut = try {
+                val proc = ProcessBuilder("/system/bin/dumpsys", "SurfaceFlinger", "--display-id")
+                    .redirectErrorStream(true)
+                    .start()
+                val text = proc.inputStream.bufferedReader().use { it.readText() }
+                proc.waitFor(2, TimeUnit.SECONDS)
+                text
+            } catch (_: Throwable) {
+                ""
+            }.ifBlank {
+                execRootCommand("dumpsys SurfaceFlinger --display-id | tr '\\n' ' '")
+            }
+
+            if (sfOut.isNotBlank()) {
+                val profile = resolveActiveDeviceProfile()
+                val (topByProfile, bottomByProfile) = parseSurfaceFlingerDisplayIds(
+                    sfOut = sfOut,
+                    topPorts = setOf(profile.topSfPort),
+                    bottomPorts = setOf(profile.bottomSfPort)
+                )
+                val (topAll, bottomAll) = parseSurfaceFlingerDisplayIds(sfOut)
+                return if (logicalDisplayId == 0) {
+                    topByProfile ?: topAll
+                } else {
+                    bottomByProfile ?: bottomAll
+                }
+            }
+            return null
+        }
+
+        private fun captureDisplayViaScreencap(
+            logicalDisplayId: Int,
+            physId: String?,
+            outFile: File
+        ): Boolean {
+            if (physId.isNullOrEmpty() && logicalDisplayId != 0) {
+                return false
+            }
+            val args = if (!physId.isNullOrEmpty()) {
+                listOf("/system/bin/screencap", "-p", "-d", physId, outFile.absolutePath)
+            } else {
+                listOf("/system/bin/screencap", "-p", outFile.absolutePath)
+            }
+            try {
+                val proc = ProcessBuilder(args).redirectErrorStream(true).start()
+                proc.inputStream.use { it.readBytes() }
+                proc.waitFor(5, TimeUnit.SECONDS)
+                if (outFile.exists() && outFile.length() > 0L) {
+                    return true
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "ProcessBuilder screencap failed for display $logicalDisplayId (phys=$physId)", t)
+            }
+            deleteEmptyFileQuietly(outFile)
+
+            try {
+                val dArg = if (!physId.isNullOrEmpty()) "-d $physId" else ""
+                val quotedPath = PServerClient.shellQuote(outFile.absolutePath)
+                execRootCommand("/system/bin/screencap -p $dArg $quotedPath")
+                if (outFile.exists() && outFile.length() > 0L) {
+                    return true
+                }
+            } catch (_: Throwable) {
+            }
+            deleteEmptyFileQuietly(outFile)
+            return false
+        }
+
+        private fun captureDisplayViaWindowManager(
+            logicalDisplayId: Int,
+            outFile: File
+        ): Boolean {
+            val wm = windowManagerProxy ?: return false
+            return try {
+                val captureArgsBuilderClass = Class.forName("android.window.ScreenCapture\$CaptureArgs\$Builder")
+                val builder = captureArgsBuilderClass.getConstructor().newInstance()
+                val captureArgs = captureArgsBuilderClass.getMethod("build").invoke(builder)
+                val screenCaptureClass = Class.forName("android.window.ScreenCapture")
+                val syncListener = screenCaptureClass.getMethod("createSyncCaptureListener").invoke(null)
+                    ?: return false
+                val captureMethod = wm.javaClass.methods.firstOrNull { m ->
+                    m.name == "captureDisplay" && m.parameterTypes.size == 3
+                } ?: return false
+                captureMethod.invoke(wm, logicalDisplayId, captureArgs, syncListener)
+                val buffer = syncListener.javaClass.getMethod("getBuffer").invoke(syncListener) ?: return false
+                val bitmap = buffer.javaClass.getMethod("asBitmap").invoke(buffer) as? Bitmap ?: return false
+                writeBitmapToPngFile(bitmap, outFile)
+            } catch (t: Throwable) {
+                Log.w(TAG, "IWindowManager.captureDisplay($logicalDisplayId) fallback failed", t)
+                deleteEmptyFileQuietly(outFile)
+                false
+            }
+        }
+
+        private fun captureDisplayViaSurfaceControl(
+            physId: String,
+            outFile: File
+        ): Boolean {
+            return try {
+                val physIdLong = java.lang.Long.parseUnsignedLong(physId)
+                val scClass = Class.forName("android.view.SurfaceControl")
+                val displayToken = try {
+                    scClass.getMethod("getPhysicalDisplayToken", Long::class.javaPrimitiveType)
+                        .invoke(null, physIdLong) as? IBinder
+                } catch (_: NoSuchMethodException) {
+                    val factoryClass = Class.forName("com.android.internal.os.ClassLoaderFactory")
+                    val createLoader = factoryClass.getDeclaredMethod(
+                        "createClassLoader",
+                        String::class.java,
+                        String::class.java,
+                        String::class.java,
+                        ClassLoader::class.java,
+                        Int::class.javaPrimitiveType,
+                        Boolean::class.javaPrimitiveType,
+                        String::class.java
+                    ).apply { isAccessible = true }
+                    val loader = createLoader.invoke(
+                        null,
+                        "/system/framework/services.jar",
+                        null,
+                        null,
+                        ClassLoader.getSystemClassLoader(),
+                        0,
+                        true,
+                        null
+                    ) as? ClassLoader
+                    val dcClass = loader?.loadClass("com.android.server.display.DisplayControl")
+                    dcClass?.getMethod("getPhysicalDisplayToken", Long::class.javaPrimitiveType)
+                        ?.invoke(null, physIdLong) as? IBinder
+                } ?: return false
+
+                val builderClass = Class.forName("android.view.SurfaceControl\$DisplayCaptureArgs\$Builder")
+                val builder = builderClass.getConstructor(IBinder::class.java).newInstance(displayToken)
+                val args = builderClass.getMethod("build").invoke(builder)
+                val captureMethod = scClass.methods.firstOrNull { m ->
+                    m.name == "captureDisplay" && m.parameterTypes.size == 1
+                } ?: return false
+                val buffer = captureMethod.invoke(null, args) ?: return false
+                val bitmap = buffer.javaClass.getMethod("asBitmap").invoke(buffer) as? Bitmap ?: return false
+                writeBitmapToPngFile(bitmap, outFile)
+            } catch (t: Throwable) {
+                Log.w(TAG, "SurfaceControl.captureDisplay($physId) fallback failed", t)
+                deleteEmptyFileQuietly(outFile)
+                false
+            }
+        }
+
+        private fun writeBitmapToPngFile(bitmap: Bitmap, outFile: File): Boolean {
+            var swBitmap: Bitmap? = null
+            return try {
+                val targetBitmap = if (bitmap.config == Bitmap.Config.HARDWARE) {
+                    bitmap.copy(Bitmap.Config.ARGB_8888, false)?.also { swBitmap = it } ?: bitmap
+                } else {
+                    bitmap
+                }
+                FileOutputStream(outFile).use { fos ->
+                    if (!targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
+                        return false
+                    }
+                    fos.flush()
+                    try {
+                        fos.fd.sync()
+                    } catch (_: Throwable) {
+                    }
+                }
+                val ok = outFile.exists() && outFile.length() > 0L
+                if (!ok) {
+                    deleteEmptyFileQuietly(outFile)
+                }
+                ok
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed writing screenshot bitmap to ${outFile.absolutePath}", t)
+                deleteEmptyFileQuietly(outFile)
+                false
+            } finally {
+                try {
+                    swBitmap?.recycle()
+                } catch (_: Throwable) {
+                }
+                try {
+                    if (bitmap !== swBitmap) {
+                        bitmap.recycle()
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        private fun deleteEmptyFileQuietly(file: File) {
+            try {
+                if (file.exists() && file.length() == 0L) {
+                    file.delete()
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    internal fun isValidScreenshotOutputPath(path: String): Boolean {
+        if (path.isBlank() || path.contains("..") || !path.endsWith(".png")) return false
+        return path.startsWith("/sdcard/") || path.startsWith("/storage/emulated/0/")
+    }
+
+    internal fun extractPhysicalDisplayIdFromUniqueId(uniqueId: String?): String? {
+        val raw = uniqueId?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        val candidate = raw.removePrefix("local:").trim()
+        return candidate.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+    }
+
+    internal fun extractPhysicalDisplayIdFromAddress(address: Any?): String? {
+        if (address == null) return null
+        return try {
+            val physId = address.javaClass.getMethod("getPhysicalDisplayId").invoke(address) as? Long
+                ?: return null
+            java.lang.Long.toUnsignedString(physId).takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    internal fun parseSurfaceFlingerDisplayIds(
+        sfOut: String,
+        topPorts: Set<String> = DeviceProfile.allTopSfPorts,
+        bottomPorts: Set<String> = DeviceProfile.allBottomSfPorts
+    ): Pair<String?, String?> {
+        var topPhysId: String? = null
+        var bottomPhysId: String? = null
+        val regex = Regex("""Display\s+(\d+)\s+\([^\n\rD]*?port=(\d+)""")
+        for (match in regex.findAll(sfOut)) {
+            val physId = match.groupValues[1]
+            val port = match.groupValues[2]
+            if (port in topPorts && topPhysId.isNullOrEmpty()) {
+                topPhysId = physId
+            }
+            if (port in bottomPorts && bottomPhysId.isNullOrEmpty()) {
+                bottomPhysId = physId
+            }
+        }
+        return topPhysId to bottomPhysId
     }
 }

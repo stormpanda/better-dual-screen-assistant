@@ -905,12 +905,50 @@ object PrivilegedBridge {
     }
 
     internal fun resolvePhysicalDisplayId(context: Context, logicalDisplayId: Int): String? {
-        return try {
+        try {
             val dm = context.getSystemService(DisplayManager::class.java)
-            val display = dm?.getDisplay(logicalDisplayId) ?: return null
-            val uniqueId = display.javaClass.getMethod("getUniqueId").invoke(display) as? String
-            val candidate = uniqueId?.removePrefix("local:")?.trim()
-            candidate?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+            val display = dm?.getDisplay(logicalDisplayId)
+            if (display != null) {
+                val uniqueId = try {
+                    display.javaClass.getMethod("getUniqueId").invoke(display) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+                val address = try {
+                    display.javaClass.getMethod("getAddress").invoke(display)
+                } catch (_: Throwable) {
+                    null
+                }
+                PrivilegedHelperMain.extractPhysicalDisplayIdFromAddress(address)?.let { return it }
+            }
+        } catch (_: Throwable) {
+        }
+
+        return try {
+            val smClass = Class.forName("android.os.ServiceManager")
+            val dmBinder = smClass.getMethod("getService", String::class.java)
+                .invoke(null, "display") as? IBinder ?: return null
+            val dmStub = Class.forName("android.hardware.display.IDisplayManager\$Stub")
+            val dmProxy = dmStub.getMethod("asInterface", IBinder::class.java).invoke(null, dmBinder)
+                ?: return null
+            val info = dmProxy.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                .invoke(dmProxy, logicalDisplayId) ?: return null
+            val infoClass = info.javaClass
+            val uniqueId = try {
+                infoClass.getField("uniqueId").get(info) as? String
+            } catch (_: Throwable) {
+                null
+            }
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+            val address = try {
+                infoClass.getField("address").get(info)
+            } catch (_: Throwable) {
+                null
+            }
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromAddress(address)
         } catch (_: Throwable) {
             null
         }
@@ -921,57 +959,116 @@ object PrivilegedBridge {
      * or Both screens (`targetMode == 2`) into `/sdcard/Pictures/Screenshots/` and notifies MediaScanner.
      */
     fun captureScreenshot(context: Context, targetMode: Int): Boolean {
-        val bottomDisplayId = DeviceProfile.current(context).bottomDisplayId
-        var topPhysId: String? = resolvePhysicalDisplayId(context, 0)
-        var bottomPhysId: String? = resolvePhysicalDisplayId(context, bottomDisplayId)
-
-        if (topPhysId.isNullOrEmpty() || bottomPhysId.isNullOrEmpty()) {
-            val sfOut = PServerClient.exec("dumpsys SurfaceFlinger --display-id", wait = true).getOrDefault("")
-            val regex = Regex("""Display\s+(\d+)\s+\([^)]*port=(\d+)""")
-            for (match in regex.findAll(sfOut)) {
-                val physId = match.groupValues[1]
-                val port = match.groupValues[2]
-                if (port in DeviceProfile.allTopSfPorts && topPhysId.isNullOrEmpty()) {
-                    topPhysId = physId
-                }
-                if (port in DeviceProfile.allBottomSfPorts && bottomPhysId.isNullOrEmpty()) {
-                    bottomPhysId = physId
-                }
-            }
-        }
+        val wantTop = targetMode == 0 || targetMode == 2
+        val wantBottom = targetMode == 1 || targetMode == 2
+        if (!wantTop && !wantBottom) return false
 
         val dir = "/sdcard/Pictures/Screenshots"
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
             .format(java.util.Date())
-        val paths = mutableListOf<String>()
-        val cmds = mutableListOf("mkdir -p $dir")
+        val topPath = if (wantTop) "$dir/Screenshot_${ts}_Top.png" else ""
+        val bottomPath = if (wantBottom) "$dir/Screenshot_${ts}_Bottom.png" else ""
+        val paths = buildList {
+            if (wantTop) add(topPath)
+            if (wantBottom) add(bottomPath)
+        }
 
-        if (targetMode == 0 || targetMode == 2) {
-            val topPath = "$dir/Screenshot_${ts}_Top.png"
-            paths.add(topPath)
+        // 1. Primary path: PrivilegedHelperMain (UID 0) with full hidden-API access and multi-tier fallback
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeInt(targetMode)
+                data.writeString(topPath)
+                data.writeString(bottomPath)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_CAPTURE_SCREENSHOT, data, reply, 0)
+                reply.readException()
+                if (reply.readInt() == 1) {
+                    scanScreenshotFiles(context, paths)
+                    return true
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper TRANSACTION_CAPTURE_SCREENSHOT failed; falling back", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+
+        // 2. Fallback path: resolve physical display IDs (flattening newlines for pservice single-line fgets)
+        val profile = DeviceProfile.current(context)
+        val bottomDisplayId = profile.bottomDisplayId
+        var topPhysId: String? = if (wantTop) resolvePhysicalDisplayId(context, 0) else null
+        var bottomPhysId: String? = if (wantBottom) resolvePhysicalDisplayId(context, bottomDisplayId) else null
+
+        if ((wantTop && topPhysId.isNullOrEmpty()) || (wantBottom && bottomPhysId.isNullOrEmpty())) {
+            val sfOut = PServerClient.exec(
+                "dumpsys SurfaceFlinger --display-id | tr '\\n' ' '",
+                wait = true
+            ).getOrDefault("")
+            val (parsedTop, parsedBottom) = PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(
+                sfOut = sfOut,
+                topPorts = setOf(profile.topSfPort),
+                bottomPorts = setOf(profile.bottomSfPort)
+            )
+            val (allTop, allBottom) = PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(sfOut)
+            if (topPhysId.isNullOrEmpty()) {
+                topPhysId = parsedTop ?: allTop
+            }
+            if (bottomPhysId.isNullOrEmpty()) {
+                bottomPhysId = parsedBottom ?: allBottom
+            }
+        }
+
+        if (wantBottom && bottomPhysId.isNullOrEmpty()) {
+            Log.w(TAG, "Unable to resolve physical display ID for bottom display $bottomDisplayId")
+            return false
+        }
+
+        val cmds = mutableListOf("mkdir -p $dir")
+        if (wantTop) {
             val dArg = if (!topPhysId.isNullOrEmpty()) "-d $topPhysId" else ""
             cmds.add("/system/bin/screencap -p $dArg $topPath")
         }
-        if (targetMode == 1 || targetMode == 2) {
-            val bottomPath = "$dir/Screenshot_${ts}_Bottom.png"
-            paths.add(bottomPath)
-            val dArg = if (!bottomPhysId.isNullOrEmpty()) "-d $bottomPhysId" else "-d $bottomDisplayId"
-            cmds.add("/system/bin/screencap -p $dArg $bottomPath")
+        if (wantBottom) {
+            cmds.add("/system/bin/screencap -p -d $bottomPhysId $bottomPath")
         }
 
         val res = PServerClient.exec(cmds.joinToString(" && "), wait = true)
-        if (paths.isNotEmpty()) {
-            try {
-                android.media.MediaScannerConnection.scanFile(
-                    context.applicationContext,
-                    paths.toTypedArray(),
-                    arrayOf("image/png"),
-                    null
-                )
-            } catch (_: Throwable) {
+        var allNonEmpty = res.isSuccess
+        if (File("/sdcard").exists()) {
+            for (p in paths) {
+                val f = File(p)
+                if (!f.exists() || f.length() <= 0L) {
+                    allNonEmpty = false
+                    if (f.exists() && f.length() == 0L) {
+                        try {
+                            f.delete()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
             }
         }
-        return res.isSuccess
+        if (allNonEmpty) {
+            scanScreenshotFiles(context, paths)
+        }
+        return allNonEmpty
+    }
+
+    private fun scanScreenshotFiles(context: Context, paths: List<String>) {
+        if (paths.isEmpty()) return
+        try {
+            android.media.MediaScannerConnection.scanFile(
+                context.applicationContext,
+                paths.toTypedArray(),
+                Array(paths.size) { "image/png" },
+                null
+            )
+        } catch (_: Throwable) {
+        }
     }
 
     fun applyOsThemeOverlay(
