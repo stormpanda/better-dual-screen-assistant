@@ -312,4 +312,101 @@ class TccThemeAndOverlayFormatTest {
         )
         assertTrue(zeroCutOutline is Outline.Rectangle)
     }
+
+    @Test
+    fun `computeOverlayNormalizedDensity and LookSpecs preserve exact native pixels and scale cross-device proportionally`() {
+        val thorDensity = computeOverlayNormalizedDensity(widthPx = 1240, heightPx = 1080)
+        val duoDensity = computeOverlayNormalizedDensity(widthPx = 1280, heightPx = 960)
+        val future720pDensity = computeOverlayNormalizedDensity(widthPx = 1280, heightPx = 720)
+
+        assertEquals(1.5f, thorDensity, 0.0001f)
+        assertEquals(4f / 3f, duoDensity, 0.0001f)
+        assertEquals(1.0f, future720pDensity, 0.0001f)
+        assertEquals(1.5f, computeOverlayNormalizedDensity(widthPx = 0, heightPx = 0, fallbackDensity = 1.5f), 0.0001f)
+
+        // 1. Thor + AYN Look: exact bit-for-bit pixel match with stock 369 dpi (2.30625x)
+        val rawThorStockDensity = 369f / 160f
+        assertEquals(
+            50.5f * rawThorStockDensity,
+            AynLookSpec.tile.modeTileSize.value * thorDensity,
+            0.001f
+        )
+        assertEquals(
+            15f * rawThorStockDensity,
+            AynLookSpec.statusBar.fontSize.value * thorDensity,
+            0.001f
+        )
+        assertEquals(
+            46f * rawThorStockDensity,
+            AynLookSpec.dialog.rowHeight.value * thorDensity,
+            0.001f
+        )
+
+        // 2. Duo + Retroid Look: exact pixel match with calibrated 1280x960 stock assistant
+        assertEquals(90f, RetroidLookSpec.tile.modeTileSize.value * duoDensity, 0.01f)
+        assertEquals(70f, RetroidLookSpec.tile.qsTileSize.value * duoDensity, 0.01f)
+        assertEquals(101.333f, RetroidLookSpec.dialog.rowHeight.value * duoDensity, 0.01f)
+
+        // 3. Cross-device height proportionality (960 / 1080 on Duo+AYN, 1080 / 960 on Thor+Retroid)
+        assertEquals(
+            (AynLookSpec.tile.modeTileSize.value * thorDensity) * (960f / 1080f),
+            AynLookSpec.tile.modeTileSize.value * duoDensity,
+            0.01f
+        )
+        assertEquals(
+            (RetroidLookSpec.tile.modeTileSize.value * duoDensity) * (1080f / 960f),
+            RetroidLookSpec.tile.modeTileSize.value * thorDensity,
+            0.01f
+        )
+
+        // 4. Aspect-ratio interpolation and responsive dialog width clamping across display shapes
+        val thorMetrics = OverlayViewportMetrics(
+            widthPx = 1240,
+            heightPx = 1080,
+            normalizedDensity = thorDensity,
+            widthDp = (1240f / thorDensity).dp,
+            heightDp = 720.dp,
+            aspectRatio = 1240f / 1080f
+        )
+        val duoMetrics = OverlayViewportMetrics(
+            widthPx = 1280,
+            heightPx = 960,
+            normalizedDensity = duoDensity,
+            widthDp = 960.dp,
+            heightDp = 720.dp,
+            aspectRatio = 1280f / 960f
+        )
+        val squareMetrics = OverlayViewportMetrics(
+            widthPx = 1080,
+            heightPx = 1080,
+            normalizedDensity = 1.5f,
+            widthDp = 720.dp,
+            heightDp = 720.dp,
+            aspectRatio = 1.0f
+        )
+
+        assertEquals(0f, thorMetrics.aspectFraction(), 0.001f)
+        assertEquals(1f, duoMetrics.aspectFraction(), 0.001f)
+        assertEquals(0f, squareMetrics.aspectFraction(), 0.001f)
+
+        // Retroid dialog keeps full 528dp width on both Duo (960dp) and Thor (826.7dp), clamping on 1:1 (720dp)
+        assertEquals(
+            528f,
+            resolveResponsiveDialogWidthDp(528.dp, duoMetrics.widthDp, 0.72f).value,
+            0.01f
+        )
+        assertEquals(
+            528f,
+            resolveResponsiveDialogWidthDp(528.dp, thorMetrics.widthDp, 0.72f).value,
+            0.01f
+        )
+        assertEquals(
+            720f * 0.72f,
+            resolveResponsiveDialogWidthDp(528.dp, squareMetrics.widthDp, 0.72f).value,
+            0.01f
+        )
+
+        assertEquals(AynLookSpec, lookSpecFor(TccUiLook.AYN))
+        assertEquals(RetroidLookSpec, lookSpecFor(TccUiLook.RETROID))
+    }
 }

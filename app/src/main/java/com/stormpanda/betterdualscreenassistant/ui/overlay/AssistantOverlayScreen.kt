@@ -8,7 +8,6 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,15 +26,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,8 +44,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
@@ -61,7 +55,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
-import androidx.compose.ui.unit.sp
 import androidx.core.content.res.ResourcesCompat
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
@@ -72,7 +65,6 @@ import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareInfoComponentCard
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareRingGauge
 import com.stormpanda.betterdualscreenassistant.ui.components.HorizontalSlidingBar
-import com.stormpanda.betterdualscreenassistant.ui.components.PixelCornerCutShape
 import com.stormpanda.betterdualscreenassistant.ui.components.SliderKind
 import com.stormpanda.betterdualscreenassistant.ui.components.TccButton
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogFpsSelectorRow
@@ -81,15 +73,17 @@ import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogSegmented
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogToggleRow
 import com.stormpanda.betterdualscreenassistant.ui.components.TccOptionDialog
 import com.stormpanda.betterdualscreenassistant.ui.components.TccRadioCheckIndicator
+import com.stormpanda.betterdualscreenassistant.ui.components.TccTileVariant
 import com.stormpanda.betterdualscreenassistant.ui.statusbar.StatusBarRow
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalOverlayViewport
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
 import com.stormpanda.betterdualscreenassistant.ui.theme.MegingiardAccentPresets
+import com.stormpanda.betterdualscreenassistant.ui.theme.OverlayViewport
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
-import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
 import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLookPreference
-import com.stormpanda.betterdualscreenassistant.ui.theme.contrastingContentColor
+import com.stormpanda.betterdualscreenassistant.ui.theme.resolveResponsiveDialogWidthDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccFontFamily
@@ -238,612 +232,615 @@ fun AssistantOverlayScreen(
         syncedMegingiardOption = syncedMegingiardOption,
         syncedMegingiardAccentArgb = syncedMegingiardAccentArgb
     ) {
-        val colors = LocalTccColors.current
-        val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+        OverlayViewport {
+            val colors = LocalTccColors.current
+            val lookSpec = LocalTccLookSpec.current
+            val viewport = LocalOverlayViewport.current
+            val navSpec = lookSpec.navBar
+            val sidePad = lookSpec.outerHorizontalPadding
 
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.primaryBackground)
-                .onKeyEvent { event ->
-                    if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
-                        (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
-                            event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_B)
-                    ) {
-                        if (activeDialog != ActiveDialog.NONE) {
-                            activeDialog = ActiveDialog.NONE
-                            true
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.primaryBackground)
+                    .onKeyEvent { event ->
+                        if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                            (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_B)
+                        ) {
+                            if (activeDialog != ActiveDialog.NONE) {
+                                activeDialog = ActiveDialog.NONE
+                                true
+                            } else {
+                                onDismissOverlayRequest()
+                                true
+                            }
                         } else {
-                            onDismissOverlayRequest()
-                            true
+                            false
                         }
-                    } else {
-                        false
-                    }
-                },
-            contentAlignment = Alignment.TopCenter
-        ) {
-            val contentWidthModifier = if (isRetroidLook && (maxWidth / maxHeight.coerceAtLeast(1.dp)) > 1.2f) {
-                Modifier
-                    .width(min(maxWidth, maxHeight * 1.3f))
-                    .fillMaxHeight()
-            } else {
-                Modifier.fillMaxSize()
-            }
-            val sidePad = if (isRetroidLook) 14.dp else 15.dp
+                    },
+                contentAlignment = Alignment.TopCenter
+            ) {
+                val maxContentWidth = viewport.heightDp * lookSpec.maxContentAspectRatio
+                val contentWidthModifier = if (viewport.widthDp > maxContentWidth) {
+                    Modifier
+                        .width(maxContentWidth)
+                        .fillMaxHeight()
+                } else {
+                    Modifier.fillMaxSize()
+                }
 
-            // Replicates main_layout.xml (and RP_PIXEL wideScreenWidthScale = 1.3 when in Retroid look):
-            Column(modifier = contentWidthModifier) {
-                StatusBarRow(
-                    onTimeClick = onCleanMemoryRequest,
-                    isRecording = screenRecordingState.isRecording,
-                    recordingElapsedText = recordingElapsedText,
-                    onStopRecordingClick = onStopScreenRecordingRequest
-                )
+                Column(modifier = contentWidthModifier) {
+                    StatusBarRow(
+                        onTimeClick = onCleanMemoryRequest,
+                        isRecording = screenRecordingState.isRecording,
+                        recordingElapsedText = recordingElapsedText,
+                        onStopRecordingClick = onStopScreenRecordingRequest
+                    )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(
-                            start = sidePad,
-                            end = sidePad,
-                            bottom = if (isRetroidLook) 3.dp else 5.dp
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (activeTab == 0) {
-                        ScreenControlTab(
-                            dualScreenMode = dualScreenMode,
-                            dualBrightness = dualBrightness,
-                            topBrightness = topBrightness,
-                            bottomBrightness = bottomBrightness,
-                            isDualBrightnessActive = isDualBrightnessActive,
-                            showSwapScreensButton = showSwapScreensButton,
-                            supportsAmbientLight = profile.supportsAmbientLight,
-                            showLedBrightnessSlider = showLedBrightnessSlider,
-                            ledBrightnessPercent = ledBrightnessPercent,
-                            ambientLightEnabled = ambientLight,
-                            dualVolume = dualVolume,
-                            primaryVolume = primaryVolume,
-                            secondaryVolume = secondaryVolume,
-                            isDualVolumeActive = isDualVolumeActive,
-                            onSelectDisplayMode = { mode ->
-                                if (mode == 1 && dualScreenMode != 1) {
-                                    // Replicate ScreenModeControlPanel.java line 286:
-                                    // Tapping "Only top screen" shows the Tip dialog if enabled
-                                    if (repository.shouldShowCloseBottomScreenTip()) {
-                                        activeDialog = ActiveDialog.CLOSE_BOTTOM_TIP
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(
+                                start = sidePad,
+                                end = sidePad,
+                                bottom = lookSpec.contentBottomPadding
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (activeTab == 0) {
+                            ScreenControlTab(
+                                dualScreenMode = dualScreenMode,
+                                dualBrightness = dualBrightness,
+                                topBrightness = topBrightness,
+                                bottomBrightness = bottomBrightness,
+                                isDualBrightnessActive = isDualBrightnessActive,
+                                showSwapScreensButton = showSwapScreensButton,
+                                supportsAmbientLight = profile.supportsAmbientLight,
+                                showLedBrightnessSlider = showLedBrightnessSlider,
+                                ledBrightnessPercent = ledBrightnessPercent,
+                                ambientLightEnabled = ambientLight,
+                                dualVolume = dualVolume,
+                                primaryVolume = primaryVolume,
+                                secondaryVolume = secondaryVolume,
+                                isDualVolumeActive = isDualVolumeActive,
+                                onSelectDisplayMode = { mode ->
+                                    if (mode == 1 && dualScreenMode != 1) {
+                                        if (repository.shouldShowCloseBottomScreenTip()) {
+                                            activeDialog = ActiveDialog.CLOSE_BOTTOM_TIP
+                                        } else {
+                                            repository.setDualScreenDisplayMode(1)
+                                        }
                                     } else {
-                                        repository.setDualScreenDisplayMode(1)
+                                        repository.setDualScreenDisplayMode(mode)
                                     }
+                                },
+                                onSwapScreens = onSwapScreensRequest,
+                                onDualBrightnessChange = { pct, temp ->
+                                    repository.setDualScreenBrightnessPercent(pct, temp)
+                                },
+                                onTopBrightnessChange = { pct, temp ->
+                                    repository.setDisplayBrightnessPercent(0, pct, temp)
+                                },
+                                onBottomBrightnessChange = { pct, temp ->
+                                    repository.setDisplayBrightnessPercent(profile.bottomDisplayId, pct, temp)
+                                },
+                                onLedBrightnessChange = { pct ->
+                                    repository.setLedBrightnessPercent(pct)
+                                },
+                                onDualVolumeChange = { pct ->
+                                    repository.setDualVolumePercent(pct)
+                                },
+                                onPrimaryVolumeChange = { pct ->
+                                    repository.setPrimaryVolumePercent(pct)
+                                },
+                                onSecondaryVolumeChange = { pct ->
+                                    repository.setSecondaryVolumePercent(pct)
+                                }
+                            )
+                        } else {
+                            SystemSettingsTab(
+                                profile = profile,
+                                telemetry = telemetry,
+                                tempFahrenheit = tempFahrenheit,
+                                refreshRate = refreshRate,
+                                dualScreenMode = dualScreenMode,
+                                focusLock = focusLock,
+                                performanceMode = performanceMode,
+                                fanMode = fanMode,
+                                controllerStyle = controllerStyle,
+                                chargingSeparation = chargingSeparation,
+                                vibrateOn = vibrateOn,
+                                ambientLight = ambientLight,
+                                forceLandscape = forceLandscape,
+                                themeMode = themeMode,
+                                isMegingiardAvailable = isMegingiardAvailable,
+                                syncedMegingiardOption = syncedMegingiardOption,
+                                wifiEnabled = wifiEnabled,
+                                bluetoothEnabled = bluetoothEnabled,
+                                dndEnabled = dndEnabled,
+                                airplaneModeEnabled = airplaneModeEnabled,
+                                touchLockEnabled = touchLockEnabled,
+                                triggerMode = triggerMode,
+                                chargeLimit80 = chargeLimit80,
+                                gamepadMouseMode = gamepadMouseMode,
+                                keyMapperEnabled = keyMapperEnabled,
+                                keepScreenOn = keepScreenOn,
+                                preventAccidentalHome = preventAccidentalHome,
+                                isRecordingScreen = screenRecordingState.isRecording,
+                                recordingElapsedText = recordingElapsedText,
+                                quickTileOrder = quickTileOrder,
+                                disabledQuickTiles = disabledQuickTiles,
+                                onToggleRefreshRate = { repository.toggleRefreshRate() },
+                                onToggleTempUnit = { repository.toggleTempFahrenheit() },
+                                onOpenDialog = { dialog -> activeDialog = dialog },
+                                onStopScreenRecording = onStopScreenRecordingRequest,
+                                onToggleChargingSeparation = { repository.toggleChargingSeparation() },
+                                onToggleVibrate = { repository.toggleVibrate() },
+                                onCleanMemory = onCleanMemoryRequest,
+                                onClearAllTasks = onClearAllTasksRequest,
+                                onToggleAmbientLight = { repository.toggleAmbientLight() },
+                                onToggleForceLandscape = { repository.toggleForceLandscape() },
+                                onToggleWifi = { repository.toggleWifi() },
+                                onToggleBluetooth = { repository.toggleBluetooth() },
+                                onToggleDnd = { repository.toggleDnd() },
+                                onToggleAirplaneMode = { repository.toggleAirplaneMode() },
+                                onToggleTouchLock = onToggleTouchLockRequest,
+                                onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
+                                onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
+                                onToggleKeyMapper = { repository.toggleKeyMapper() },
+                                onToggleKeepScreenOn = { repository.toggleKeepScreenOn() },
+                                onTogglePreventAccidentalHome = { repository.togglePreventAccidentalHome() }
+                            )
+                        }
+                    }
+
+                    NavigationBarSection(
+                        activeTab = activeTab,
+                        showEditButton = showEditButton,
+                        onSelectTab = onSelectTab,
+                        onOpenRecents = onOpenRecentsRequest,
+                        onOpenEdit = onOpenEditRequest,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (navSpec.fixedOuterHeight != null) {
+                                    Modifier.height(navSpec.fixedOuterHeight)
                                 } else {
-                                    repository.setDualScreenDisplayMode(mode)
+                                    Modifier
+                                }
+                            )
+                            .padding(
+                                top = navSpec.outerTopPadding,
+                                start = sidePad,
+                                end = sidePad,
+                                bottom = navSpec.outerBottomPadding
+                            )
+                    )
+                }
+
+                // Modal Option Dialogs
+                when (activeDialog) {
+                    ActiveDialog.NONE -> Unit
+
+                    ActiveDialog.CLOSE_BOTTOM_TIP -> {
+                        CloseScreenTipOverlay(
+                            tipBodyOverride = profile.overrideCloseBottomTipText,
+                            onCancel = { activeDialog = ActiveDialog.NONE },
+                            onConfirm = { noMore ->
+                                if (noMore) {
+                                    repository.setNoMoreCloseBottomScreenTip(true)
+                                }
+                                activeDialog = ActiveDialog.NONE
+                                coroutineScope.launch {
+                                    delay(100L)
+                                    repository.setDualScreenDisplayMode(1)
+                                }
+                            }
+                        )
+                    }
+
+                    ActiveDialog.FOCUS_LOCK -> {
+                        val options = listOf(
+                            TccDialogOption(
+                                id = 0,
+                                label = stringResource(R.string.key_focus_mode_touch_switchable),
+                                iconRes = R.drawable.ic_screen_focus_lock_switchable
+                            ),
+                            TccDialogOption(
+                                id = 1,
+                                label = stringResource(R.string.key_focus_mode_lock_on_upper_screen),
+                                iconRes = R.drawable.ic_screen_focus_lock_upper
+                            ),
+                            TccDialogOption(
+                                id = 2,
+                                label = stringResource(R.string.key_focus_mode_lock_on_lower_screen),
+                                iconRes = R.drawable.ic_screen_focus_lock_lower
+                            )
+                        )
+                        TccOptionDialog(
+                            title = stringResource(R.string.key_focus_mode_title_text),
+                            titleIconRes = R.drawable.ic_screen_focus_lock_mode,
+                            options = options,
+                            selectedId = focusLock,
+                            onSelectOption = { selected ->
+                                repository.setScreenFocusLock(selected)
+                                coroutineScope.launch {
+                                    delay(300L)
+                                    activeDialog = ActiveDialog.NONE
                                 }
                             },
-                            onSwapScreens = onSwapScreensRequest,
-                            onDualBrightnessChange = { pct, temp ->
-                                repository.setDualScreenBrightnessPercent(pct, temp)
-                            },
-                            onTopBrightnessChange = { pct, temp ->
-                                repository.setDisplayBrightnessPercent(0, pct, temp)
-                            },
-                            onBottomBrightnessChange = { pct, temp ->
-                                repository.setDisplayBrightnessPercent(profile.bottomDisplayId, pct, temp)
-                            },
-                            onLedBrightnessChange = { pct ->
-                                repository.setLedBrightnessPercent(pct)
-                            },
-                            onDualVolumeChange = { pct ->
-                                repository.setDualVolumePercent(pct)
-                            },
-                            onPrimaryVolumeChange = { pct ->
-                                repository.setPrimaryVolumePercent(pct)
-                            },
-                            onSecondaryVolumeChange = { pct ->
-                                repository.setSecondaryVolumePercent(pct)
-                            }
-                        )
-                    } else {
-                        SystemSettingsTab(
-                            profile = profile,
-                            telemetry = telemetry,
-                            tempFahrenheit = tempFahrenheit,
-                            refreshRate = refreshRate,
-                            dualScreenMode = dualScreenMode,
-                            focusLock = focusLock,
-                            performanceMode = performanceMode,
-                            fanMode = fanMode,
-                            controllerStyle = controllerStyle,
-                            chargingSeparation = chargingSeparation,
-                            vibrateOn = vibrateOn,
-                            ambientLight = ambientLight,
-                            forceLandscape = forceLandscape,
-                            themeMode = themeMode,
-                            isMegingiardAvailable = isMegingiardAvailable,
-                            syncedMegingiardOption = syncedMegingiardOption,
-                            wifiEnabled = wifiEnabled,
-                            bluetoothEnabled = bluetoothEnabled,
-                            dndEnabled = dndEnabled,
-                            airplaneModeEnabled = airplaneModeEnabled,
-                            touchLockEnabled = touchLockEnabled,
-                            triggerMode = triggerMode,
-                            chargeLimit80 = chargeLimit80,
-                            gamepadMouseMode = gamepadMouseMode,
-                            keyMapperEnabled = keyMapperEnabled,
-                            keepScreenOn = keepScreenOn,
-                            preventAccidentalHome = preventAccidentalHome,
-                            isRecordingScreen = screenRecordingState.isRecording,
-                            recordingElapsedText = recordingElapsedText,
-                            quickTileOrder = quickTileOrder,
-                            disabledQuickTiles = disabledQuickTiles,
-                            onToggleRefreshRate = { repository.toggleRefreshRate() },
-                            onToggleTempUnit = { repository.toggleTempFahrenheit() },
-                            onOpenDialog = { dialog -> activeDialog = dialog },
-                            onStopScreenRecording = onStopScreenRecordingRequest,
-                            onToggleChargingSeparation = { repository.toggleChargingSeparation() },
-                            onToggleVibrate = { repository.toggleVibrate() },
-                            onCleanMemory = onCleanMemoryRequest,
-                            onClearAllTasks = onClearAllTasksRequest,
-                            onToggleAmbientLight = { repository.toggleAmbientLight() },
-                            onToggleForceLandscape = { repository.toggleForceLandscape() },
-                            onToggleWifi = { repository.toggleWifi() },
-                            onToggleBluetooth = { repository.toggleBluetooth() },
-                            onToggleDnd = { repository.toggleDnd() },
-                            onToggleAirplaneMode = { repository.toggleAirplaneMode() },
-                            onToggleTouchLock = onToggleTouchLockRequest,
-                            onToggleChargeLimit80 = { repository.toggleChargeLimit80() },
-                            onToggleGamepadMouseMode = { repository.toggleGamepadMouseMode() },
-                            onToggleKeyMapper = { repository.toggleKeyMapper() },
-                            onToggleKeepScreenOn = { repository.toggleKeepScreenOn() },
-                            onTogglePreventAccidentalHome = { repository.togglePreventAccidentalHome() }
+                            onDismiss = { activeDialog = ActiveDialog.NONE }
                         )
                     }
-                }
 
-                NavigationBarSection(
-                    activeTab = activeTab,
-                    showEditButton = showEditButton,
-                    onSelectTab = onSelectTab,
-                    onOpenRecents = onOpenRecentsRequest,
-                    onOpenEdit = onOpenEditRequest,
-                    modifier = if (isRetroidLook) {
-                        Modifier
-                            .fillMaxWidth()
-                            .height(155.5.dp)
-                            .padding(top = 15.dp, start = sidePad, end = sidePad, bottom = 30.5.dp)
-                    } else {
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 5.dp, start = 15.dp, end = 15.dp, bottom = 15.dp)
+                    ActiveDialog.PERFORMANCE_MODE -> {
+                        val options = listOf(
+                            TccDialogOption(
+                                id = 0,
+                                label = stringResource(R.string.text_performance_mode_normal),
+                                iconRes = R.drawable.ic_normal_mode
+                            ),
+                            TccDialogOption(
+                                id = 1,
+                                label = stringResource(R.string.text_performance_mode_performance),
+                                iconRes = R.drawable.ic_performance_mode
+                            ),
+                            TccDialogOption(
+                                id = 2,
+                                label = stringResource(R.string.text_performance_mode_height_performance),
+                                iconRes = R.drawable.ic_height_performance_mode
+                            )
+                        )
+                        TccOptionDialog(
+                            title = stringResource(R.string.text_performance_mode_title),
+                            titleIconRes = R.drawable.ic_qs_performance,
+                            options = options,
+                            selectedId = performanceMode,
+                            onSelectOption = { selected ->
+                                repository.setPerformanceMode(selected)
+                                if (selected == 2 && fanMode == 0) {
+                                    repository.setFanMode(4)
+                                }
+                                coroutineScope.launch {
+                                    delay(300L)
+                                    activeDialog = ActiveDialog.NONE
+                                }
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE }
+                        )
                     }
-                )
-            }
 
-            // Modal Option Dialogs
-            when (activeDialog) {
-                ActiveDialog.NONE -> Unit
-
-                ActiveDialog.CLOSE_BOTTOM_TIP -> {
-                    CloseScreenTipOverlay(
-                        profile = profile,
-                        themeMode = themeMode,
-                        onCancel = { activeDialog = ActiveDialog.NONE },
-                        onConfirm = { noMore ->
-                            if (noMore) {
-                                repository.setNoMoreCloseBottomScreenTip(true)
+                    ActiveDialog.FAN_CONTROL -> {
+                        val options = buildList {
+                            if (performanceMode != 2) {
+                                add(
+                                    TccDialogOption(
+                                        id = 0,
+                                        label = stringResource(R.string.text_fan_control_off),
+                                        iconRes = R.drawable.ic_ban_on_use
+                                    )
+                                )
                             }
-                            activeDialog = ActiveDialog.NONE
-                            coroutineScope.launch {
-                                delay(100L)
-                                repository.setDualScreenDisplayMode(1)
-                            }
-                        }
-                    )
-                }
-
-                ActiveDialog.FOCUS_LOCK -> {
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 0,
-                            label = stringResource(R.string.key_focus_mode_touch_switchable),
-                            iconRes = R.drawable.ic_screen_focus_lock_switchable
-                        ),
-                        TccDialogOption(
-                            id = 1,
-                            label = stringResource(R.string.key_focus_mode_lock_on_upper_screen),
-                            iconRes = R.drawable.ic_screen_focus_lock_upper
-                        ),
-                        TccDialogOption(
-                            id = 2,
-                            label = stringResource(R.string.key_focus_mode_lock_on_lower_screen),
-                            iconRes = R.drawable.ic_screen_focus_lock_lower
-                        )
-                    )
-                    TccOptionDialog(
-                        title = stringResource(R.string.key_focus_mode_title_text),
-                        titleIconRes = R.drawable.ic_screen_focus_lock_mode,
-                        options = options,
-                        selectedId = focusLock,
-                        onSelectOption = { selected ->
-                            repository.setScreenFocusLock(selected)
-                            coroutineScope.launch {
-                                delay(300L)
-                                activeDialog = ActiveDialog.NONE
-                            }
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
-                    )
-                }
-
-                ActiveDialog.PERFORMANCE_MODE -> {
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 0,
-                            label = stringResource(R.string.text_performance_mode_normal),
-                            iconRes = R.drawable.ic_normal_mode
-                        ),
-                        TccDialogOption(
-                            id = 1,
-                            label = stringResource(R.string.text_performance_mode_performance),
-                            iconRes = R.drawable.ic_performance_mode
-                        ),
-                        TccDialogOption(
-                            id = 2,
-                            label = stringResource(R.string.text_performance_mode_height_performance),
-                            iconRes = R.drawable.ic_height_performance_mode
-                        )
-                    )
-                    TccOptionDialog(
-                        title = stringResource(R.string.text_performance_mode_title),
-                        titleIconRes = R.drawable.ic_qs_performance,
-                        options = options,
-                        selectedId = performanceMode,
-                        onSelectOption = { selected ->
-                            repository.setPerformanceMode(selected)
-                            if (selected == 2 && fanMode == 0) {
-                                repository.setFanMode(4)
-                            }
-                            coroutineScope.launch {
-                                delay(300L)
-                                activeDialog = ActiveDialog.NONE
-                            }
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
-                    )
-                }
-
-                ActiveDialog.FAN_CONTROL -> {
-                    val options = buildList {
-                        if (performanceMode != 2) {
                             add(
                                 TccDialogOption(
-                                    id = 0,
-                                    label = stringResource(R.string.text_fan_control_off),
-                                    iconRes = R.drawable.ic_ban_on_use
+                                    id = 1,
+                                    label = stringResource(R.string.text_fan_control_low_speed),
+                                    iconRes = R.drawable.ic_fan_quiet_mode
+                                )
+                            )
+                            add(
+                                TccDialogOption(
+                                    id = 4,
+                                    label = stringResource(R.string.text_fan_control_smart),
+                                    iconRes = R.drawable.ic_fan_smart_mode
+                                )
+                            )
+                            add(
+                                TccDialogOption(
+                                    id = 5,
+                                    label = stringResource(R.string.text_fan_control_medium_speed),
+                                    iconRes = R.drawable.ic_fan_sport_mode
+                                )
+                            )
+                            add(
+                                TccDialogOption(
+                                    id = 6,
+                                    label = stringResource(R.string.text_fan_control_custom),
+                                    iconRes = R.drawable.ic_fan_custom_mode
                                 )
                             )
                         }
-                        add(
+                        TccOptionDialog(
+                            title = stringResource(R.string.text_fan_control_title),
+                            titleIconRes = R.drawable.ic_qs_fan_control,
+                            options = options,
+                            selectedId = fanMode,
+                            showCustomFanSlider = true,
+                            customFanSpeed = fanSpeed,
+                            onCustomFanSpeedChange = { speed ->
+                                repository.setCustomFanSpeed(speed)
+                            },
+                            onSelectOption = { selected ->
+                                repository.setFanMode(selected)
+                                if (selected != 6) {
+                                    coroutineScope.launch {
+                                        delay(300L)
+                                        activeDialog = ActiveDialog.NONE
+                                    }
+                                }
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE }
+                        )
+                    }
+
+                    ActiveDialog.CONTROLLER_STYLE -> {
+                        val standardLabel = profile.overrideStandardControllerLabel
+                            ?: stringResource(R.string.fan_option_odin_style)
+                        val options = listOf(
+                            TccDialogOption(
+                                id = 2,
+                                label = stringResource(R.string.fan_option_disable),
+                                iconRes = R.drawable.ic_ban_on_use
+                            ),
+                            TccDialogOption(
+                                id = 0,
+                                label = stringResource(R.string.fan_option_xbox_style),
+                                iconRes = R.drawable.ic_controller__xbox_style
+                            ),
                             TccDialogOption(
                                 id = 1,
-                                label = stringResource(R.string.text_fan_control_low_speed),
-                                iconRes = R.drawable.ic_fan_quiet_mode
+                                label = standardLabel,
+                                iconRes = R.drawable.ic_controller_odin_style
                             )
                         )
-                        add(
-                            TccDialogOption(
-                                id = 4,
-                                label = stringResource(R.string.text_fan_control_smart),
-                                iconRes = R.drawable.ic_fan_smart_mode
-                            )
-                        )
-                        add(
-                            TccDialogOption(
-                                id = 5,
-                                label = stringResource(R.string.text_fan_control_medium_speed),
-                                iconRes = R.drawable.ic_fan_sport_mode
-                            )
-                        )
-                        add(
-                            TccDialogOption(
-                                id = 6,
-                                label = stringResource(R.string.text_fan_control_custom),
-                                iconRes = R.drawable.ic_fan_custom_mode
-                            )
-                        )
-                    }
-                    TccOptionDialog(
-                        title = stringResource(R.string.text_fan_control_title),
-                        titleIconRes = R.drawable.ic_qs_fan_control,
-                        options = options,
-                        selectedId = fanMode,
-                        showCustomFanSlider = true,
-                        customFanSpeed = fanSpeed,
-                        onCustomFanSpeedChange = { speed ->
-                            repository.setCustomFanSpeed(speed)
-                        },
-                        onSelectOption = { selected ->
-                            repository.setFanMode(selected)
-                            if (selected != 6) {
+                        TccOptionDialog(
+                            title = stringResource(R.string.text_handle_style_title),
+                            titleIconRes = R.drawable.ic_qs_controller_style,
+                            options = options,
+                            selectedId = controllerStyle,
+                            onSelectOption = { selected ->
+                                repository.setControllerStyle(selected)
                                 coroutineScope.launch {
                                     delay(300L)
                                     activeDialog = ActiveDialog.NONE
                                 }
-                            }
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
-                    )
-                }
-
-                ActiveDialog.CONTROLLER_STYLE -> {
-                    val standardLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-                        profile.standardControllerLabel
-                    } else {
-                        stringResource(R.string.fan_option_odin_style)
-                    }
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 2,
-                            label = stringResource(R.string.fan_option_disable),
-                            iconRes = R.drawable.ic_ban_on_use
-                        ),
-                        TccDialogOption(
-                            id = 0,
-                            label = stringResource(R.string.fan_option_xbox_style),
-                            iconRes = R.drawable.ic_controller__xbox_style
-                        ),
-                        TccDialogOption(
-                            id = 1,
-                            label = standardLabel,
-                            iconRes = R.drawable.ic_controller_odin_style
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE }
                         )
-                    )
-                    TccOptionDialog(
-                        title = stringResource(R.string.text_handle_style_title),
-                        titleIconRes = R.drawable.ic_qs_controller_style,
-                        options = options,
-                        selectedId = controllerStyle,
-                        onSelectOption = { selected ->
-                            repository.setControllerStyle(selected)
-                            coroutineScope.launch {
-                                delay(300L)
-                                activeDialog = ActiveDialog.NONE
-                            }
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
-                    )
-                }
+                    }
 
-                ActiveDialog.THEME_MODE -> {
-                    val rawSelectedThemeOption = AppThemeOption.fromId(themeMode)
-                    val selectedThemeOption = if (rawSelectedThemeOption == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
-                        syncedMegingiardOption
-                    } else {
-                        rawSelectedThemeOption
-                    }
-                    val customAccentColor = Color(customAccentArgb)
-                    val syncedAccentColor = syncedMegingiardAccentArgb?.let { Color(it) }
-                        ?: syncedMegingiardOption.previewAccent
-                    val visibleThemeOptions = AppThemeOption.entries.filter { opt ->
-                        opt != AppThemeOption.SYNC_MEGINGIARD || isMegingiardAvailable
-                    }
-                    val options = visibleThemeOptions.map { opt ->
-                        when (opt) {
-                            AppThemeOption.STOCK_SYSTEM -> TccDialogOption(
-                                id = opt.id,
-                                label = "${stringResource(R.string.text_system_theme)} (Stock)",
-                                iconRes = R.drawable.ic_qs_system_theme,
-                                preserveIconColors = true
-                            )
-                            AppThemeOption.STOCK_LIGHT -> TccDialogOption(
-                                id = opt.id,
-                                label = "${stringResource(R.string.text_light_theme)} (Stock)",
-                                iconRes = R.drawable.ic_qs_light_theme,
-                                preserveIconColors = true
-                            )
-                            AppThemeOption.STOCK_DARK -> TccDialogOption(
-                                id = opt.id,
-                                label = "${stringResource(R.string.text_dark_theme)} (Stock)",
-                                iconRes = R.drawable.ic_qs_dark_theme,
-                                preserveIconColors = true
-                            )
-                            AppThemeOption.SYNC_MEGINGIARD -> TccDialogOption(
-                                id = opt.id,
-                                label = "${opt.displayName} (${syncedMegingiardOption.shortTileLabel})",
-                                iconRes = R.drawable.ic_qs_theme_mode,
-                                swatchColors = syncedMegingiardOption.previewSurface to syncedAccentColor
-                            )
-                            AppThemeOption.MEGINGIARD_DARK, AppThemeOption.MEGINGIARD_DARK_OLED -> TccDialogOption(
-                                id = opt.id,
-                                label = opt.displayName,
-                                iconRes = R.drawable.ic_qs_theme_mode,
-                                swatchColors = opt.previewSurface to customAccentColor
-                            )
-                            else -> TccDialogOption(
-                                id = opt.id,
-                                label = opt.displayName,
-                                iconRes = R.drawable.ic_qs_theme_mode,
-                                swatchColors = opt.previewSurface to opt.previewAccent
-                            )
-                        }
-                    }
-                    TccOptionDialog(
-                        title = stringResource(R.string.text_theme_mode_title),
-                        titleIconRes = R.drawable.ic_qs_theme_mode,
-                        options = options,
-                        selectedId = selectedThemeOption.id,
-                        accentPresets = if (selectedThemeOption.supportsCustomAccent) {
-                            MegingiardAccentPresets
+                    ActiveDialog.THEME_MODE -> {
+                        val rawSelectedThemeOption = AppThemeOption.fromId(themeMode)
+                        val selectedThemeOption = if (rawSelectedThemeOption == AppThemeOption.SYNC_MEGINGIARD && !isMegingiardAvailable) {
+                            syncedMegingiardOption
                         } else {
-                            emptyList()
-                        },
-                        selectedAccentArgb = customAccentArgb,
-                        onSelectAccentColor = { color ->
-                            repository.setCustomAccentArgb(color.toArgb())
-                        },
-                        showOsThemeToggle = true,
-                        injectOsThemeEnabled = injectOsTheme,
-                        onToggleInjectOsTheme = { enabled ->
-                            repository.setInjectOsTheme(enabled)
-                        },
-                        onSelectOption = { selected ->
-                            repository.setThemeMode(selected)
-                            val newlySelected = AppThemeOption.fromId(selected)
-                            if (!newlySelected.supportsCustomAccent && !injectOsTheme) {
+                            rawSelectedThemeOption
+                        }
+                        val customAccentColor = Color(customAccentArgb)
+                        val syncedAccentColor = syncedMegingiardAccentArgb?.let { Color(it) }
+                            ?: syncedMegingiardOption.previewAccent
+                        val visibleThemeOptions = AppThemeOption.entries.filter { opt ->
+                            opt != AppThemeOption.SYNC_MEGINGIARD || isMegingiardAvailable
+                        }
+                        val options = visibleThemeOptions.map { opt ->
+                            when (opt) {
+                                AppThemeOption.STOCK_SYSTEM -> TccDialogOption(
+                                    id = opt.id,
+                                    label = "${stringResource(R.string.text_system_theme)} (Stock)",
+                                    iconRes = R.drawable.ic_qs_system_theme,
+                                    preserveIconColors = true
+                                )
+                                AppThemeOption.STOCK_LIGHT -> TccDialogOption(
+                                    id = opt.id,
+                                    label = "${stringResource(R.string.text_light_theme)} (Stock)",
+                                    iconRes = R.drawable.ic_qs_light_theme,
+                                    preserveIconColors = true
+                                )
+                                AppThemeOption.STOCK_DARK -> TccDialogOption(
+                                    id = opt.id,
+                                    label = "${stringResource(R.string.text_dark_theme)} (Stock)",
+                                    iconRes = R.drawable.ic_qs_dark_theme,
+                                    preserveIconColors = true
+                                )
+                                AppThemeOption.SYNC_MEGINGIARD -> TccDialogOption(
+                                    id = opt.id,
+                                    label = "${opt.displayName} (${syncedMegingiardOption.shortTileLabel})",
+                                    iconRes = R.drawable.ic_qs_theme_mode,
+                                    swatchColors = syncedMegingiardOption.previewSurface to syncedAccentColor
+                                )
+                                AppThemeOption.MEGINGIARD_DARK, AppThemeOption.MEGINGIARD_DARK_OLED -> TccDialogOption(
+                                    id = opt.id,
+                                    label = opt.displayName,
+                                    iconRes = R.drawable.ic_qs_theme_mode,
+                                    swatchColors = opt.previewSurface to customAccentColor
+                                )
+                                else -> TccDialogOption(
+                                    id = opt.id,
+                                    label = opt.displayName,
+                                    iconRes = R.drawable.ic_qs_theme_mode,
+                                    swatchColors = opt.previewSurface to opt.previewAccent
+                                )
+                            }
+                        }
+                        TccOptionDialog(
+                            title = stringResource(R.string.text_theme_mode_title),
+                            titleIconRes = R.drawable.ic_qs_theme_mode,
+                            options = options,
+                            selectedId = selectedThemeOption.id,
+                            accentPresets = if (selectedThemeOption.supportsCustomAccent) {
+                                MegingiardAccentPresets
+                            } else {
+                                emptyList()
+                            },
+                            selectedAccentArgb = customAccentArgb,
+                            onSelectAccentColor = { color ->
+                                repository.setCustomAccentArgb(color.toArgb())
+                            },
+                            showOsThemeToggle = true,
+                            injectOsThemeEnabled = injectOsTheme,
+                            onToggleInjectOsTheme = { enabled ->
+                                repository.setInjectOsTheme(enabled)
+                            },
+                            onSelectOption = { selected ->
+                                repository.setThemeMode(selected)
+                                val newlySelected = AppThemeOption.fromId(selected)
+                                if (!newlySelected.supportsCustomAccent && !injectOsTheme) {
+                                    coroutineScope.launch {
+                                        delay(300L)
+                                        activeDialog = ActiveDialog.NONE
+                                    }
+                                }
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE },
+                            footerContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = lookSpec.dialog.dividerHorizontalPadding)
+                                        .height(1.dp)
+                                        .background(colors.fourth)
+                                )
+                                TccDialogSegmentedRow(
+                                    label = "Overlay UI Look",
+                                    segments = listOf(
+                                        TccUiLookPreference.AUTO.id to TccUiLookPreference.AUTO.shortLabel,
+                                        TccUiLookPreference.AYN.id to TccUiLookPreference.AYN.shortLabel,
+                                        TccUiLookPreference.RETROID.id to TccUiLookPreference.RETROID.shortLabel
+                                    ),
+                                    selectedId = uiLookMode,
+                                    onSelectId = { repository.setUiLookMode(it) }
+                                )
+                            }
+                        )
+                    }
+
+                    ActiveDialog.TRIGGER_MODE -> {
+                        val options = listOf(
+                            TccDialogOption(
+                                id = 1,
+                                label = "Analog Only",
+                                iconRes = R.drawable.ic_qs_trigger_mode
+                            ),
+                            TccDialogOption(
+                                id = 0,
+                                label = "Digital Only",
+                                iconRes = R.drawable.ic_qs_trigger_mode
+                            ),
+                            TccDialogOption(
+                                id = 2,
+                                label = "Both (Analog + Digital)",
+                                iconRes = R.drawable.ic_qs_trigger_mode
+                            )
+                        )
+                        TccOptionDialog(
+                            title = "L2 / R2 Trigger Mode",
+                            titleIconRes = R.drawable.ic_qs_trigger_mode,
+                            options = options,
+                            selectedId = triggerMode,
+                            onSelectOption = { selected ->
+                                repository.setTriggerMode(selected)
                                 coroutineScope.launch {
                                     delay(300L)
                                     activeDialog = ActiveDialog.NONE
                                 }
-                            }
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE },
-                        footerContent = {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .height(1.dp)
-                                    .background(colors.fourth)
-                            )
-                            TccDialogSegmentedRow(
-                                label = "Overlay UI Look",
-                                segments = listOf(
-                                    TccUiLookPreference.AUTO.id to TccUiLookPreference.AUTO.shortLabel,
-                                    TccUiLookPreference.AYN.id to TccUiLookPreference.AYN.shortLabel,
-                                    TccUiLookPreference.RETROID.id to TccUiLookPreference.RETROID.shortLabel
-                                ),
-                                selectedId = uiLookMode,
-                                onSelectId = { repository.setUiLookMode(it) }
-                            )
-                        }
-                    )
-                }
-
-                ActiveDialog.TRIGGER_MODE -> {
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 1,
-                            label = "Analog Only",
-                            iconRes = R.drawable.ic_qs_trigger_mode
-                        ),
-                        TccDialogOption(
-                            id = 0,
-                            label = "Digital Only",
-                            iconRes = R.drawable.ic_qs_trigger_mode
-                        ),
-                        TccDialogOption(
-                            id = 2,
-                            label = "Both (Analog + Digital)",
-                            iconRes = R.drawable.ic_qs_trigger_mode
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE }
                         )
-                    )
-                    TccOptionDialog(
-                        title = "L2 / R2 Trigger Mode",
-                        titleIconRes = R.drawable.ic_qs_trigger_mode,
-                        options = options,
-                        selectedId = triggerMode,
-                        onSelectOption = { selected ->
-                            repository.setTriggerMode(selected)
-                            coroutineScope.launch {
-                                delay(300L)
+                    }
+
+                    ActiveDialog.SCREENSHOT -> {
+                        val options = listOf(
+                            TccDialogOption(
+                                id = 0,
+                                label = "Top Screen",
+                                iconRes = R.drawable.ic_just_screen_above
+                            ),
+                            TccDialogOption(
+                                id = 1,
+                                label = "Bottom Screen",
+                                iconRes = R.drawable.ic_just_screen_below
+                            ),
+                            TccDialogOption(
+                                id = 2,
+                                label = "Both Screens",
+                                iconRes = R.drawable.ic_dual_screen_display
+                            )
+                        )
+                        TccOptionDialog(
+                            title = "Capture Screenshot",
+                            titleIconRes = R.drawable.ic_qs_screenshot,
+                            options = options,
+                            selectedId = -1,
+                            onSelectOption = { selected ->
                                 activeDialog = ActiveDialog.NONE
+                                onCaptureScreenshotRequest(selected)
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE }
+                        )
+                    }
+
+                    ActiveDialog.SCREEN_RECORD -> {
+                        val options = listOf(
+                            TccDialogOption(
+                                id = 0,
+                                label = "Top Screen",
+                                iconRes = R.drawable.ic_just_screen_above
+                            ),
+                            TccDialogOption(
+                                id = 1,
+                                label = "Bottom Screen",
+                                iconRes = R.drawable.ic_just_screen_below
+                            ),
+                            TccDialogOption(
+                                id = 2,
+                                label = "Both Screens",
+                                iconRes = R.drawable.ic_dual_screen_display
+                            )
+                        )
+                        TccOptionDialog(
+                            title = "Record Screen",
+                            titleIconRes = R.drawable.ic_qs_screen_record,
+                            options = options,
+                            selectedId = -1,
+                            onSelectOption = { selected ->
+                                activeDialog = ActiveDialog.NONE
+                                onStartScreenRecordingRequest(selected)
+                            },
+                            onDismiss = { activeDialog = ActiveDialog.NONE },
+                            footerContent = {
+                                TccDialogToggleRow(
+                                    label = "Internal Game Audio",
+                                    checked = screenRecordInternalAudio,
+                                    onCheckedChange = { repository.setScreenRecordInternalAudio(it) }
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = lookSpec.dialog.dividerHorizontalPadding)
+                                        .height(1.dp)
+                                        .background(colors.fourth)
+                                )
+                                TccDialogToggleRow(
+                                    label = "Microphone",
+                                    checked = screenRecordMicAudio,
+                                    onCheckedChange = { repository.setScreenRecordMicAudio(it) }
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = lookSpec.dialog.dividerHorizontalPadding)
+                                        .height(1.dp)
+                                        .background(colors.fourth)
+                                )
+                                TccDialogFpsSelectorRow(
+                                    selectedFps = screenRecordFps,
+                                    onSelectFps = { repository.setScreenRecordFps(it) }
+                                )
                             }
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
-                    )
-                }
-
-                ActiveDialog.SCREENSHOT -> {
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 0,
-                            label = "Top Screen",
-                            iconRes = R.drawable.ic_just_screen_above
-                        ),
-                        TccDialogOption(
-                            id = 1,
-                            label = "Bottom Screen",
-                            iconRes = R.drawable.ic_just_screen_below
-                        ),
-                        TccDialogOption(
-                            id = 2,
-                            label = "Both Screens",
-                            iconRes = R.drawable.ic_dual_screen_display
                         )
-                    )
-                    TccOptionDialog(
-                        title = "Capture Screenshot",
-                        titleIconRes = R.drawable.ic_qs_screenshot,
-                        options = options,
-                        selectedId = -1,
-                        onSelectOption = { selected ->
-                            activeDialog = ActiveDialog.NONE
-                            onCaptureScreenshotRequest(selected)
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE }
-                    )
-                }
-
-                ActiveDialog.SCREEN_RECORD -> {
-                    val options = listOf(
-                        TccDialogOption(
-                            id = 0,
-                            label = "Top Screen",
-                            iconRes = R.drawable.ic_just_screen_above
-                        ),
-                        TccDialogOption(
-                            id = 1,
-                            label = "Bottom Screen",
-                            iconRes = R.drawable.ic_just_screen_below
-                        ),
-                        TccDialogOption(
-                            id = 2,
-                            label = "Both Screens",
-                            iconRes = R.drawable.ic_dual_screen_display
-                        )
-                    )
-                    TccOptionDialog(
-                        title = "Record Screen",
-                        titleIconRes = R.drawable.ic_qs_screen_record,
-                        options = options,
-                        selectedId = -1,
-                        onSelectOption = { selected ->
-                            activeDialog = ActiveDialog.NONE
-                            onStartScreenRecordingRequest(selected)
-                        },
-                        onDismiss = { activeDialog = ActiveDialog.NONE },
-                        footerContent = {
-                            TccDialogToggleRow(
-                                label = "Internal Game Audio",
-                                checked = screenRecordInternalAudio,
-                                onCheckedChange = { repository.setScreenRecordInternalAudio(it) }
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .height(1.dp)
-                                    .background(colors.fourth)
-                            )
-                            TccDialogToggleRow(
-                                label = "Microphone",
-                                checked = screenRecordMicAudio,
-                                onCheckedChange = { repository.setScreenRecordMicAudio(it) }
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .height(1.dp)
-                                    .background(colors.fourth)
-                            )
-                            TccDialogFpsSelectorRow(
-                                selectedFps = screenRecordFps,
-                                onSelectFps = { repository.setScreenRecordFps(it) }
-                            )
-                        }
-                    )
+                    }
                 }
             }
         }
@@ -851,15 +848,8 @@ fun AssistantOverlayScreen(
 }
 
 /**
- * Replicates `screen_control_layout.xml`, `screen_mode_control_panel.xml`, and `sliding_control_panel_layout.xml`:
- * - Top 50% (`0.5` guideline, `marginTop = 8.dp`):
- *   - Single rounded card (`20.dp` radius, `colors.panelBackground`) with 3 mode buttons:
- *     `Dual-screen display`, `Only top screen`, `Only bottom screen`.
- * - Bottom 50% (`marginTop = 10.dp`):
- *   - Split vertically 50% / 50% into two side-by-side rounded cards (`20.dp` radius, `colors.panelBackground`):
- *     - Left card: 3 brightness sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height,
- *       plus optional 4th `Stick LED` brightness slider when enabled.
- *     - Right card: 3 volume sliders (`Dual Screen`, `Top Screen`, `Bottom Screen`) from `6%` to `94%` height.
+ * Unified, look-driven Mode tab (`ScreenModeControlPanel` + `Brightness` & `Volume` slider cards)
+ * adapting smoothly across arbitrary aspect ratios and slider counts (3 or 4 with Stick LED).
  */
 @Composable
 private fun ScreenControlTab(
@@ -888,239 +878,123 @@ private fun ScreenControlTab(
     onSecondaryVolumeChange: (Int) -> Unit
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
-    val cardShape: Shape = if (isRetroidLook) RoundedCornerShape(22.dp) else RoundedCornerShape(20.dp)
+    val lookSpec = LocalTccLookSpec.current
+    val modeSpec = lookSpec.modeTab
+    val cardShape = lookSpec.panelCardShape
     val showFourthBrightnessSlider = supportsAmbientLight && showLedBrightnessSlider
-    val cardHorizontalPad = if (isRetroidLook) 16.dp else 10.dp
-
-    if (isRetroidLook) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Upper Card (44% height): ScreenModeControlPanel with 67.5dp (90x90px @ 1.33125x) pixel buttons
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.44f)
-                    .clip(cardShape)
-                    .background(colors.panelBackground)
-                    .padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TccButton(
-                    label = stringResource(R.string.dualscreen_asynchronous_display),
-                    iconRes = R.drawable.ic_dual_screen_display,
-                    selected = dualScreenMode == 0,
-                    onClick = { onSelectDisplayMode(0) },
-                    retroidTileSize = 67.5.dp,
-                    retroidLabelWidth = 165.dp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                )
-                TccButton(
-                    label = stringResource(R.string.only_theupper_screen_displayed),
-                    iconRes = R.drawable.ic_just_screen_above,
-                    selected = dualScreenMode == 1,
-                    onClick = { onSelectDisplayMode(1) },
-                    retroidTileSize = 67.5.dp,
-                    retroidLabelWidth = 165.dp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                )
-                TccButton(
-                    label = stringResource(R.string.only_following_screen_displayed),
-                    iconRes = R.drawable.ic_just_screen_below,
-                    selected = dualScreenMode == 2,
-                    onClick = { onSelectDisplayMode(2) },
-                    retroidTileSize = 67.5.dp,
-                    retroidLabelWidth = 165.dp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                )
-                if (showSwapScreensButton) {
-                    TccButton(
-                        label = stringResource(R.string.swap_screens_mode_text),
-                        iconRes = R.drawable.ic_qs_swap_screens,
-                        selected = false,
-                        onClick = onSwapScreens,
-                        retroidTileSize = 67.5.dp,
-                        retroidLabelWidth = 165.dp,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(30.dp))
-
-            // Lower Section (56% height, bottom margin 25.5dp): Brightness (Left 50%) & Volume (Right 50%)
-            val retroidSliderRowHeight = if (showFourthBrightnessSlider) 44.dp else 54.dp
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.56f)
-                    .padding(bottom = 25.5.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(end = 7.5.dp)
-                        .clip(cardShape)
-                        .background(colors.panelBackground)
-                        .padding(horizontal = cardHorizontalPad, vertical = 14.dp),
-                    verticalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_dual_screen),
-                        progress = dualBrightness,
-                        kind = SliderKind.BRIGHTNESS,
-                        onProgressChange = onDualBrightnessChange,
-                        isFillDimmed = !isDualBrightnessActive,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(retroidSliderRowHeight)
-                    )
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_main_screen),
-                        progress = topBrightness,
-                        kind = SliderKind.BRIGHTNESS,
-                        onProgressChange = onTopBrightnessChange,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(retroidSliderRowHeight)
-                    )
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_secondary_screen),
-                        progress = bottomBrightness,
-                        kind = SliderKind.BRIGHTNESS,
-                        onProgressChange = onBottomBrightnessChange,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(retroidSliderRowHeight)
-                    )
-                    if (showFourthBrightnessSlider) {
-                        HorizontalSlidingBar(
-                            label = stringResource(R.string.sliding_stick_led),
-                            progress = ledBrightnessPercent,
-                            kind = SliderKind.LED_BRIGHTNESS,
-                            onProgressChange = { pct, _ -> onLedBrightnessChange(pct) },
-                            isFillDimmed = !ambientLightEnabled,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(retroidSliderRowHeight)
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(start = 7.5.dp)
-                        .clip(cardShape)
-                        .background(colors.panelBackground)
-                        .padding(horizontal = cardHorizontalPad, vertical = 14.dp),
-                    verticalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_dual_screen),
-                        progress = dualVolume,
-                        kind = SliderKind.VOLUME,
-                        onProgressChange = { pct, _ -> onDualVolumeChange(pct) },
-                        isFillDimmed = !isDualVolumeActive,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                    )
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_main_screen),
-                        progress = primaryVolume,
-                        kind = SliderKind.VOLUME,
-                        onProgressChange = { pct, _ -> onPrimaryVolumeChange(pct) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                    )
-                    HorizontalSlidingBar(
-                        label = stringResource(R.string.sliding_secondary_screen),
-                        progress = secondaryVolume,
-                        kind = SliderKind.VOLUME,
-                        onProgressChange = { pct, _ -> onSecondaryVolumeChange(pct) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                    )
-                }
-            }
-        }
-        return
-    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // Reference 3-slider card geometry from the stock 50% / 50% split:
-        // Each slider always keeps this exact height regardless of whether 3 or 4 sliders are shown.
-        val referenceThreeSliderCardHeight = (maxHeight * 0.5f) - 10.dp
-        val sliderHeight = referenceThreeSliderCardHeight * 0.2933f
-        val cardVerticalPad = referenceThreeSliderCardHeight * 0.06f
-        val bottomCardsHeight = (sliderHeight * 4f) + (cardVerticalPad * 2f)
+        val referenceThreeSliderCardHeight = (maxHeight * 0.5f) - modeSpec.referenceHalfGapSubtractor
+        val dynamicSliderHeight = referenceThreeSliderCardHeight * 0.2933f
+        val dynamicCardVerticalPad = referenceThreeSliderCardHeight * 0.06f
+        val reservedBottomCardsHeight = (dynamicSliderHeight * 4f) + (dynamicCardVerticalPad * 2f)
+
+        val brightnessSliderHeight = when {
+            modeSpec.reserveFourSliderLowerHeight -> dynamicSliderHeight
+            showFourthBrightnessSlider -> modeSpec.fourSliderRowHeight
+            else -> modeSpec.threeSliderRowHeight
+        }
+        val volumeSliderHeight = if (modeSpec.reserveFourSliderLowerHeight) {
+            dynamicSliderHeight
+        } else {
+            modeSpec.threeSliderRowHeight
+        }
+        val cardVerticalPad = if (modeSpec.reserveFourSliderLowerHeight) {
+            dynamicCardVerticalPad
+        } else {
+            modeSpec.fixedCardVerticalPadding
+        }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Upper Card: ScreenModeControlPanel (reduced height so bottom cards fit 4 full-height sliders)
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .padding(top = 8.dp)
+                    .weight(if (modeSpec.reserveFourSliderLowerHeight) 1f else modeSpec.upperCardWeight)
+                    .padding(top = modeSpec.upperCardTopPadding)
                     .clip(cardShape)
                     .background(colors.panelBackground)
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(vertical = modeSpec.upperCardInnerVerticalPadding),
+                contentAlignment = Alignment.Center
             ) {
-                TccButton(
-                    label = stringResource(R.string.dualscreen_asynchronous_display),
-                    iconRes = R.drawable.ic_dual_screen_display,
-                    selected = dualScreenMode == 0,
-                    onClick = { onSelectDisplayMode(0) },
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
+                val modeItemCount = if (showSwapScreensButton) 4 else 3
+                val maxModeLabelWidth = ((maxWidth / modeItemCount) - (modeSpec.modeItemHorizontalPadding * 2))
+                    .coerceAtLeast(72.dp)
+                val itemModifier = Modifier.padding(
+                    horizontal = modeSpec.modeItemHorizontalPadding,
+                    vertical = modeSpec.modeItemVerticalPadding
                 )
-                TccButton(
-                    label = stringResource(R.string.only_theupper_screen_displayed),
-                    iconRes = R.drawable.ic_just_screen_above,
-                    selected = dualScreenMode == 1,
-                    onClick = { onSelectDisplayMode(1) },
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
-                )
-                TccButton(
-                    label = stringResource(R.string.only_following_screen_displayed),
-                    iconRes = R.drawable.ic_just_screen_below,
-                    selected = dualScreenMode == 2,
-                    onClick = { onSelectDisplayMode(2) },
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
-                )
-                if (showSwapScreensButton) {
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     TccButton(
-                        label = stringResource(R.string.swap_screens_mode_text),
-                        iconRes = R.drawable.ic_qs_swap_screens,
-                        selected = false,
-                        onClick = onSwapScreens,
-                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 6.dp)
+                        label = stringResource(R.string.dualscreen_asynchronous_display),
+                        iconRes = R.drawable.ic_dual_screen_display,
+                        selected = dualScreenMode == 0,
+                        onClick = { onSelectDisplayMode(0) },
+                        variant = TccTileVariant.MODE,
+                        maxLabelWidth = maxModeLabelWidth,
+                        modifier = itemModifier
                     )
+                    TccButton(
+                        label = stringResource(R.string.only_theupper_screen_displayed),
+                        iconRes = R.drawable.ic_just_screen_above,
+                        selected = dualScreenMode == 1,
+                        onClick = { onSelectDisplayMode(1) },
+                        variant = TccTileVariant.MODE,
+                        maxLabelWidth = maxModeLabelWidth,
+                        modifier = itemModifier
+                    )
+                    TccButton(
+                        label = stringResource(R.string.only_following_screen_displayed),
+                        iconRes = R.drawable.ic_just_screen_below,
+                        selected = dualScreenMode == 2,
+                        onClick = { onSelectDisplayMode(2) },
+                        variant = TccTileVariant.MODE,
+                        maxLabelWidth = maxModeLabelWidth,
+                        modifier = itemModifier
+                    )
+                    if (showSwapScreensButton) {
+                        TccButton(
+                            label = stringResource(R.string.swap_screens_mode_text),
+                            iconRes = R.drawable.ic_qs_swap_screens,
+                            selected = false,
+                            onClick = onSwapScreens,
+                            variant = TccTileVariant.MODE,
+                            maxLabelWidth = maxModeLabelWidth,
+                            modifier = itemModifier
+                        )
+                    }
                 }
             }
 
-            // Lower Section: SlidingControlPanel (Brightness on Left 50%, Volume on Right 50%)
+            Spacer(modifier = Modifier.height(modeSpec.middleGap))
+
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .height(bottomCardsHeight)
+                modifier = if (modeSpec.reserveFourSliderLowerHeight) {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(reservedBottomCardsHeight)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(modeSpec.lowerRowWeight)
+                        .padding(bottom = modeSpec.lowerRowBottomPadding)
+                }
             ) {
-                // Left 50%: ScreenControlPanel (3 or 4 brightness sliders, each fixed at sliderHeight)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(end = 5.dp)
+                        .padding(end = modeSpec.cardHalfGap)
                         .clip(cardShape)
                         .background(colors.panelBackground)
-                        .padding(horizontal = cardHorizontalPad, vertical = cardVerticalPad),
+                        .padding(
+                            horizontal = modeSpec.cardHorizontalPadding,
+                            vertical = cardVerticalPad
+                        ),
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
                     HorizontalSlidingBar(
@@ -1131,7 +1005,7 @@ private fun ScreenControlTab(
                         isFillDimmed = !isDualBrightnessActive,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(sliderHeight)
+                            .height(brightnessSliderHeight)
                     )
                     HorizontalSlidingBar(
                         label = stringResource(R.string.sliding_main_screen),
@@ -1140,7 +1014,7 @@ private fun ScreenControlTab(
                         onProgressChange = onTopBrightnessChange,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(sliderHeight)
+                            .height(brightnessSliderHeight)
                     )
                     HorizontalSlidingBar(
                         label = stringResource(R.string.sliding_secondary_screen),
@@ -1149,7 +1023,7 @@ private fun ScreenControlTab(
                         onProgressChange = onBottomBrightnessChange,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(sliderHeight)
+                            .height(brightnessSliderHeight)
                     )
                     if (showFourthBrightnessSlider) {
                         HorizontalSlidingBar(
@@ -1160,20 +1034,22 @@ private fun ScreenControlTab(
                             isFillDimmed = !ambientLightEnabled,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(sliderHeight)
+                                .height(brightnessSliderHeight)
                         )
                     }
                 }
 
-                // Right 50%: VolumeControlPanel (3 volume sliders, each fixed at sliderHeight)
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(start = 5.dp)
+                        .padding(start = modeSpec.cardHalfGap)
                         .clip(cardShape)
                         .background(colors.panelBackground)
-                        .padding(horizontal = cardHorizontalPad, vertical = cardVerticalPad),
+                        .padding(
+                            horizontal = modeSpec.cardHorizontalPadding,
+                            vertical = cardVerticalPad
+                        ),
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
                     HorizontalSlidingBar(
@@ -1184,7 +1060,7 @@ private fun ScreenControlTab(
                         isFillDimmed = !isDualVolumeActive,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(sliderHeight)
+                            .height(volumeSliderHeight)
                     )
                     HorizontalSlidingBar(
                         label = stringResource(R.string.sliding_main_screen),
@@ -1193,7 +1069,7 @@ private fun ScreenControlTab(
                         onProgressChange = { pct, _ -> onPrimaryVolumeChange(pct) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(sliderHeight)
+                            .height(volumeSliderHeight)
                     )
                     HorizontalSlidingBar(
                         label = stringResource(R.string.sliding_secondary_screen),
@@ -1202,7 +1078,7 @@ private fun ScreenControlTab(
                         onProgressChange = { pct, _ -> onSecondaryVolumeChange(pct) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(sliderHeight)
+                            .height(volumeSliderHeight)
                     )
                 }
             }
@@ -1212,22 +1088,11 @@ private fun ScreenControlTab(
 
 private data class QuickSettingTileModel(
     val label: String,
-    @DrawableRes val iconRes: Int,
+    @param:DrawableRes val iconRes: Int,
     val selected: Boolean,
     val onClick: () -> Unit
 )
 
-/**
- * Replicates `system_set_layout.xml`, `frame_rate_panel_layout.xml`, `quick_settings_panel_layout.xml`,
- * and `hardware_info_panel_layout_2.xml`:
- * - Top 70% (`guideline11 = 0.7`):
- *   - Left 40% (`guideline12 = 0.4`): `FrameRatePanel` (`120 HZ MODE` pill + huge live FPS + `CURRENT FPS`)
- *   - Right 60%: `QuickSettingsPanel` (2x4 paged tiles + `#8E84FF` dot indicator)
- * - Bottom 30%:
- *   - `0%..20%`: `CpuTempInfoComponent` (`TEMP` card)
- *   - `20%..40%`: `FanInfoComponent` (`FAN` card)
- *   - `40%..100%`: `HardwareInfoDisplayView` (`CPU`, `GPU`, `PWR`, `RAM` colored ring gauges)
- */
 @Composable
 private fun SystemSettingsTab(
     profile: DeviceProfile,
@@ -1283,11 +1148,12 @@ private fun SystemSettingsTab(
     onTogglePreventAccidentalHome: () -> Unit
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
-    val cardShape: Shape = if (isRetroidLook) RoundedCornerShape(22.dp) else RoundedCornerShape(20.dp)
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
+    val viewport = LocalOverlayViewport.current
+    val cardShape = lookSpec.panelCardShape
     val coroutineScope = rememberCoroutineScope()
 
-    // Build dynamic Quick Settings tile list matching user-configured order and visibility
     val tiles = buildList {
         for (tileId in quickTileOrder) {
             if (!tileId.isSupportedOn(profile)) continue
@@ -1357,11 +1223,8 @@ private fun SystemSettingsTab(
                 }
 
                 QuickSettingTileId.CONTROLLER_STYLE -> {
-                    val standardLabel = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-                        profile.standardControllerLabel
-                    } else {
-                        stringResource(R.string.fan_option_odin_style)
-                    }
+                    val standardLabel = profile.overrideStandardControllerLabel
+                        ?: stringResource(R.string.fan_option_odin_style)
                     val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
                         0 -> stringResource(R.string.fan_option_xbox_style) to true
                         1 -> standardLabel to true
@@ -1444,7 +1307,6 @@ private fun SystemSettingsTab(
                     )
                 }
 
-                // Android System Toggles
                 QuickSettingTileId.WIFI -> {
                     add(
                         QuickSettingTileModel(
@@ -1489,7 +1351,6 @@ private fun SystemSettingsTab(
                     )
                 }
 
-                // Tools
                 QuickSettingTileId.TOUCH_LOCK -> {
                     add(
                         QuickSettingTileModel(
@@ -1629,6 +1490,12 @@ private fun SystemSettingsTab(
         }
     }
 
+    val aspectFrac = viewport.aspectFraction()
+    val leftColWeight = settingsSpec.narrowLeftColWeight +
+        (settingsSpec.wideLeftColWeight - settingsSpec.narrowLeftColWeight) * aspectFrac
+    val rightColWeight = 1f - leftColWeight
+    val cardHalfGap = settingsSpec.cardHalfGap
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1658,21 +1525,15 @@ private fun SystemSettingsTab(
                 }
             }
     ) {
-        val leftColWeight = if (isRetroidLook) 0.345f else 0.4f
-        val rightColWeight = if (isRetroidLook) 0.655f else 0.6f
-        val cardHalfGap = if (isRetroidLook) 7.5.dp else 5.dp
-
-        // Top row: FrameRatePanel + QuickSettingsPanel
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(if (isRetroidLook) 0.68f else 0.7f)
+                .weight(settingsSpec.topRowWeight)
                 .padding(
-                    top = if (isRetroidLook) 4.5.dp else 5.dp,
-                    bottom = if (isRetroidLook) 8.25.dp else 5.dp
+                    top = settingsSpec.topRowTopPadding,
+                    bottom = settingsSpec.topRowBottomPadding
                 )
         ) {
-            // Left: FrameRatePanel
             FrameRatePanelCard(
                 refreshRate = refreshRate,
                 currentFps = telemetry.currentFps,
@@ -1683,7 +1544,6 @@ private fun SystemSettingsTab(
                     .padding(end = cardHalfGap)
             )
 
-            // Right: QuickSettingsPanel
             Column(
                 modifier = Modifier
                     .weight(rightColWeight)
@@ -1698,18 +1558,12 @@ private fun SystemSettingsTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(0.92f)
-                        .padding(
-                            top = if (isRetroidLook) 12.dp else 0.dp,
-                            bottom = if (isRetroidLook) 2.dp else 0.dp,
-                            start = if (isRetroidLook) 14.dp else 10.dp,
-                            end = if (isRetroidLook) 14.dp else 10.dp
-                        )
+                        .padding(settingsSpec.pagerPadding)
                 ) { pageIndex ->
                     val pageItems = pages.getOrNull(pageIndex).orEmpty()
                     QuickSettingsGridPage(items = pageItems)
                 }
 
-                // Bottom 8%: ViewPagerIndicator (hidden when all active toggles fit on 1 page)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1718,15 +1572,15 @@ private fun SystemSettingsTab(
                 ) {
                     if (pageCount > 1) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(if (isRetroidLook) 10.dp else 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(settingsSpec.indicatorDotSpacing),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             repeat(pageCount) { index ->
                                 val isSelected = pagerState.currentPage == index
                                 Box(
                                     modifier = Modifier
-                                        .size(if (isRetroidLook) 8.dp else 6.dp)
-                                        .clip(if (isRetroidLook) RectangleShape else CircleShape)
+                                        .size(settingsSpec.indicatorDotSize)
+                                        .clip(settingsSpec.indicatorShape)
                                         .background(if (isSelected) colors.accent else colors.secondary)
                                 )
                             }
@@ -1736,12 +1590,11 @@ private fun SystemSettingsTab(
             }
         }
 
-        // Bottom row: HardwareInfoPanel (TEMP + FAN aligned strictly under FrameRatePanel, 4 Rings under QuickSettingsPanel)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(if (isRetroidLook) 0.32f else 0.3f)
-                .padding(top = if (isRetroidLook) 8.25.dp else 5.dp, bottom = 0.dp)
+                .weight(settingsSpec.bottomRowWeight)
+                .padding(top = settingsSpec.bottomRowTopPadding, bottom = 0.dp)
         ) {
             val tempCelsiusInt = telemetry.cpuTempCelsius.roundToInt()
             val tempTint = when {
@@ -1751,7 +1604,7 @@ private fun SystemSettingsTab(
                     tempCelsiusInt >= 51 -> colors.accent
                     else -> colors.secondary
                 }
-                isRetroidLook -> when {
+                lookSpec.isRetroid -> when {
                     tempCelsiusInt >= 86 -> Color(0xFFF64646)
                     tempCelsiusInt >= 71 -> Color(0xFFF67474)
                     else -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
@@ -1765,11 +1618,11 @@ private fun SystemSettingsTab(
             }
             val fanTint = when {
                 colors.isMegingiardStyle -> colors.secondary
-                isRetroidLook -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+                lookSpec.isRetroid -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
                 else -> Color(0xFF818184)
             }
             val rawTempText = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit)
-            val displayTempText = if (isRetroidLook) {
+            val displayTempText = if (lookSpec.useAsciiDegreeSymbol) {
                 rawTempText.replace("℃", "°C").replace("℉", "°F")
             } else {
                 rawTempText
@@ -1780,7 +1633,7 @@ private fun SystemSettingsTab(
                     .weight(leftColWeight)
                     .fillMaxHeight()
                     .padding(end = cardHalfGap),
-                horizontalArrangement = Arrangement.spacedBy(if (isRetroidLook) 15.dp else 10.dp)
+                horizontalArrangement = Arrangement.spacedBy(settingsSpec.tempFanGap)
             ) {
                 HardwareInfoComponentCard(
                     title = "TEMP",
@@ -1814,30 +1667,30 @@ private fun SystemSettingsTab(
                     .clip(cardShape)
                     .background(colors.panelBackground)
                     .padding(
-                        horizontal = if (isRetroidLook) 16.dp else 12.dp,
-                        vertical = 12.dp
+                        horizontal = settingsSpec.ringsHorizontalPadding,
+                        vertical = settingsSpec.ringsVerticalPadding
                     ),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val cpuRingColor = when {
                     colors.isMegingiardStyle -> colors.accent
-                    isRetroidLook -> Color(0xFFB125E3)
+                    lookSpec.isRetroid -> Color(0xFFB125E3)
                     else -> Color(0xFFEE188C)
                 }
                 val gpuRingColor = when {
                     colors.isMegingiardStyle -> colors.accent
-                    isRetroidLook -> Color(0xFF373FC6)
+                    lookSpec.isRetroid -> Color(0xFF373FC6)
                     else -> Color(0xFF70E7FF)
                 }
                 val pwrRingColor = when {
                     colors.isMegingiardStyle -> colors.accent
-                    isRetroidLook -> Color(0xFFE46D00)
+                    lookSpec.isRetroid -> Color(0xFFE46D00)
                     else -> Color(0xFFE26E01)
                 }
                 val ramRingColor = when {
                     colors.isMegingiardStyle -> colors.accent
-                    isRetroidLook -> Color(0xFF86D100)
+                    lookSpec.isRetroid -> Color(0xFF86D100)
                     else -> Color(0xFF76CA40)
                 }
 
@@ -1898,9 +1751,6 @@ private fun SystemSettingsTab(
     }
 }
 
-/**
- * Formats CPU temperature in Celsius (`"56℃"`) or Fahrenheit (`"133℉"`).
- */
 internal fun formatCpuTemperature(cpuTempCelsius: Float, useFahrenheit: Boolean): String {
     return if (useFahrenheit) {
         val fahrenheit = ((cpuTempCelsius * 9f / 5f) + 32f).roundToInt()
@@ -1910,13 +1760,6 @@ internal fun formatCpuTemperature(cpuTempCelsius: Float, useFahrenheit: Boolean)
     }
 }
 
-/**
- * Formats ring gauge numeric values using the exact decimal logic of `B0.d.setNumberOfDecimalPlacesByProgress`:
- * - `0` when `< 0.01f`
- * - `%.2f` when `<= 9.99f`
- * - `%.1f` when `<= 99.9f`
- * - `%.0f` when `>= 100f`
- */
 private fun formatRingValue(value: Float): String {
     val absVal = abs(value)
     if (absVal < 0.01f) return "0"
@@ -1929,12 +1772,6 @@ private fun formatRingValue(value: Float): String {
     return if (truncated.endsWith(".")) truncated.dropLast(1) else truncated
 }
 
-/**
- * Replicates `frame_rate_panel_layout.xml`, `FrameRateModeView.java`, and `CurrentFrameRateView.java`:
- * - Top 30% (`0%..30%`): Pill button `"120 HZ MODE"` / `"60 HZ MODE"` (`bg_120_frame_rate_mode` / `bg_60_frame_rate_mode`)
- * - Middle 40% (`30%..70%`): Huge bold live FPS number + baseline-aligned `"FPS"`
- * - Bottom 30% (`70%..100%`): `"CURRENT FPS"` in `colors.tertiary`
- */
 @Composable
 private fun FrameRatePanelCard(
     refreshRate: Int,
@@ -1944,20 +1781,20 @@ private fun FrameRatePanelCard(
 ) {
     val context = LocalContext.current
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
-    val cardShape: Shape = if (isRetroidLook) RoundedCornerShape(22.dp) else RoundedCornerShape(20.dp)
-    val badgeShape: Shape = if (isRetroidLook) PixelCornerCutShape(3.5.dp) else RoundedCornerShape(25.dp)
-    val pixelDisplayTypeface = remember(context, isRetroidLook) {
-        if (isRetroidLook) {
+
+    val pixelDisplayTypeface = remember(context, settingsSpec.fpsUsePixelCanvasFonts) {
+        if (settingsSpec.fpsUsePixelCanvasFonts) {
             runCatching { ResourcesCompat.getFont(context, R.font.tcc_pixel_display) }.getOrNull()
         } else {
             null
         }
     }
-    val pixelLabelTypeface = remember(context, isRetroidLook) {
-        if (isRetroidLook) {
+    val pixelLabelTypeface = remember(context, settingsSpec.fpsUsePixelCanvasFonts) {
+        if (settingsSpec.fpsUsePixelCanvasFonts) {
             runCatching { ResourcesCompat.getFont(context, R.font.tcc_pixel_label) }.getOrNull()
         } else {
             null
@@ -1996,7 +1833,7 @@ private fun FrameRatePanelCard(
 
     Column(
         modifier = modifier
-            .clip(cardShape)
+            .clip(lookSpec.panelCardShape)
             .background(if (isFocused) colors.panelBackgroundSelected else colors.panelBackground)
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
@@ -2014,11 +1851,10 @@ private fun FrameRatePanelCard(
             .focusable(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 0%..30%: FrameRateModeView pill
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(if (isRetroidLook) 0.34f else 0.3f),
+                .weight(settingsSpec.fpsTopWeight),
             contentAlignment = Alignment.Center
         ) {
             val retroidPillBg = when {
@@ -2027,7 +1863,7 @@ private fun FrameRatePanelCard(
                 else -> Color(0xFF70E7FF)
             }
             val pillTextColor = when {
-                isRetroidLook -> when {
+                lookSpec.isRetroid -> when {
                     colors.isMegingiardStyle && !isHighRate -> colors.primary
                     colors.isMegingiardStyle -> colors.retroidContentOnAccent()
                     else -> Color.Black
@@ -2035,21 +1871,22 @@ private fun FrameRatePanelCard(
                 colors.isMegingiardStyle -> colors.onAccent
                 else -> Color.White
             }
+            val preferredBadgeW = settingsSpec.fpsBadgePreferredWidth
+            val preferredBadgeH = settingsSpec.fpsBadgeHeight
+            val badgeSizeModifier = if (preferredBadgeW != null && preferredBadgeH != null) {
+                Modifier
+                    .width(min(preferredBadgeW, (maxWidth - 20.dp).coerceAtLeast(120.dp)))
+                    .height(preferredBadgeH)
+            } else {
+                Modifier
+            }
+
             Box(
-                modifier = Modifier
-                    .then(
-                        if (isRetroidLook) {
-                            Modifier
-                                .width(220.dp)
-                                .height(38.dp)
-                        } else {
-                            Modifier
-                        }
-                    )
-                    .clip(badgeShape)
+                modifier = badgeSizeModifier
+                    .clip(settingsSpec.fpsBadgeShape)
                     .then(
                         when {
-                            isRetroidLook -> Modifier.background(retroidPillBg)
+                            lookSpec.isRetroid -> Modifier.background(retroidPillBg)
                             colors.isMegingiardStyle -> Modifier.background(colors.accent)
                             else -> Modifier
                                 .background(if (colors.isDark) Color(0xFF272727) else Color(0xFFD5D5D5))
@@ -2062,18 +1899,18 @@ private fun FrameRatePanelCard(
                         onClick = onToggleRefreshRate
                     )
                     .padding(
-                        horizontal = if (isRetroidLook) 12.dp else 15.dp,
-                        vertical = if (isRetroidLook) 0.dp else 3.dp
+                        horizontal = settingsSpec.fpsBadgeHorizontalPadding,
+                        vertical = settingsSpec.fpsBadgeVerticalPadding
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = stringResource(R.string.frame_rate_mode_text, refreshRate),
                     color = pillTextColor,
-                    fontSize = if (isRetroidLook) 19.sp else 16.sp,
+                    fontSize = settingsSpec.fpsBadgeFontSize,
                     fontFamily = pixelFont,
                     style = pixelStyle,
-                    fontWeight = if (!isRetroidLook && colors.isMegingiardStyle) {
+                    fontWeight = if (!lookSpec.isRetroid && colors.isMegingiardStyle) {
                         FontWeight.SemiBold
                     } else {
                         FontWeight.Normal
@@ -2083,11 +1920,10 @@ private fun FrameRatePanelCard(
             }
         }
 
-        // 30%..70%: CurrentFrameRateView (exact Canvas drawing from CurrentFrameRateView.java)
         val primaryArgb = colors.primary.toArgb()
-        val padPx = with(LocalDensity.current) { 5.dp.toPx() }
-        val numberPaint = remember(isRetroidLook, pixelDisplayTypeface) {
-            if (isRetroidLook) {
+        val padPx = with(LocalDensity.current) { settingsSpec.fpsCanvasPadDp.toPx() }
+        val numberPaint = remember(settingsSpec.fpsUsePixelCanvasFonts, pixelDisplayTypeface) {
+            if (settingsSpec.fpsUsePixelCanvasFonts) {
                 Paint().apply {
                     isAntiAlias = false
                     style = Paint.Style.FILL
@@ -2100,8 +1936,8 @@ private fun FrameRatePanelCard(
                 }
             }
         }
-        val unitPaint = remember(isRetroidLook, pixelLabelTypeface) {
-            if (isRetroidLook) {
+        val unitPaint = remember(settingsSpec.fpsUsePixelCanvasFonts, pixelLabelTypeface) {
+            if (settingsSpec.fpsUsePixelCanvasFonts) {
                 Paint().apply {
                     isAntiAlias = false
                     style = Paint.Style.FILL
@@ -2117,19 +1953,20 @@ private fun FrameRatePanelCard(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(if (isRetroidLook) 0.38f else 0.4f)
+                .weight(settingsSpec.fpsCenterWeight)
         ) {
             val h = size.height
             val numberStr = currentFps.coerceIn(0, refreshRate).toString()
             val unitStr = "FPS"
 
-            numberPaint.textSize = h * (if (isRetroidLook) 0.76f else 0.75f)
+            numberPaint.textSize = h * settingsSpec.fpsNumberHeightRatio
             numberPaint.color = primaryArgb
             val fm = numberPaint.fontMetrics
-            val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) + (if (isRetroidLook) 0f else padPx)
+            val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) +
+                (if (settingsSpec.fpsBaselineShiftByPad) padPx else 0f)
             val numberWidth = numberPaint.measureText(numberStr)
 
-            unitPaint.textSize = h * (if (isRetroidLook) 0.18f else 0.20f)
+            unitPaint.textSize = h * settingsSpec.fpsUnitHeightRatio
             unitPaint.color = primaryArgb
             val unitWidth = unitPaint.measureText(unitStr)
             val totalWidth = numberWidth + padPx * 2f + unitWidth
@@ -2141,17 +1978,16 @@ private fun FrameRatePanelCard(
             }
         }
 
-        // 70%..100%: "CURRENT FPS"
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(if (isRetroidLook) 0.28f else 0.3f),
+                .weight(settingsSpec.fpsBottomWeight),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = stringResource(R.string.current_frame_rate_tip),
                 color = colors.tertiary,
-                fontSize = if (isRetroidLook) 18.sp else 16.sp,
+                fontSize = settingsSpec.fpsTipFontSize,
                 fontFamily = pixelFont,
                 style = pixelStyle,
                 fontWeight = FontWeight.Normal
@@ -2164,6 +2000,7 @@ private fun FrameRatePanelCard(
 private fun QuickSettingsGridPage(
     items: List<QuickSettingTileModel>
 ) {
+    val lookSpec = LocalTccLookSpec.current
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.SpaceEvenly
@@ -2185,12 +2022,18 @@ private fun QuickSettingsGridPage(
                         contentAlignment = Alignment.Center
                     ) {
                         if (item != null) {
+                            val cellAllowance = if (lookSpec.isRetroid) {
+                                (maxWidth - 4.dp).coerceAtLeast(80.dp)
+                            } else {
+                                maxWidth.coerceAtLeast(80.dp)
+                            }
                             TccButton(
                                 label = item.label,
                                 iconRes = item.iconRes,
                                 selected = item.selected,
                                 onClick = item.onClick,
-                                retroidLabelWidth = (maxWidth - 4.dp).coerceAtLeast(80.dp)
+                                variant = TccTileVariant.QUICK_SETTING,
+                                maxLabelWidth = cellAllowance
                             )
                         }
                     }
@@ -2200,11 +2043,6 @@ private fun QuickSettingsGridPage(
     }
 }
 
-/**
- * Replicates `navigation_bar_layout.xml` and `NavigationBar.java`:
- * - Rounded card (`20.dp` radius, `colors.panelBackground`)
- * - 3 `TccButton`s (`Mode`, `Task`, `Settings`) spaced between `15%` and `85%` horizontal guidelines (`70%` width).
- */
 @Composable
 private fun NavigationBarSection(
     activeTab: Int,
@@ -2215,24 +2053,29 @@ private fun NavigationBarSection(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
-    val cardShape: Shape = if (isRetroidLook) RoundedCornerShape(22.dp) else RoundedCornerShape(20.dp)
+    val lookSpec = LocalTccLookSpec.current
+    val navSpec = lookSpec.navBar
+    val viewport = LocalOverlayViewport.current
+    val aspectFrac = viewport.aspectFraction()
+
+    val rowFraction = if (showEditButton) {
+        navSpec.narrowRowFraction4 + (navSpec.wideRowFraction4 - navSpec.narrowRowFraction4) * aspectFrac
+    } else {
+        navSpec.narrowRowFraction3 + (navSpec.wideRowFraction3 - navSpec.narrowRowFraction3) * aspectFrac
+    }
 
     BoxWithConstraints(
         modifier = modifier
-            .clip(cardShape)
+            .clip(lookSpec.panelCardShape)
             .background(colors.panelBackground)
-            .padding(vertical = if (isRetroidLook) 4.dp else 5.dp),
+            .padding(vertical = navSpec.innerVerticalPadding),
         contentAlignment = Alignment.Center
     ) {
-        val useWideRow = isRetroidLook || maxWidth >= 880.dp
-        val rowFraction = if (isRetroidLook) {
-            if (showEditButton) 0.78f else 0.68f
-        } else if (useWideRow) {
-            if (showEditButton) 0.90f else 0.80f
-        } else {
-            if (showEditButton) 0.82f else 0.70f
-        }
+        val navItemCount = if (showEditButton) 4 else 3
+        val maxNavLabelWidth = (((maxWidth * rowFraction) / navItemCount) - (navSpec.itemHorizontalPadding * 2))
+            .coerceAtLeast(64.dp)
+        val itemModifier = Modifier.padding(horizontal = navSpec.itemHorizontalPadding)
+
         Row(
             modifier = Modifier.fillMaxWidth(rowFraction),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -2243,10 +2086,9 @@ private fun NavigationBarSection(
                 iconRes = R.drawable.ic_screen_control,
                 selected = activeTab == 0,
                 onClick = { onSelectTab(0) },
-                retroidTileSize = 52.5.dp,
-                retroidLabelWidth = 110.dp,
-                retroidCompactVertical = true,
-                modifier = Modifier.padding(horizontal = if (isRetroidLook) 4.dp else 8.dp)
+                variant = TccTileVariant.NAV_BAR,
+                maxLabelWidth = maxNavLabelWidth,
+                modifier = itemModifier
             )
 
             TccButton(
@@ -2254,10 +2096,9 @@ private fun NavigationBarSection(
                 iconRes = R.drawable.ic_task_manage,
                 selected = false,
                 onClick = onOpenRecents,
-                retroidTileSize = 52.5.dp,
-                retroidLabelWidth = 110.dp,
-                retroidCompactVertical = true,
-                modifier = Modifier.padding(horizontal = if (isRetroidLook) 4.dp else 8.dp)
+                variant = TccTileVariant.NAV_BAR,
+                maxLabelWidth = maxNavLabelWidth,
+                modifier = itemModifier
             )
 
             TccButton(
@@ -2265,10 +2106,9 @@ private fun NavigationBarSection(
                 iconRes = R.drawable.ic_system_set,
                 selected = activeTab == 1,
                 onClick = { onSelectTab(1) },
-                retroidTileSize = 52.5.dp,
-                retroidLabelWidth = 110.dp,
-                retroidCompactVertical = true,
-                modifier = Modifier.padding(horizontal = if (isRetroidLook) 4.dp else 8.dp)
+                variant = TccTileVariant.NAV_BAR,
+                maxLabelWidth = maxNavLabelWidth,
+                modifier = itemModifier
             )
 
             if (showEditButton) {
@@ -2277,43 +2117,40 @@ private fun NavigationBarSection(
                     iconRes = R.drawable.ic_nav_edit,
                     selected = false,
                     onClick = onOpenEdit,
-                    retroidTileSize = 52.5.dp,
-                    retroidLabelWidth = 110.dp,
-                    retroidCompactVertical = true,
-                    modifier = Modifier.padding(horizontal = if (isRetroidLook) 4.dp else 8.dp)
+                    variant = TccTileVariant.NAV_BAR,
+                    maxLabelWidth = maxNavLabelWidth,
+                    modifier = itemModifier
                 )
             }
         }
     }
 }
 
-/**
- * Replicates `com.odin.dualscreen.assistant.dialog.a` (`tip_dialog_layout.xml`), shown when selecting
- * "Only top screen" unless "Do not show again" has been checked.
- */
 @Composable
 fun CloseScreenTipOverlay(
-    profile: DeviceProfile = DeviceProfile.AYN_THOR,
-    themeMode: Int,
+    tipBodyOverride: String? = null,
     onCancel: () -> Unit,
     onConfirm: (noMoreTip: Boolean) -> Unit
 ) {
     var noMoreTip by remember { mutableStateOf(false) }
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val dialogSpec = lookSpec.dialog
+    val viewport = LocalOverlayViewport.current
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
-    val dialogShape: Shape = if (isRetroidLook) RoundedCornerShape(20.dp) else RoundedCornerShape(18.dp)
-    val tipBodyText = if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-        "When the secondary screen is turned off, you can press the Dual Screen key to wake up the screen."
-    } else {
-        stringResource(R.string.tip_content_text)
-    }
+    val tipBodyText = tipBodyOverride ?: stringResource(R.string.tip_content_text)
+
+    val tipDialogWidth = resolveResponsiveDialogWidthDp(
+        preferredWidth = dialogSpec.tipDialogPreferredWidth,
+        viewportWidth = viewport.widthDp,
+        maxViewportWidthFraction = 0.80f
+    )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = if (isRetroidLook) 0.55f else 0.45f))
+            .background(Color.Black.copy(alpha = dialogSpec.backdropDimAlpha))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -2323,15 +2160,15 @@ fun CloseScreenTipOverlay(
     ) {
         Column(
             modifier = Modifier
-                .width(if (isRetroidLook) 520.dp else 420.dp)
-                .clip(dialogShape)
+                .width(tipDialogWidth)
+                .clip(dialogSpec.dialogShape)
                 .background(colors.dialogBackground)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = {}
                 )
-                .padding(top = if (isRetroidLook) 24.dp else 18.dp),
+                .padding(top = dialogSpec.tipTopPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
@@ -2342,60 +2179,63 @@ fun CloseScreenTipOverlay(
                     painter = painterResource(id = tccDrawable(R.drawable.ic_tip)),
                     contentDescription = null,
                     colorFilter = ColorFilter.tint(colors.secondary),
-                    modifier = Modifier.size(if (isRetroidLook) 28.dp else 22.dp)
+                    modifier = Modifier.size(dialogSpec.tipIconSize)
                 )
-                Spacer(modifier = Modifier.width(if (isRetroidLook) 10.dp else 8.dp))
+                Spacer(modifier = Modifier.width(dialogSpec.tipIconGap))
                 Text(
                     text = stringResource(R.string.tip_title_text),
                     color = colors.primary,
-                    fontSize = if (isRetroidLook) 22.sp else 17.sp,
+                    fontSize = dialogSpec.tipTitleFontSize,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            Spacer(modifier = Modifier.height(if (isRetroidLook) 18.dp else 14.dp))
+            Spacer(modifier = Modifier.height(dialogSpec.tipSectionGap))
 
             Text(
                 text = tipBodyText,
                 color = colors.primary,
-                fontSize = if (isRetroidLook) 17.sp else 14.sp,
-                lineHeight = if (isRetroidLook) 22.sp else 18.sp,
+                fontSize = dialogSpec.tipBodyFontSize,
+                lineHeight = dialogSpec.tipBodyLineHeight,
                 fontFamily = pixelFont,
                 style = pixelStyle,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = if (isRetroidLook) 30.dp else 24.dp)
+                modifier = Modifier.padding(horizontal = dialogSpec.tipBodyHorizontalPadding)
             )
 
-            Spacer(modifier = Modifier.height(if (isRetroidLook) 18.dp else 14.dp))
+            Spacer(modifier = Modifier.height(dialogSpec.tipSectionGap))
 
             Row(
                 modifier = Modifier
                     .clickable { noMoreTip = !noMoreTip }
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(
+                        horizontal = dialogSpec.tipCheckboxRowHorizontalPadding,
+                        vertical = dialogSpec.tipCheckboxRowVerticalPadding
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TccRadioCheckIndicator(
                     selected = noMoreTip,
-                    modifier = Modifier.size(if (isRetroidLook) 28.dp else 18.dp)
+                    modifier = Modifier.size(dialogSpec.tipCheckboxSize)
                 )
-                Spacer(modifier = Modifier.width(if (isRetroidLook) 10.dp else 8.dp))
+                Spacer(modifier = Modifier.width(dialogSpec.tipCheckboxGap))
                 Text(
                     text = stringResource(R.string.tip_dialog_cb_text_no_more_tip),
                     color = colors.secondary,
-                    fontSize = if (isRetroidLook) 16.sp else 13.sp,
+                    fontSize = dialogSpec.tipCheckboxFontSize,
                     fontFamily = pixelFont,
                     style = pixelStyle
                 )
             }
 
-            Spacer(modifier = Modifier.height(if (isRetroidLook) 16.dp else 12.dp))
+            Spacer(modifier = Modifier.height(dialogSpec.tipBeforeButtonsGap))
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
                     .then(
-                        if (isRetroidLook) {
+                        if (dialogSpec.tipSolidDividers) {
                             Modifier.background(colors.fourth)
                         } else {
                             Modifier.background(
@@ -2414,7 +2254,7 @@ fun CloseScreenTipOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isRetroidLook) 58.dp else 46.dp),
+                    .height(dialogSpec.tipButtonRowHeight),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -2427,10 +2267,10 @@ fun CloseScreenTipOverlay(
                     Text(
                         text = stringResource(R.string.cancel),
                         color = colors.primary,
-                        fontSize = if (isRetroidLook) 18.sp else 15.sp,
+                        fontSize = dialogSpec.tipButtonFontSize,
                         fontFamily = pixelFont,
                         style = pixelStyle,
-                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium
+                        fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Medium
                     )
                 }
 
@@ -2439,7 +2279,7 @@ fun CloseScreenTipOverlay(
                         .width(1.dp)
                         .fillMaxHeight()
                         .then(
-                            if (isRetroidLook) {
+                            if (dialogSpec.tipSolidDividers) {
                                 Modifier.background(colors.fourth)
                             } else {
                                 Modifier.background(
@@ -2465,10 +2305,10 @@ fun CloseScreenTipOverlay(
                     Text(
                         text = stringResource(R.string.confirm),
                         color = colors.accent,
-                        fontSize = if (isRetroidLook) 18.sp else 15.sp,
+                        fontSize = dialogSpec.tipButtonFontSize,
                         fontFamily = pixelFont,
                         style = pixelStyle,
-                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
+                        fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Bold
                     )
                 }
             }

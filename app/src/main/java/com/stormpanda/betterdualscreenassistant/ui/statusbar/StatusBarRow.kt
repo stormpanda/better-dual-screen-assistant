@@ -56,11 +56,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
-import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayFontFamily
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayTextStyle
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
@@ -87,10 +85,10 @@ fun StatusBarRow(
 ) {
     val context = LocalContext.current
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val spec = LocalTccLookSpec.current.statusBar
     val pixelFont = tccDisplayFontFamily()
     val pixelStyle = tccDisplayTextStyle()
-    val statusFontSize = if (isRetroidLook) 20.5.sp else 15.sp
+    val statusFontSize = spec.fontSize
 
     var timeText by remember { mutableStateOf(formatCurrentTime(context)) }
     var batteryLevel by remember { mutableIntStateOf(100) }
@@ -225,17 +223,17 @@ fun StatusBarRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                top = if (isRetroidLook) 34.5.dp else 15.dp,
-                bottom = if (isRetroidLook) 28.5.dp else 0.dp,
-                start = if (isRetroidLook) 14.dp else 15.dp,
-                end = if (isRetroidLook) 14.dp else 15.dp
+                top = spec.topPadding,
+                bottom = spec.bottomPadding,
+                start = spec.horizontalPadding,
+                end = spec.horizontalPadding
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(spec.itemSpacing * 0.8f)
         ) {
             Text(
                 text = timeText,
@@ -243,9 +241,9 @@ fun StatusBarRow(
                 fontSize = statusFontSize,
                 fontFamily = pixelFont,
                 style = pixelStyle,
-                fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold,
+                fontWeight = spec.fontWeight,
                 modifier = Modifier
-                    .padding(horizontal = if (isRetroidLook) 0.dp else 6.dp)
+                    .padding(horizontal = spec.timeHorizontalPadding)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -256,7 +254,7 @@ fun StatusBarRow(
             if (isRecording) {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(if (isRetroidLook) 4.dp else 10.dp))
+                        .clip(RoundedCornerShape(spec.recordingCornerRadius))
                         .background(Color(0xFFE53935))
                         .then(
                             if (onStopRecordingClick != null) {
@@ -265,23 +263,26 @@ fun StatusBarRow(
                                 Modifier
                             }
                         )
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                        .padding(
+                            horizontal = spec.recordingHorizontalPadding,
+                            vertical = spec.recordingVerticalPadding
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(spec.recordingItemSpacing)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(7.dp)
-                            .clip(if (isRetroidLook) RoundedCornerShape(0.dp) else CircleShape)
+                            .size(spec.recordingDotSize)
+                            .clip(if (spec.recordingDotIsSquare) RoundedCornerShape(0.dp) else CircleShape)
                             .background(Color.White)
                     )
                     Text(
                         text = recordingElapsedText.ifEmpty { "00:00" },
                         color = Color.White,
-                        fontSize = if (isRetroidLook) 15.sp else 12.sp,
+                        fontSize = spec.recordingFontSize,
                         fontFamily = pixelFont,
                         style = pixelStyle,
-                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
+                        fontWeight = spec.fontWeight
                     )
                 }
             }
@@ -289,14 +290,14 @@ fun StatusBarRow(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(if (isRetroidLook) 10.dp else 10.dp)
+            horizontalArrangement = Arrangement.spacedBy(spec.itemSpacing)
         ) {
             if (isBluetoothConnected) {
                 Image(
                     painter = painterResource(id = tccDrawable(R.drawable.ic_bluetooth)),
                     contentDescription = "Bluetooth",
                     colorFilter = ColorFilter.tint(colors.primary),
-                    modifier = Modifier.size(if (isRetroidLook) 21.dp else 16.dp)
+                    modifier = Modifier.size(spec.bluetoothIconSize)
                 )
             }
 
@@ -307,7 +308,7 @@ fun StatusBarRow(
                     fontSize = statusFontSize,
                     fontFamily = pixelFont,
                     style = pixelStyle,
-                    fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
+                    fontWeight = spec.fontWeight
                 )
             }
 
@@ -321,7 +322,7 @@ fun StatusBarRow(
                 Image(
                     painter = painterResource(id = tccDrawable(wifiRes)),
                     contentDescription = "Wi-Fi",
-                    colorFilter = if (isRetroidLook) {
+                    colorFilter = if (spec.useSegmentedPixelBattery) {
                         ColorFilter.tint(colors.primary)
                     } else {
                         ColorFilter.tint(
@@ -330,8 +331,8 @@ fun StatusBarRow(
                         )
                     },
                     modifier = Modifier.size(
-                        width = if (isRetroidLook) 28.dp else 17.dp,
-                        height = if (isRetroidLook) 21.5.dp else 17.dp
+                        width = spec.wifiWidth,
+                        height = spec.wifiHeight
                     )
                 )
             }
@@ -340,19 +341,20 @@ fun StatusBarRow(
                 BatteryIconCanvas(
                     level = batteryLevel,
                     isCharging = isCharging,
+                    useSegmentedPixelBattery = spec.useSegmentedPixelBattery,
                     modifier = Modifier.size(
-                        width = if (isRetroidLook) 39.dp else 25.dp,
-                        height = if (isRetroidLook) 21.5.dp else 14.dp
+                        width = spec.batteryWidth,
+                        height = spec.batteryHeight
                     )
                 )
-                Spacer(modifier = Modifier.width(if (isRetroidLook) 7.dp else 4.dp))
+                Spacer(modifier = Modifier.width(spec.batteryPercentGap))
                 Text(
                     text = "$batteryLevel%",
                     color = colors.primary,
                     fontSize = statusFontSize,
                     fontFamily = pixelFont,
                     style = pixelStyle,
-                    fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
+                    fontWeight = spec.fontWeight
                 )
             }
         }
@@ -363,12 +365,12 @@ fun StatusBarRow(
 private fun BatteryIconCanvas(
     level: Int,
     isCharging: Boolean,
+    useSegmentedPixelBattery: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
     Canvas(modifier = modifier) {
-        if (isRetroidLook) {
+        if (useSegmentedPixelBattery) {
             // Exact RP_PIXEL 4-bar segmented pixel battery with right-side positive terminal nub:
             // Body: 49x29px at 1.33125x (37x21.8dp) with 4px (3dp) wall & 4x4px corner cutouts; right nub: 3x13px (2.25x9.8dp).
             val wall = (3.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()

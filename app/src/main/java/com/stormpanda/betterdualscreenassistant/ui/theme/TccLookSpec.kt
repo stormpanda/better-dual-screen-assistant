@@ -1,0 +1,837 @@
+package com.stormpanda.betterdualscreenassistant.ui.theme
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.min
+import androidx.compose.ui.unit.sp
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelCornerCutShape
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
+import kotlin.math.min as mathMin
+
+/**
+ * Canonical virtual viewport height (`720dp`) shared by every [TccLookSpec] inside the
+ * Assistant Overlay. Normalizing `LocalDensity` to `min(windowWidthPx, windowHeightPx) / 720f`
+ * makes vertical proportions invariant across arbitrary resolutions and firmware DPIs while
+ * preserving exact native pixel parity on both AYN Thor (`1080 / 720 = 1.5x`) and Retroid
+ * Pocket Duo (`960 / 720 = 1.3333x`).
+ */
+const val CANONICAL_OVERLAY_HEIGHT_DP: Float = 720f
+
+/**
+ * Exact terminating rational factor `(369 / 160) / (1080 / 720) = 369 / 240 = 1.5375f`
+ * mapping stock AYN Thor `369 dpi` (`468.2927dp` tall) dimensions into the shared `720dp`
+ * canonical coordinate space with zero floating-point drift (`1.5375f * 1.5f == 2.30625f`).
+ */
+internal const val AYN_TO_CANONICAL_720_SCALE: Float = 1.5375f
+
+private fun aynDp(rawThorDp: Float): Dp = (rawThorDp * AYN_TO_CANONICAL_720_SCALE).dp
+private fun aynSp(rawThorSp: Float): TextUnit = (rawThorSp * AYN_TO_CANONICAL_720_SCALE).sp
+
+fun computeOverlayNormalizedDensity(
+    widthPx: Int,
+    heightPx: Int,
+    fallbackDensity: Float = 1.5f
+): Float {
+    if (widthPx <= 0 || heightPx <= 0 || widthPx == Int.MAX_VALUE || heightPx == Int.MAX_VALUE) {
+        return fallbackDensity
+    }
+    val shortSidePx = mathMin(widthPx, heightPx).toFloat()
+    return (shortSidePx / CANONICAL_OVERLAY_HEIGHT_DP).coerceAtLeast(0.5f)
+}
+
+fun resolveResponsiveDialogWidthDp(
+    preferredWidth: Dp,
+    viewportWidth: Dp,
+    maxViewportWidthFraction: Float
+): Dp {
+    val maxAllowed = viewportWidth * maxViewportWidthFraction
+    return min(preferredWidth, maxAllowed)
+}
+
+@Immutable
+data class OverlayViewportMetrics(
+    val widthPx: Int,
+    val heightPx: Int,
+    val normalizedDensity: Float,
+    val widthDp: Dp,
+    val heightDp: Dp,
+    val aspectRatio: Float
+) {
+    /**
+     * Smooth `0f..1f` horizontal interpolation factor between narrow (~`8:7` = `1.15f`)
+     * and standard `4:3`+ (`1.333f`) secondary displays.
+     */
+    fun aspectFraction(
+        narrowAspect: Float = 1.15f,
+        wideAspect: Float = 4f / 3f
+    ): Float {
+        val span = (wideAspect - narrowAspect).coerceAtLeast(0.001f)
+        return ((aspectRatio - narrowAspect) / span).coerceIn(0f, 1f)
+    }
+}
+
+val DefaultOverlayViewportMetrics = OverlayViewportMetrics(
+    widthPx = 1280,
+    heightPx = 960,
+    normalizedDensity = 4f / 3f,
+    widthDp = 960.dp,
+    heightDp = 720.dp,
+    aspectRatio = 4f / 3f
+)
+
+val LocalOverlayViewport = compositionLocalOf { DefaultOverlayViewportMetrics }
+
+/**
+ * Normalizes `LocalDensity` to [CANONICAL_OVERLAY_HEIGHT_DP] (`720dp` short-side height,
+ * `fontScale = 1f`) from the live container's pixel bounds and provides [LocalOverlayViewport]
+ * so all UI looks adapt cleanly to any display resolution, aspect ratio, or firmware DPI.
+ */
+@Composable
+fun OverlayViewport(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val baseDensity = LocalDensity.current
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        val widthPx = constraints.maxWidth
+        val heightPx = constraints.maxHeight
+        val normalizedDensity = computeOverlayNormalizedDensity(
+            widthPx = widthPx,
+            heightPx = heightPx,
+            fallbackDensity = baseDensity.density
+        )
+        val metrics = remember(widthPx, heightPx, normalizedDensity) {
+            val safeW = if (widthPx > 0 && widthPx != Int.MAX_VALUE) widthPx else 1280
+            val safeH = if (heightPx > 0 && heightPx != Int.MAX_VALUE) heightPx else 960
+            OverlayViewportMetrics(
+                widthPx = safeW,
+                heightPx = safeH,
+                normalizedDensity = normalizedDensity,
+                widthDp = (safeW / normalizedDensity).dp,
+                heightDp = (safeH / normalizedDensity).dp,
+                aspectRatio = safeW.toFloat() / safeH.toFloat().coerceAtLeast(1f)
+            )
+        }
+        val effectiveDensity = remember(normalizedDensity) {
+            Density(density = normalizedDensity, fontScale = 1f)
+        }
+        CompositionLocalProvider(
+            LocalDensity provides effectiveDensity,
+            LocalOverlayViewport provides metrics
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                content()
+            }
+        }
+    }
+}
+
+@Immutable
+data class StatusBarLookSpec(
+    val topPadding: Dp,
+    val bottomPadding: Dp,
+    val horizontalPadding: Dp,
+    val timeHorizontalPadding: Dp,
+    val itemSpacing: Dp,
+    val fontSize: TextUnit,
+    val fontWeight: FontWeight,
+    val recordingCornerRadius: Dp,
+    val recordingHorizontalPadding: Dp,
+    val recordingVerticalPadding: Dp,
+    val recordingItemSpacing: Dp,
+    val recordingDotSize: Dp,
+    val recordingDotIsSquare: Boolean,
+    val recordingFontSize: TextUnit,
+    val bluetoothIconSize: Dp,
+    val wifiWidth: Dp,
+    val wifiHeight: Dp,
+    val batteryWidth: Dp,
+    val batteryHeight: Dp,
+    val batteryPercentGap: Dp,
+    val useSegmentedPixelBattery: Boolean
+)
+
+@Immutable
+data class TileButtonLookSpec(
+    val outerFocusShape: Shape,
+    val buttonShape: Shape,
+    val modeTileSize: Dp,
+    val qsTileSize: Dp,
+    val navTileSize: Dp,
+    val modeLabelWidth: Dp,
+    val qsLabelWidth: Dp,
+    val navLabelWidth: Dp,
+    val iconSizeRatio: Float,
+    val topGap: Dp,
+    val compactTopGap: Dp,
+    val modeLabelTopGap: Dp,
+    val qsLabelTopGap: Dp,
+    val compactLabelTopGap: Dp,
+    val modeTitleHeight: Dp,
+    val qsTitleHeight: Dp,
+    val compactTitleHeight: Dp,
+    val labelHorizontalPadding: Dp,
+    val modeLabelFontSize: TextUnit,
+    val qsLabelFontSize: TextUnit,
+    val modeLabelLineHeight: TextUnit,
+    val qsLabelLineHeight: TextUnit,
+    val alignNonCompactLabelTop: Boolean,
+    val singleLineWhenCompact: Boolean,
+    val useRetroidAccentContrast: Boolean
+)
+
+@Immutable
+data class SliderLookSpec(
+    val controlShape: Shape,
+    val trackShape: Shape,
+    val clipFillToTrackShape: Boolean,
+    val useDarkPixelTrackOverrides: Boolean,
+    val labelStartPadding: Dp,
+    val labelWidth: Dp,
+    val labelFontSize: TextUnit,
+    val labelLineHeight: TextUnit,
+    val trackHorizontalPadding: Dp,
+    val trackVerticalPaddingRatio: Float,
+    val iconHeightRatio: Float,
+    val iconStartPadding: Dp,
+    val dimZeroIconInDark: Boolean
+)
+
+@Immutable
+data class ModeTabLookSpec(
+    val reserveFourSliderLowerHeight: Boolean,
+    val upperCardWeight: Float,
+    val lowerRowWeight: Float,
+    val upperCardTopPadding: Dp,
+    val upperCardInnerVerticalPadding: Dp,
+    val modeItemHorizontalPadding: Dp,
+    val modeItemVerticalPadding: Dp,
+    val middleGap: Dp,
+    val lowerRowBottomPadding: Dp,
+    val cardHalfGap: Dp,
+    val cardHorizontalPadding: Dp,
+    val fixedCardVerticalPadding: Dp,
+    val threeSliderRowHeight: Dp,
+    val fourSliderRowHeight: Dp,
+    val referenceHalfGapSubtractor: Dp
+)
+
+@Immutable
+data class SettingsTabLookSpec(
+    val topRowWeight: Float,
+    val bottomRowWeight: Float,
+    val narrowLeftColWeight: Float,
+    val wideLeftColWeight: Float,
+    val cardHalfGap: Dp,
+    val topRowTopPadding: Dp,
+    val topRowBottomPadding: Dp,
+    val bottomRowTopPadding: Dp,
+    val pagerPadding: PaddingValues,
+    val indicatorDotSize: Dp,
+    val indicatorDotSpacing: Dp,
+    val indicatorShape: Shape,
+    val fpsTopWeight: Float,
+    val fpsCenterWeight: Float,
+    val fpsBottomWeight: Float,
+    val fpsBadgeShape: Shape,
+    val fpsBadgePreferredWidth: Dp?,
+    val fpsBadgeHeight: Dp?,
+    val fpsBadgeHorizontalPadding: Dp,
+    val fpsBadgeVerticalPadding: Dp,
+    val fpsBadgeFontSize: TextUnit,
+    val fpsTipFontSize: TextUnit,
+    val fpsCanvasPadDp: Dp,
+    val fpsNumberHeightRatio: Float,
+    val fpsUnitHeightRatio: Float,
+    val fpsBaselineShiftByPad: Boolean,
+    val fpsUsePixelCanvasFonts: Boolean,
+    val tempFanGap: Dp,
+    val ringsHorizontalPadding: Dp,
+    val ringsVerticalPadding: Dp,
+    val tempFanIconScaleMultiplier: Float,
+    val tempFanTitleScale: Float,
+    val tempFanValueScale: Float,
+    val tempFanSideInsetRatio: Float,
+    val ringDiameterRatio: Float,
+    val ringTitleScale: Float,
+    val ringValueScale: Float,
+    val ringUnitScale: Float,
+    val ringTitleBoxRatio: Float,
+    val ringUnitBoxRatio: Float
+)
+
+@Immutable
+data class NavBarLookSpec(
+    val fixedOuterHeight: Dp?,
+    val outerTopPadding: Dp,
+    val outerBottomPadding: Dp,
+    val innerVerticalPadding: Dp,
+    val itemHorizontalPadding: Dp,
+    val narrowRowFraction3: Float,
+    val wideRowFraction3: Float,
+    val narrowRowFraction4: Float,
+    val wideRowFraction4: Float
+)
+
+@Immutable
+data class DialogLookSpec(
+    val dialogShape: Shape,
+    val backdropDimAlpha: Float,
+    val narrowPreferredWidth: Dp,
+    val widePreferredWidth: Dp,
+    val maxViewportWidthFraction: Float,
+    val maxViewportHeightFraction: Float,
+    val verticalPadding: Dp,
+    val showHeaderIconAndDivider: Boolean,
+    val headerBottomPadding: Dp,
+    val headerIconSize: Dp,
+    val headerIconGap: Dp,
+    val titleFontSize: TextUnit,
+    val headerDividerHorizontalPadding: Dp,
+    val headerAfterDividerSpacer: Dp,
+    val maxScrollHeight: Dp,
+    val rowHeight: Dp,
+    val rowHorizontalPadding: Dp,
+    val optionEndPadding: Dp,
+    val swatchShape: Shape,
+    val swatchOuterSize: Dp,
+    val swatchBorderWidth: Dp,
+    val swatchInnerSize: Dp,
+    val optionIconSize: Dp,
+    val optionIconGap: Dp,
+    val optionFontSize: TextUnit,
+    val checkIndicatorSize: Dp,
+    val pixelCheckCutSize: Dp,
+    val showInterRowDividers: Boolean,
+    val dividerHorizontalPadding: Dp,
+    val accentRowHorizontalPadding: Dp,
+    val accentRowVerticalPadding: Dp,
+    val accentSwatchSpacing: Dp,
+    val accentSwatchSize: Dp,
+    val accentSelectedBorderWidth: Dp,
+    val toggleRowHeight: Dp,
+    val toggleRowHorizontalPadding: Dp,
+    val toggleFontSize: TextUnit,
+    val switchShape: Shape,
+    val switchThumbShape: Shape,
+    val switchWidth: Dp,
+    val switchHeight: Dp,
+    val switchThumbSize: Dp,
+    val switchHorizontalPadding: Dp,
+    val fanSliderRowHeight: Dp,
+    val fanSliderIconSize: Dp,
+    val fanSliderIconGap: Dp,
+    val fanSliderValueGap: Dp,
+    val segmentedOuterShape: Shape,
+    val segmentedInnerShape: Shape,
+    val segmentedContainerPadding: Dp,
+    val segmentedItemSpacing: Dp,
+    val segmentedPillHorizontalPadding: Dp,
+    val segmentedPillVerticalPadding: Dp,
+    val segmentedPillFontSize: TextUnit,
+    val tipDialogPreferredWidth: Dp,
+    val tipTopPadding: Dp,
+    val tipIconSize: Dp,
+    val tipIconGap: Dp,
+    val tipTitleFontSize: TextUnit,
+    val tipSectionGap: Dp,
+    val tipBodyFontSize: TextUnit,
+    val tipBodyLineHeight: TextUnit,
+    val tipBodyHorizontalPadding: Dp,
+    val tipCheckboxSize: Dp,
+    val tipCheckboxGap: Dp,
+    val tipCheckboxFontSize: TextUnit,
+    val tipCheckboxRowHorizontalPadding: Dp,
+    val tipCheckboxRowVerticalPadding: Dp,
+    val tipBeforeButtonsGap: Dp,
+    val tipButtonRowHeight: Dp,
+    val tipButtonFontSize: TextUnit,
+    val tipSolidDividers: Boolean
+)
+
+@Immutable
+data class TccLookSpec(
+    val look: TccUiLook,
+    val maxContentAspectRatio: Float,
+    val outerHorizontalPadding: Dp,
+    val contentBottomPadding: Dp,
+    val panelCardShape: Shape,
+    val useAsciiDegreeSymbol: Boolean,
+    val statusBar: StatusBarLookSpec,
+    val tile: TileButtonLookSpec,
+    val slider: SliderLookSpec,
+    val modeTab: ModeTabLookSpec,
+    val settingsTab: SettingsTabLookSpec,
+    val navBar: NavBarLookSpec,
+    val dialog: DialogLookSpec
+) {
+    val isRetroid: Boolean get() = look == TccUiLook.RETROID
+}
+
+val AynLookSpec = TccLookSpec(
+    look = TccUiLook.AYN,
+    maxContentAspectRatio = 1.45f,
+    outerHorizontalPadding = aynDp(15f),
+    contentBottomPadding = aynDp(5f),
+    panelCardShape = RoundedCornerShape(aynDp(20f)),
+    useAsciiDegreeSymbol = false,
+    statusBar = StatusBarLookSpec(
+        topPadding = aynDp(15f),
+        bottomPadding = 0.dp,
+        horizontalPadding = aynDp(15f),
+        timeHorizontalPadding = aynDp(6f),
+        itemSpacing = aynDp(10f),
+        fontSize = aynSp(15f),
+        fontWeight = FontWeight.Bold,
+        recordingCornerRadius = aynDp(10f),
+        recordingHorizontalPadding = aynDp(8f),
+        recordingVerticalPadding = aynDp(3f),
+        recordingItemSpacing = aynDp(5f),
+        recordingDotSize = aynDp(7f),
+        recordingDotIsSquare = false,
+        recordingFontSize = aynSp(12f),
+        bluetoothIconSize = aynDp(16f),
+        wifiWidth = aynDp(17f),
+        wifiHeight = aynDp(17f),
+        batteryWidth = aynDp(25f),
+        batteryHeight = aynDp(14f),
+        batteryPercentGap = aynDp(4f),
+        useSegmentedPixelBattery = false
+    ),
+    tile = TileButtonLookSpec(
+        outerFocusShape = RoundedCornerShape(aynDp(10f)),
+        buttonShape = CircleShape,
+        modeTileSize = aynDp(50.5f),
+        qsTileSize = aynDp(50.5f),
+        navTileSize = aynDp(50.5f),
+        modeLabelWidth = aynDp(72.5f),
+        qsLabelWidth = aynDp(82f),
+        navLabelWidth = aynDp(72.5f),
+        iconSizeRatio = 26f / 50.5f,
+        topGap = aynDp(8f),
+        compactTopGap = aynDp(8f),
+        modeLabelTopGap = 0.dp,
+        qsLabelTopGap = 0.dp,
+        compactLabelTopGap = 0.dp,
+        modeTitleHeight = aynDp(29f),
+        qsTitleHeight = aynDp(29f),
+        compactTitleHeight = aynDp(29f),
+        labelHorizontalPadding = 1.dp,
+        modeLabelFontSize = aynSp(11f),
+        qsLabelFontSize = aynSp(11f),
+        modeLabelLineHeight = aynSp(12.5f),
+        qsLabelLineHeight = aynSp(12.5f),
+        alignNonCompactLabelTop = false,
+        singleLineWhenCompact = false,
+        useRetroidAccentContrast = false
+    ),
+    slider = SliderLookSpec(
+        controlShape = RoundedCornerShape(aynDp(15f)),
+        trackShape = RoundedCornerShape(aynDp(15f)),
+        clipFillToTrackShape = false,
+        useDarkPixelTrackOverrides = false,
+        labelStartPadding = aynDp(5f),
+        labelWidth = aynDp(42f),
+        labelFontSize = aynSp(11.3f),
+        labelLineHeight = aynSp(13f),
+        trackHorizontalPadding = aynDp(8f),
+        trackVerticalPaddingRatio = 0.19f,
+        iconHeightRatio = 0.55f,
+        iconStartPadding = aynDp(7.5f),
+        dimZeroIconInDark = false
+    ),
+    modeTab = ModeTabLookSpec(
+        reserveFourSliderLowerHeight = true,
+        upperCardWeight = 0.50f,
+        lowerRowWeight = 0.50f,
+        upperCardTopPadding = aynDp(8f),
+        upperCardInnerVerticalPadding = aynDp(8f),
+        modeItemHorizontalPadding = aynDp(15f),
+        modeItemVerticalPadding = aynDp(6f),
+        middleGap = aynDp(10f),
+        lowerRowBottomPadding = 0.dp,
+        cardHalfGap = aynDp(5f),
+        cardHorizontalPadding = aynDp(10f),
+        fixedCardVerticalPadding = aynDp(9f),
+        threeSliderRowHeight = aynDp(43f),
+        fourSliderRowHeight = aynDp(43f),
+        referenceHalfGapSubtractor = aynDp(10f)
+    ),
+    settingsTab = SettingsTabLookSpec(
+        topRowWeight = 0.70f,
+        bottomRowWeight = 0.30f,
+        narrowLeftColWeight = 0.40f,
+        wideLeftColWeight = 0.40f,
+        cardHalfGap = aynDp(5f),
+        topRowTopPadding = aynDp(5f),
+        topRowBottomPadding = aynDp(5f),
+        bottomRowTopPadding = aynDp(5f),
+        pagerPadding = PaddingValues(horizontal = aynDp(10f), vertical = 0.dp),
+        indicatorDotSize = aynDp(6f),
+        indicatorDotSpacing = aynDp(8f),
+        indicatorShape = CircleShape,
+        fpsTopWeight = 0.30f,
+        fpsCenterWeight = 0.40f,
+        fpsBottomWeight = 0.30f,
+        fpsBadgeShape = RoundedCornerShape(aynDp(25f)),
+        fpsBadgePreferredWidth = null,
+        fpsBadgeHeight = null,
+        fpsBadgeHorizontalPadding = aynDp(15f),
+        fpsBadgeVerticalPadding = aynDp(3f),
+        fpsBadgeFontSize = aynSp(16f),
+        fpsTipFontSize = aynSp(16f),
+        fpsCanvasPadDp = aynDp(5f),
+        fpsNumberHeightRatio = 0.75f,
+        fpsUnitHeightRatio = 0.20f,
+        fpsBaselineShiftByPad = true,
+        fpsUsePixelCanvasFonts = false,
+        tempFanGap = aynDp(10f),
+        ringsHorizontalPadding = aynDp(12f),
+        ringsVerticalPadding = aynDp(12f),
+        tempFanIconScaleMultiplier = 1.0f,
+        tempFanTitleScale = 0.12f,
+        tempFanValueScale = 0.25f,
+        tempFanSideInsetRatio = 0.20f,
+        ringDiameterRatio = 1.0f,
+        ringTitleScale = 0.13f,
+        ringValueScale = 0.25f,
+        ringUnitScale = 0.13f,
+        ringTitleBoxRatio = 0.44f,
+        ringUnitBoxRatio = 0.52f
+    ),
+    navBar = NavBarLookSpec(
+        fixedOuterHeight = null,
+        outerTopPadding = aynDp(5f),
+        outerBottomPadding = aynDp(15f),
+        innerVerticalPadding = aynDp(5f),
+        itemHorizontalPadding = aynDp(8f),
+        narrowRowFraction3 = 0.70f,
+        wideRowFraction3 = 0.76f,
+        narrowRowFraction4 = 0.82f,
+        wideRowFraction4 = 0.86f
+    ),
+    dialog = DialogLookSpec(
+        dialogShape = RoundedCornerShape(aynDp(18f)),
+        backdropDimAlpha = 0.45f,
+        narrowPreferredWidth = aynDp(301f),
+        widePreferredWidth = aynDp(328f),
+        maxViewportWidthFraction = 0.78f,
+        maxViewportHeightFraction = 0.90f,
+        verticalPadding = aynDp(12f),
+        showHeaderIconAndDivider = false,
+        headerBottomPadding = aynDp(8f),
+        headerIconSize = aynDp(20f),
+        headerIconGap = aynDp(8f),
+        titleFontSize = aynSp(16f),
+        headerDividerHorizontalPadding = aynDp(24f),
+        headerAfterDividerSpacer = 0.dp,
+        maxScrollHeight = aynDp(320f),
+        rowHeight = aynDp(46f),
+        rowHorizontalPadding = aynDp(20f),
+        optionEndPadding = aynDp(12f),
+        swatchShape = CircleShape,
+        swatchOuterSize = aynDp(20f),
+        swatchBorderWidth = aynDp(1.5f),
+        swatchInnerSize = aynDp(9f),
+        optionIconSize = aynDp(20f),
+        optionIconGap = aynDp(14f),
+        optionFontSize = aynSp(14f),
+        checkIndicatorSize = aynDp(18f),
+        pixelCheckCutSize = 0.dp,
+        showInterRowDividers = true,
+        dividerHorizontalPadding = aynDp(16f),
+        accentRowHorizontalPadding = aynDp(18f),
+        accentRowVerticalPadding = aynDp(10f),
+        accentSwatchSpacing = aynDp(10f),
+        accentSwatchSize = aynDp(26f),
+        accentSelectedBorderWidth = aynDp(2f),
+        toggleRowHeight = aynDp(42f),
+        toggleRowHorizontalPadding = aynDp(20f),
+        toggleFontSize = aynSp(13f),
+        switchShape = RoundedCornerShape(aynDp(10f)),
+        switchThumbShape = CircleShape,
+        switchWidth = aynDp(38f),
+        switchHeight = aynDp(20f),
+        switchThumbSize = aynDp(16f),
+        switchHorizontalPadding = aynDp(2f),
+        fanSliderRowHeight = aynDp(50f),
+        fanSliderIconSize = aynDp(20f),
+        fanSliderIconGap = aynDp(12f),
+        fanSliderValueGap = aynDp(8f),
+        segmentedOuterShape = RoundedCornerShape(aynDp(10f)),
+        segmentedInnerShape = RoundedCornerShape(aynDp(8f)),
+        segmentedContainerPadding = aynDp(2f),
+        segmentedItemSpacing = aynDp(2f),
+        segmentedPillHorizontalPadding = aynDp(9f),
+        segmentedPillVerticalPadding = aynDp(4f),
+        segmentedPillFontSize = aynSp(11f),
+        tipDialogPreferredWidth = aynDp(420f),
+        tipTopPadding = aynDp(18f),
+        tipIconSize = aynDp(22f),
+        tipIconGap = aynDp(8f),
+        tipTitleFontSize = aynSp(17f),
+        tipSectionGap = aynDp(14f),
+        tipBodyFontSize = aynSp(14f),
+        tipBodyLineHeight = aynSp(18f),
+        tipBodyHorizontalPadding = aynDp(24f),
+        tipCheckboxSize = aynDp(18f),
+        tipCheckboxGap = aynDp(8f),
+        tipCheckboxFontSize = aynSp(13f),
+        tipCheckboxRowHorizontalPadding = aynDp(16f),
+        tipCheckboxRowVerticalPadding = aynDp(6f),
+        tipBeforeButtonsGap = aynDp(12f),
+        tipButtonRowHeight = aynDp(46f),
+        tipButtonFontSize = aynSp(15f),
+        tipSolidDividers = false
+    )
+)
+
+val RetroidLookSpec = TccLookSpec(
+    look = TccUiLook.RETROID,
+    maxContentAspectRatio = 1.30f,
+    outerHorizontalPadding = 14.dp,
+    contentBottomPadding = 3.dp,
+    panelCardShape = RoundedCornerShape(22.dp),
+    useAsciiDegreeSymbol = true,
+    statusBar = StatusBarLookSpec(
+        topPadding = 34.5.dp,
+        bottomPadding = 28.5.dp,
+        horizontalPadding = 14.dp,
+        timeHorizontalPadding = 0.dp,
+        itemSpacing = 10.dp,
+        fontSize = 20.5.sp,
+        fontWeight = FontWeight.Normal,
+        recordingCornerRadius = 4.dp,
+        recordingHorizontalPadding = 8.dp,
+        recordingVerticalPadding = 3.dp,
+        recordingItemSpacing = 5.dp,
+        recordingDotSize = 7.dp,
+        recordingDotIsSquare = true,
+        recordingFontSize = 15.sp,
+        bluetoothIconSize = 21.dp,
+        wifiWidth = 28.dp,
+        wifiHeight = 21.5.dp,
+        batteryWidth = 39.dp,
+        batteryHeight = 21.5.dp,
+        batteryPercentGap = 7.dp,
+        useSegmentedPixelBattery = true
+    ),
+    tile = TileButtonLookSpec(
+        outerFocusShape = RoundedCornerShape(10.dp),
+        buttonShape = PixelCornerCutShape(9.dp),
+        modeTileSize = 67.5.dp,
+        qsTileSize = 52.5.dp,
+        navTileSize = 52.5.dp,
+        modeLabelWidth = 165.dp,
+        qsLabelWidth = 132.dp,
+        navLabelWidth = 110.dp,
+        iconSizeRatio = 0.56f,
+        topGap = 5.dp,
+        compactTopGap = 3.dp,
+        modeLabelTopGap = 12.dp,
+        qsLabelTopGap = 8.dp,
+        compactLabelTopGap = 5.dp,
+        modeTitleHeight = 26.dp,
+        qsTitleHeight = 36.dp,
+        compactTitleHeight = 22.dp,
+        labelHorizontalPadding = 2.dp,
+        modeLabelFontSize = 15.sp,
+        qsLabelFontSize = 14.sp,
+        modeLabelLineHeight = 18.sp,
+        qsLabelLineHeight = 16.5.sp,
+        alignNonCompactLabelTop = true,
+        singleLineWhenCompact = true,
+        useRetroidAccentContrast = true
+    ),
+    slider = SliderLookSpec(
+        controlShape = RoundedCornerShape(12.dp),
+        trackShape = PixelNotchedShape(9.dp),
+        clipFillToTrackShape = true,
+        useDarkPixelTrackOverrides = true,
+        labelStartPadding = 2.dp,
+        labelWidth = 56.dp,
+        labelFontSize = 14.sp,
+        labelLineHeight = 16.5.sp,
+        trackHorizontalPadding = 10.dp,
+        trackVerticalPaddingRatio = 9.5f / 54f,
+        iconHeightRatio = 0.58f,
+        iconStartPadding = 10.dp,
+        dimZeroIconInDark = true
+    ),
+    modeTab = ModeTabLookSpec(
+        reserveFourSliderLowerHeight = false,
+        upperCardWeight = 0.44f,
+        lowerRowWeight = 0.56f,
+        upperCardTopPadding = 0.dp,
+        upperCardInnerVerticalPadding = 10.dp,
+        modeItemHorizontalPadding = 6.dp,
+        modeItemVerticalPadding = 4.dp,
+        middleGap = 30.dp,
+        lowerRowBottomPadding = 25.5.dp,
+        cardHalfGap = 7.5.dp,
+        cardHorizontalPadding = 16.dp,
+        fixedCardVerticalPadding = 14.dp,
+        threeSliderRowHeight = 54.dp,
+        fourSliderRowHeight = 44.dp,
+        referenceHalfGapSubtractor = 10.dp
+    ),
+    settingsTab = SettingsTabLookSpec(
+        topRowWeight = 0.68f,
+        bottomRowWeight = 0.32f,
+        narrowLeftColWeight = 0.38f,
+        wideLeftColWeight = 0.345f,
+        cardHalfGap = 7.5.dp,
+        topRowTopPadding = 4.5.dp,
+        topRowBottomPadding = 8.25.dp,
+        bottomRowTopPadding = 8.25.dp,
+        pagerPadding = PaddingValues(top = 12.dp, bottom = 2.dp, start = 14.dp, end = 14.dp),
+        indicatorDotSize = 8.dp,
+        indicatorDotSpacing = 10.dp,
+        indicatorShape = RectangleShape,
+        fpsTopWeight = 0.34f,
+        fpsCenterWeight = 0.38f,
+        fpsBottomWeight = 0.28f,
+        fpsBadgeShape = PixelCornerCutShape(3.5.dp),
+        fpsBadgePreferredWidth = 220.dp,
+        fpsBadgeHeight = 38.dp,
+        fpsBadgeHorizontalPadding = 12.dp,
+        fpsBadgeVerticalPadding = 0.dp,
+        fpsBadgeFontSize = 19.sp,
+        fpsTipFontSize = 18.sp,
+        fpsCanvasPadDp = 5.dp,
+        fpsNumberHeightRatio = 0.76f,
+        fpsUnitHeightRatio = 0.18f,
+        fpsBaselineShiftByPad = false,
+        fpsUsePixelCanvasFonts = true,
+        tempFanGap = 15.dp,
+        ringsHorizontalPadding = 16.dp,
+        ringsVerticalPadding = 12.dp,
+        tempFanIconScaleMultiplier = 1.15f,
+        tempFanTitleScale = 0.135f,
+        tempFanValueScale = 0.215f,
+        tempFanSideInsetRatio = 0.16f,
+        ringDiameterRatio = 0.90f,
+        ringTitleScale = 0.13f,
+        ringValueScale = 0.185f,
+        ringUnitScale = 0.125f,
+        ringTitleBoxRatio = 0.46f,
+        ringUnitBoxRatio = 0.48f
+    ),
+    navBar = NavBarLookSpec(
+        fixedOuterHeight = 155.5.dp,
+        outerTopPadding = 15.dp,
+        outerBottomPadding = 30.5.dp,
+        innerVerticalPadding = 4.dp,
+        itemHorizontalPadding = 4.dp,
+        narrowRowFraction3 = 0.74f,
+        wideRowFraction3 = 0.68f,
+        narrowRowFraction4 = 0.86f,
+        wideRowFraction4 = 0.78f
+    ),
+    dialog = DialogLookSpec(
+        dialogShape = RoundedCornerShape(20.dp),
+        backdropDimAlpha = 0.55f,
+        narrowPreferredWidth = 528.dp,
+        widePreferredWidth = 528.dp,
+        maxViewportWidthFraction = 0.72f,
+        maxViewportHeightFraction = 0.90f,
+        verticalPadding = 22.dp,
+        showHeaderIconAndDivider = true,
+        headerBottomPadding = 18.dp,
+        headerIconSize = 33.dp,
+        headerIconGap = 12.dp,
+        titleFontSize = 26.sp,
+        headerDividerHorizontalPadding = 44.dp,
+        headerAfterDividerSpacer = 8.dp,
+        maxScrollHeight = 380.dp,
+        rowHeight = 76.dp,
+        rowHorizontalPadding = 64.dp,
+        optionEndPadding = 12.dp,
+        swatchShape = PixelCornerCutShape(3.dp),
+        swatchOuterSize = 30.dp,
+        swatchBorderWidth = 1.5.dp,
+        swatchInnerSize = 14.dp,
+        optionIconSize = 34.dp,
+        optionIconGap = 26.dp,
+        optionFontSize = 21.sp,
+        checkIndicatorSize = 34.dp,
+        pixelCheckCutSize = 3.dp,
+        showInterRowDividers = false,
+        dividerHorizontalPadding = 28.dp,
+        accentRowHorizontalPadding = 28.dp,
+        accentRowVerticalPadding = 12.dp,
+        accentSwatchSpacing = 12.dp,
+        accentSwatchSize = 32.dp,
+        accentSelectedBorderWidth = 2.dp,
+        toggleRowHeight = 54.dp,
+        toggleRowHorizontalPadding = 34.dp,
+        toggleFontSize = 16.sp,
+        switchShape = PixelCornerCutShape(3.dp),
+        switchThumbShape = PixelCornerCutShape(2.dp),
+        switchWidth = 46.dp,
+        switchHeight = 24.dp,
+        switchThumbSize = 20.dp,
+        switchHorizontalPadding = 2.dp,
+        fanSliderRowHeight = 60.dp,
+        fanSliderIconSize = 26.dp,
+        fanSliderIconGap = 16.dp,
+        fanSliderValueGap = 10.dp,
+        segmentedOuterShape = PixelCornerCutShape(3.5.dp),
+        segmentedInnerShape = PixelCornerCutShape(2.5.dp),
+        segmentedContainerPadding = 3.dp,
+        segmentedItemSpacing = 3.dp,
+        segmentedPillHorizontalPadding = 12.dp,
+        segmentedPillVerticalPadding = 5.dp,
+        segmentedPillFontSize = 14.sp,
+        tipDialogPreferredWidth = 520.dp,
+        tipTopPadding = 24.dp,
+        tipIconSize = 28.dp,
+        tipIconGap = 10.dp,
+        tipTitleFontSize = 22.sp,
+        tipSectionGap = 18.dp,
+        tipBodyFontSize = 17.sp,
+        tipBodyLineHeight = 22.sp,
+        tipBodyHorizontalPadding = 30.dp,
+        tipCheckboxSize = 28.dp,
+        tipCheckboxGap = 10.dp,
+        tipCheckboxFontSize = 16.sp,
+        tipCheckboxRowHorizontalPadding = 16.dp,
+        tipCheckboxRowVerticalPadding = 6.dp,
+        tipBeforeButtonsGap = 16.dp,
+        tipButtonRowHeight = 58.dp,
+        tipButtonFontSize = 18.sp,
+        tipSolidDividers = true
+    )
+)
+
+fun lookSpecFor(uiLook: TccUiLook): TccLookSpec = when (uiLook) {
+    TccUiLook.AYN -> AynLookSpec
+    TccUiLook.RETROID -> RetroidLookSpec
+}
+
+fun lerpDp(start: Dp, stop: Dp, fraction: Float): Dp = lerp(start, stop, fraction.coerceIn(0f, 1f))
+
+val LocalTccLookSpec = compositionLocalOf { AynLookSpec }

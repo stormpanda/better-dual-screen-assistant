@@ -41,13 +41,19 @@ enum class TccUiLookPreference(
     RETROID(2, "Retroid Pixel", "Retroid");
 
     fun resolve(profile: DeviceProfile): TccUiLook = when (this) {
-        AUTO -> if (profile == DeviceProfile.RETROID_POCKET_DUO) TccUiLook.RETROID else TccUiLook.AYN
+        AUTO -> when (profile.defaultUiLookPreferenceId) {
+            RETROID.id -> TccUiLook.RETROID
+            else -> TccUiLook.AYN
+        }
         AYN -> TccUiLook.AYN
         RETROID -> TccUiLook.RETROID
     }
 
     fun displayNameFor(profile: DeviceProfile): String = when (this) {
-        AUTO -> "Auto (${if (profile == DeviceProfile.RETROID_POCKET_DUO) "Retroid Pixel" else "AYN Smooth"})"
+        AUTO -> {
+            val nativePref = if (profile.defaultUiLookPreferenceId == RETROID.id) RETROID else AYN
+            "Auto (${nativePref.displayName})"
+        }
         else -> displayName
     }
 
@@ -662,6 +668,7 @@ fun TccTheme(
     val option = AppThemeOption.fromId(themeMode)
     val resolvedUiLook = TccUiLookPreference.fromId(uiLookMode)
         .resolve(DeviceProfile.current(context))
+    val lookSpec = lookSpecFor(resolvedUiLook)
     val palette = resolveTccPalette(
         option = option,
         systemDark = systemDark,
@@ -673,7 +680,8 @@ fun TccTheme(
 
     CompositionLocalProvider(
         LocalTccColors provides palette,
-        LocalTccUiLook provides resolvedUiLook
+        LocalTccUiLook provides resolvedUiLook,
+        LocalTccLookSpec provides lookSpec
     ) {
         content()
     }

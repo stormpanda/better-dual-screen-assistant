@@ -2,6 +2,9 @@ package com.stormpanda.betterdualscreenassistant.ui.components
 
 import android.view.KeyEvent
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -18,7 +21,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,15 +31,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,16 +67,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
-import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalOverlayViewport
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
-import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccUiLook
-import com.stormpanda.betterdualscreenassistant.ui.theme.TccUiLook
-import com.stormpanda.betterdualscreenassistant.ui.theme.contrastingContentColor
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
+import com.stormpanda.betterdualscreenassistant.ui.theme.lerpDp
+import com.stormpanda.betterdualscreenassistant.ui.theme.resolveResponsiveDialogWidthDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayFontFamily
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayTextStyle
@@ -180,15 +176,15 @@ class PixelNotchedShape(private val notchSize: Dp) : Shape {
     }
 }
 
+enum class TccTileVariant {
+    MODE,
+    QUICK_SETTING,
+    NAV_BAR
+}
+
 /**
- * Replicates `TCCButtonView` (`com.odin.dualscreen.assistant.views.wiget.TCCButtonView`):
- * - Fixed stock dimensions derived from `ScreenUtil.g() * 0.135f` (`145px = 72.5dp` on 1080p height):
- *   - `buttonWidth = 72.5.dp`
- *   - `topMargin = 8.dp`
- *   - `circleDiameter = 50.5.dp` (`145px * (1 - 2 * 0.152)`)
- *   - `iconSize = 26.dp` (`circleDiameter - 2 * 12.4dp`)
- *   - `titleHeight = 29.dp` (`145px * 0.4f`)
- *   - `titleTextSize = 11.sp` (`29dp * 0.38f`)
+ * Unified, look-driven tile button replicating `TCCButtonView` across both AYN Smooth and
+ * Retroid Pixel UI looks in the shared `720dp` canonical coordinate space.
  */
 @Composable
 fun TccButton(
@@ -197,77 +193,72 @@ fun TccButton(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    retroidTileSize: Dp = 52.5.dp,
-    retroidLabelWidth: Dp = 132.dp,
-    retroidCompactVertical: Boolean = false
+    variant: TccTileVariant = TccTileVariant.QUICK_SETTING,
+    maxLabelWidth: Dp? = null
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val tileSpec = lookSpec.tile
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
     var isFocused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
 
-    val iconTint = if (isRetroidLook) {
-        if (selected) {
-            colors.retroidContentOnAccent()
-        } else {
-            colors.secondary
-        }
+    val iconTint = if (tileSpec.useRetroidAccentContrast) {
+        if (selected) colors.retroidContentOnAccent() else colors.secondary
     } else if (selected) {
-        if (colors.isMegingiardStyle) {
-            colors.onAccent
-        } else if (colors.isDark) {
-            Color.White
-        } else {
-            colors.primary
+        when {
+            colors.isMegingiardStyle -> colors.onAccent
+            colors.isDark -> Color.White
+            else -> colors.primary
         }
     } else {
         colors.secondary
     }
     val textColor = if (selected) colors.primary else colors.secondary
-    val outerShape = RoundedCornerShape(10.dp)
-    val buttonShape: Shape = if (isRetroidLook) PixelCornerCutShape(9.dp) else CircleShape
-    val columnWidth = if (isRetroidLook) retroidLabelWidth else 72.5.dp
-    val tileBoxSize = if (isRetroidLook) retroidTileSize else 50.5.dp
-    val iconBoxSize = if (isRetroidLook) (retroidTileSize * 0.56f) else 26.dp
-    val topGap = if (isRetroidLook) {
-        if (retroidCompactVertical) 3.dp else 5.dp
-    } else {
-        8.dp
+
+    val isCompact = variant == TccTileVariant.NAV_BAR
+    val tileBoxSize = when (variant) {
+        TccTileVariant.MODE -> tileSpec.modeTileSize
+        TccTileVariant.QUICK_SETTING -> tileSpec.qsTileSize
+        TccTileVariant.NAV_BAR -> tileSpec.navTileSize
     }
-    val labelTopGap = if (isRetroidLook) {
-        when {
-            retroidCompactVertical -> 5.dp
-            retroidTileSize >= 60.dp -> 12.dp
-            else -> 8.dp
-        }
-    } else {
-        0.dp
+    val defaultLabelWidth = when (variant) {
+        TccTileVariant.MODE -> tileSpec.modeLabelWidth
+        TccTileVariant.QUICK_SETTING -> tileSpec.qsLabelWidth
+        TccTileVariant.NAV_BAR -> tileSpec.navLabelWidth
     }
-    val titleBoxHeight = if (isRetroidLook) {
-        when {
-            retroidCompactVertical -> 22.dp
-            retroidTileSize >= 60.dp -> 26.dp
-            else -> 36.dp
-        }
+    val columnWidth = if (maxLabelWidth != null) {
+        min(defaultLabelWidth, maxLabelWidth)
     } else {
-        29.dp
+        defaultLabelWidth
     }
-    val labelFontSize = if (isRetroidLook) {
-        if (retroidTileSize >= 60.dp) 15.sp else 14.sp
-    } else {
-        11.sp
+    val iconBoxSize = tileBoxSize * tileSpec.iconSizeRatio
+    val topGap = if (isCompact) tileSpec.compactTopGap else tileSpec.topGap
+    val labelTopGap = when (variant) {
+        TccTileVariant.MODE -> tileSpec.modeLabelTopGap
+        TccTileVariant.QUICK_SETTING -> tileSpec.qsLabelTopGap
+        TccTileVariant.NAV_BAR -> tileSpec.compactLabelTopGap
     }
-    val labelLineHeight = if (isRetroidLook) {
-        if (retroidTileSize >= 60.dp) 18.sp else 16.5.sp
+    val titleBoxHeight = when (variant) {
+        TccTileVariant.MODE -> tileSpec.modeTitleHeight
+        TccTileVariant.QUICK_SETTING -> tileSpec.qsTitleHeight
+        TccTileVariant.NAV_BAR -> tileSpec.compactTitleHeight
+    }
+    val labelFontSize = if (variant == TccTileVariant.MODE) {
+        tileSpec.modeLabelFontSize
     } else {
-        12.5.sp
+        tileSpec.qsLabelFontSize
+    }
+    val labelLineHeight = if (variant == TccTileVariant.MODE) {
+        tileSpec.modeLabelLineHeight
+    } else {
+        tileSpec.qsLabelLineHeight
     }
 
     Box(
         modifier = modifier
-            .clip(outerShape)
+            .clip(tileSpec.outerFocusShape)
             .background(if (isFocused) colors.panelBackgroundSelected else Color.Transparent)
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
@@ -298,14 +289,10 @@ fun TccButton(
             Box(
                 modifier = Modifier
                     .size(tileBoxSize)
-                    .clip(buttonShape)
+                    .clip(tileSpec.buttonShape)
                     .then(
-                        if (isRetroidLook) {
-                            if (selected) {
-                                Modifier.background(colors.accent)
-                            } else {
-                                Modifier.background(colors.fifth)
-                            }
+                        if (tileSpec.useRetroidAccentContrast) {
+                            Modifier.background(if (selected) colors.accent else colors.fifth)
                         } else if (selected) {
                             if (colors.isMegingiardStyle) {
                                 Modifier.background(colors.accent)
@@ -345,8 +332,8 @@ fun TccButton(
                 modifier = Modifier
                     .width(columnWidth)
                     .height(titleBoxHeight)
-                    .padding(horizontal = 2.dp),
-                contentAlignment = if (isRetroidLook && !retroidCompactVertical) {
+                    .padding(horizontal = tileSpec.labelHorizontalPadding),
+                contentAlignment = if (tileSpec.alignNonCompactLabelTop && !isCompact) {
                     Alignment.TopCenter
                 } else {
                     Alignment.Center
@@ -361,7 +348,7 @@ fun TccButton(
                     style = pixelStyle,
                     fontWeight = FontWeight.Normal,
                     textAlign = TextAlign.Center,
-                    maxLines = if (isRetroidLook && retroidCompactVertical) 1 else 2,
+                    maxLines = if (tileSpec.singleLineWhenCompact && isCompact) 1 else 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -376,12 +363,9 @@ enum class SliderKind {
 }
 
 /**
- * Replicates `C0501a` (`x0.a`):
- * - Sits inside the brightness/volume panel card (transparent unless gamepad-focused).
- * - Left title: `width = 40.dp`, `marginStart = 5.dp`, 2 lines centered, `11.3.sp`, `colors.primary`.
- * - Track (`bVar`): `weight(1f)`, `fillMaxHeight()`, `padding(8.dp)`, `RoundedCornerShape(15.dp)`, `colors.fifth`.
- * - Progress fill: straight vertical right edge clipped by the `15.dp` rounded capsule track (`colors.tertiary`).
- * - Icon inside left of track: `height = 55%` of track height, `start = 8.dp`, tinted `colors.primary`.
+ * Responsive brightness/volume/LED slider bar driven by [LocalTccLookSpec].
+ * Scales vertical track padding proportionally to row height so 3-slider and 4-slider cards
+ * maintain balanced track thickness across all screen sizes and UI looks.
  */
 @Composable
 fun HorizontalSlidingBar(
@@ -393,7 +377,7 @@ fun HorizontalSlidingBar(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val sliderSpec = LocalTccLookSpec.current.slider
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
     var isFocused by remember { mutableStateOf(false) }
@@ -419,9 +403,7 @@ fun HorizontalSlidingBar(
         SliderKind.LED_BRIGHTNESS -> R.drawable.ic_qs_ambient_light
     }
 
-    val controlShape: Shape = if (isRetroidLook) RoundedCornerShape(12.dp) else RoundedCornerShape(15.dp)
-    val trackShape: Shape = if (isRetroidLook) PixelNotchedShape(9.dp) else RoundedCornerShape(15.dp)
-    val trackBackground = if (isRetroidLook && !colors.isMegingiardStyle && colors.isDark) {
+    val trackBackground = if (sliderSpec.useDarkPixelTrackOverrides && !colors.isMegingiardStyle && colors.isDark) {
         Color(0xFF161616)
     } else {
         colors.fifth
@@ -429,7 +411,7 @@ fun HorizontalSlidingBar(
 
     Row(
         modifier = modifier
-            .clip(controlShape)
+            .clip(sliderSpec.controlShape)
             .background(if (isFocused) colors.panelBackgroundSelected else Color.Transparent)
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
@@ -456,15 +438,15 @@ fun HorizontalSlidingBar(
     ) {
         Box(
             modifier = Modifier
-                .padding(start = if (isRetroidLook) 2.dp else 5.dp)
-                .width(if (isRetroidLook) 56.dp else 42.dp),
+                .padding(start = sliderSpec.labelStartPadding)
+                .width(sliderSpec.labelWidth),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = label,
                 color = colors.primary,
-                fontSize = if (isRetroidLook) 14.sp else 11.3.sp,
-                lineHeight = if (isRetroidLook) 16.5.sp else 13.sp,
+                fontSize = sliderSpec.labelFontSize,
+                lineHeight = sliderSpec.labelLineHeight,
                 fontFamily = pixelFont,
                 style = pixelStyle,
                 fontWeight = FontWeight.Normal,
@@ -477,105 +459,110 @@ fun HorizontalSlidingBar(
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight()
-                .padding(
-                    horizontal = if (isRetroidLook) 10.dp else 8.dp,
-                    vertical = if (isRetroidLook) 9.5.dp else 8.dp
-                )
-                .clip(trackShape)
-                .background(trackBackground)
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        val ratio = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        val pct = (ratio * 100f).roundToInt()
-                        dragProgress = pct.toFloat()
-                        onProgressChange(pct, false)
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { offset ->
-                            isDragging = true
+                .fillMaxHeight(),
+            contentAlignment = Alignment.Center
+        ) {
+            val verticalTrackPad = maxHeight * sliderSpec.trackVerticalPaddingRatio
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        horizontal = sliderSpec.trackHorizontalPadding,
+                        vertical = verticalTrackPad
+                    )
+                    .clip(sliderSpec.trackShape)
+                    .background(trackBackground)
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
                             val ratio = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                            dragProgress = ratio * 100f
-                            onProgressChange(dragProgress.roundToInt(), true)
-                        },
-                        onHorizontalDrag = { change, _ ->
-                            change.consume()
-                            val ratio = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                            dragProgress = ratio * 100f
-                            onProgressChange(dragProgress.roundToInt(), true)
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            onProgressChange(dragProgress.roundToInt(), false)
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                            onProgressChange(dragProgress.roundToInt(), false)
+                            val pct = (ratio * 100f).roundToInt()
+                            dragProgress = pct.toFloat()
+                            onProgressChange(pct, false)
                         }
+                    }
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { offset ->
+                                isDragging = true
+                                val ratio = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                dragProgress = ratio * 100f
+                                onProgressChange(dragProgress.roundToInt(), true)
+                            },
+                            onHorizontalDrag = { change, _ ->
+                                change.consume()
+                                val ratio = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                dragProgress = ratio * 100f
+                                onProgressChange(dragProgress.roundToInt(), true)
+                            },
+                            onDragEnd = {
+                                isDragging = false
+                                onProgressChange(dragProgress.roundToInt(), false)
+                            },
+                            onDragCancel = {
+                                isDragging = false
+                                onProgressChange(dragProgress.roundToInt(), false)
+                            }
+                        )
+                    }
+            ) {
+                val trackWidth = maxWidth
+                val trackHeight = maxHeight
+                val fraction = (displayProgress / 100f).coerceIn(0f, 1f)
+
+                val fillColor = if (effectiveFillDimmed) {
+                    if (sliderSpec.useDarkPixelTrackOverrides && !colors.isMegingiardStyle && colors.isDark) {
+                        Color(0xFF242424)
+                    } else if (colors.isDark) {
+                        Color.White.copy(alpha = 0.18f)
+                    } else {
+                        Color.Black.copy(alpha = 0.10f)
+                    }
+                } else {
+                    colors.sliderFill
+                }
+                Box(
+                    modifier = Modifier
+                        .width(trackWidth * fraction)
+                        .fillMaxHeight()
+                        .then(if (sliderSpec.clipFillToTrackShape) Modifier.clip(sliderSpec.trackShape) else Modifier)
+                        .background(fillColor)
+                )
+
+                val iconSize = trackHeight * sliderSpec.iconHeightRatio
+                val sliderIconTint = when {
+                    !effectiveFillDimmed && colors.isMegingiardStyle && displayProgress >= 12 -> {
+                        if (sliderSpec.clipFillToTrackShape) {
+                            colors.retroidContentOnAccent()
+                        } else {
+                            colors.onAccent
+                        }
+                    }
+                    sliderSpec.dimZeroIconInDark && displayProgress <= 0 -> colors.secondary.copy(alpha = 0.75f)
+                    else -> colors.primary
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(start = sliderSpec.iconStartPadding),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Image(
+                        painter = painterResource(id = tccDrawable(rawIconRes)),
+                        contentDescription = label,
+                        colorFilter = ColorFilter.tint(sliderIconTint),
+                        modifier = Modifier.size(iconSize),
+                        contentScale = ContentScale.Fit
                     )
                 }
-        ) {
-            val trackWidth = maxWidth
-            val trackHeight = maxHeight
-            val fraction = (displayProgress / 100f).coerceIn(0f, 1f)
-
-            val fillColor = if (effectiveFillDimmed) {
-                if (isRetroidLook && !colors.isMegingiardStyle && colors.isDark) {
-                    Color(0xFF242424)
-                } else if (colors.isDark) {
-                    Color.White.copy(alpha = 0.18f)
-                } else {
-                    Color.Black.copy(alpha = 0.10f)
-                }
-            } else {
-                colors.sliderFill
-            }
-            Box(
-                modifier = Modifier
-                    .width(trackWidth * fraction)
-                    .fillMaxHeight()
-                    .then(if (isRetroidLook) Modifier.clip(trackShape) else Modifier)
-                    .background(fillColor)
-            )
-
-            val iconSize = trackHeight * (if (isRetroidLook) 0.58f else 0.55f)
-            val sliderIconTint = when {
-                !effectiveFillDimmed && colors.isMegingiardStyle && displayProgress >= 12 -> {
-                    if (isRetroidLook) {
-                        colors.retroidContentOnAccent()
-                    } else {
-                        colors.onAccent
-                    }
-                }
-                isRetroidLook && displayProgress <= 0 -> colors.secondary.copy(alpha = 0.75f)
-                else -> colors.primary
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(start = if (isRetroidLook) 10.dp else 7.5.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Image(
-                    painter = painterResource(id = tccDrawable(rawIconRes)),
-                    contentDescription = label,
-                    colorFilter = ColorFilter.tint(sliderIconTint),
-                    modifier = Modifier.size(iconSize),
-                    contentScale = ContentScale.Fit
-                )
             }
         }
     }
 }
 
 /**
- * Replicates `A0.e` (`CpuTempInfoComponent` & `FanInfoComponent` in `hardware_info_panel_layout_2.xml`):
- * - Rounded card (`20.dp` radius, `colors.panelBackground`)
- * - Top-left (`20%` x, `20%` y): icon (`minDim * iconSizeRate`)
- * - Top-right (`right = 20%` x, centered at `30%` y): title (`"TEMP"` or `"FAN"`, `colors.tertiary`, `minDim * 0.12f`)
- * - Bottom-left (`left = 20%` x, centered at `70%` y): value + unit (`"44℃"` or `"20%"`, `colors.primary`, `minDim * 0.25f`)
+ * Replicates `CpuTempInfoComponent` & `FanInfoComponent` (`TEMP` / `FAN` telemetry cards),
+ * sizing internal typography and icon bounds proportionally to `min(maxWidth, maxHeight)`.
  */
 @Composable
 fun HardwareInfoComponentCard(
@@ -588,18 +575,19 @@ fun HardwareInfoComponentCard(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
     val labelFont = tccFontFamily()
     val labelStyle = tccTextStyle()
     val displayFont = tccDisplayFontFamily()
     val displayStyle = tccDisplayTextStyle()
-    val cardShape: Shape = if (isRetroidLook) RoundedCornerShape(22.dp) else RoundedCornerShape(20.dp)
+    val textWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Medium
     var isFocused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
 
     BoxWithConstraints(
         modifier = modifier
-            .clip(cardShape)
+            .clip(lookSpec.panelCardShape)
             .background(
                 if (onClick != null && isFocused) {
                     colors.panelBackgroundSelected
@@ -635,15 +623,14 @@ fun HardwareInfoComponentCard(
     ) {
         val density = LocalDensity.current
         val minDim = min(maxWidth, maxHeight)
-        val iconSize = minDim * (if (isRetroidLook) iconSizeRate * 1.15f else iconSizeRate)
-        val titleSp = with(density) { (minDim * (if (isRetroidLook) 0.135f else 0.12f)).toSp() }
-        val valueSp = with(density) { (minDim * (if (isRetroidLook) 0.215f else 0.25f)).toSp() }
+        val iconSize = minDim * (iconSizeRate * settingsSpec.tempFanIconScaleMultiplier)
+        val titleSp = with(density) { (minDim * settingsSpec.tempFanTitleScale).toSp() }
+        val valueSp = with(density) { (minDim * settingsSpec.tempFanValueScale).toSp() }
 
-        val leftX = maxWidth * (if (isRetroidLook) 0.16f else 0.20f)
-        val rightPad = maxWidth * (if (isRetroidLook) 0.16f else 0.20f)
+        val leftX = maxWidth * settingsSpec.tempFanSideInsetRatio
+        val rightPad = maxWidth * settingsSpec.tempFanSideInsetRatio
         val iconTopY = maxHeight * 0.20f
 
-        // Icon at (20% width, 20% height)
         Image(
             painter = painterResource(id = tccDrawable(iconRes)),
             contentDescription = title,
@@ -654,7 +641,6 @@ fun HardwareInfoComponentCard(
             contentScale = ContentScale.Fit
         )
 
-        // Title ("TEMP" / "FAN") right-aligned at 80% width, vertically centered at 30% height
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -668,12 +654,11 @@ fun HardwareInfoComponentCard(
                 fontSize = titleSp,
                 fontFamily = labelFont,
                 style = labelStyle,
-                fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium,
+                fontWeight = textWeight,
                 maxLines = 1
             )
         }
 
-        // Value ("44℃" / "20%") left-aligned at 20% width, vertically centered at 70% height
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -688,28 +673,20 @@ fun HardwareInfoComponentCard(
                 fontSize = valueSp,
                 fontFamily = displayFont,
                 style = displayStyle,
-                fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium,
+                fontWeight = textWeight,
                 maxLines = 1
             )
         }
     }
 }
 
-// Matches Android's default DecelerateInterpolator(1.0f) used in B0.d
 private val RingDecelerateEasing = Easing { fraction ->
     1f - (1f - fraction) * (1f - fraction)
 }
 
 /**
- * Replicates `B0.d` (`HardwareInfoRingView` for `CPU`, `GPU`, `PWR`, `RAM`):
- * - `strokeWidth = minDim * 0.05f`
- * - Track circle: `colors.fourth` (`#3B3B3B`)
- * - Progress arc: `ringColor.copy(alpha = 150f / 255f)` with `StrokeCap.Round`, animated over `300ms`
- *   with `DecelerateInterpolator` (`B0.d.setProgressWithAnimation`)
- * - Top indicator point at `-90°`: `Color.White`, diameter = `strokeWidth * 0.85f`
- * - Title at `15%` y (`minDim * 0.13f`, `colors.tertiary`)
- * - Value at `50%` y (`minDim * 0.25f`, `colors.primary`)
- * - Unit at `65%` y (`minDim * 0.13f`, `colors.tertiary`)
+ * Replicates `HardwareInfoRingView` (`CPU`, `GPU`, `PWR`, `RAM` circular telemetry gauges),
+ * scaling diameter and typography dynamically from `min(maxWidth, maxHeight)`.
  */
 @Composable
 fun HardwareRingGauge(
@@ -724,7 +701,8 @@ fun HardwareRingGauge(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
     val labelFont = tccFontFamily()
     val labelStyle = tccTextStyle()
     val displayFont = tccDisplayFontFamily()
@@ -749,11 +727,11 @@ fun HardwareRingGauge(
         contentAlignment = Alignment.Center
     ) {
         val rawSizeDp = min(maxWidth, maxHeight)
-        val sizeDp = if (isRetroidLook) rawSizeDp * 0.90f else rawSizeDp
+        val sizeDp = rawSizeDp * settingsSpec.ringDiameterRatio
         val density = LocalDensity.current
-        val titleSp = with(density) { (sizeDp * 0.13f).toSp() }
-        val valueSp = with(density) { (sizeDp * (if (isRetroidLook) 0.185f else 0.25f)).toSp() }
-        val unitSp = with(density) { (sizeDp * (if (isRetroidLook) 0.125f else 0.13f)).toSp() }
+        val titleSp = with(density) { (sizeDp * settingsSpec.ringTitleScale).toSp() }
+        val valueSp = with(density) { (sizeDp * settingsSpec.ringValueScale).toSp() }
+        val unitSp = with(density) { (sizeDp * settingsSpec.ringUnitScale).toSp() }
 
         Box(
             modifier = Modifier.size(sizeDp),
@@ -765,7 +743,6 @@ fun HardwareRingGauge(
                 val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
                 val topLeft = Offset(halfStroke, halfStroke)
 
-                // Track circle
                 drawArc(
                     color = colors.fourth,
                     startAngle = -90f,
@@ -776,7 +753,6 @@ fun HardwareRingGauge(
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
 
-                // Progress arc (alpha = 150/255 in B0.d), using animatedRingProgress
                 val ringProgress = animatedRingProgress.value.coerceIn(minValue, maxValue)
                 val sweepAngle = if (!bidirectional) {
                     val denom = (maxValue - minValue).coerceAtLeast(0.001f)
@@ -794,7 +770,13 @@ fun HardwareRingGauge(
 
                 if (sweepAngle != 0f) {
                     drawArc(
-                        color = ringColor.copy(alpha = if (isRetroidLook && !colors.isMegingiardStyle) 215f / 255f else 150f / 255f),
+                        color = ringColor.copy(
+                            alpha = if (lookSpec.isRetroid && !colors.isMegingiardStyle) {
+                                215f / 255f
+                            } else {
+                                150f / 255f
+                            }
+                        ),
                         startAngle = -90f,
                         sweepAngle = sweepAngle,
                         useCenter = false,
@@ -812,11 +794,10 @@ fun HardwareRingGauge(
                 )
             }
 
-            // Title at ~22% center Y
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(sizeDp * (if (isRetroidLook) 0.46f else 0.44f))
+                    .height(sizeDp * settingsSpec.ringTitleBoxRatio)
                     .align(Alignment.TopCenter),
                 contentAlignment = Alignment.Center
             ) {
@@ -831,7 +812,6 @@ fun HardwareRingGauge(
                 )
             }
 
-            // Value at 50% center Y
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -847,11 +827,10 @@ fun HardwareRingGauge(
                 )
             }
 
-            // Unit at ~72% center Y
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(sizeDp * (if (isRetroidLook) 0.48f else 0.52f))
+                    .height(sizeDp * settingsSpec.ringUnitBoxRatio)
                     .align(Alignment.BottomCenter),
                 contentAlignment = Alignment.Center
             ) {
@@ -877,25 +856,20 @@ data class TccDialogOption(
     val swatchColors: Pair<Color, Color>? = null
 )
 
-/**
- * Replicates `DialogOptionView` radio checkmark indicator (`accent` filled circle + contrasting check when selected,
- * or hollow ring in `primaryColor` when unselected).
- */
 @Composable
 fun TccRadioCheckIndicator(
     selected: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
-    if (isRetroidLook) {
-        val boxShape = PixelCornerCutShape(3.dp)
-        val uncheckedBg = if (colors.isMegingiardStyle) {
-            colors.primaryBackground
-        } else if (colors.isDark) {
-            Color.Black
-        } else {
-            colors.fourth
+    val lookSpec = LocalTccLookSpec.current
+    val dialogSpec = lookSpec.dialog
+    if (lookSpec.isRetroid) {
+        val boxShape = PixelCornerCutShape(dialogSpec.pixelCheckCutSize)
+        val uncheckedBg = when {
+            colors.isMegingiardStyle -> colors.primaryBackground
+            colors.isDark -> Color.Black
+            else -> colors.fourth
         }
         Box(
             modifier = modifier
@@ -904,11 +878,10 @@ fun TccRadioCheckIndicator(
             contentAlignment = Alignment.Center
         ) {
             if (selected) {
-                val checkTint = colors.retroidContentOnAccent()
                 Image(
                     painter = painterResource(id = R.drawable.rp_ic_dialog_option_check),
                     contentDescription = null,
-                    colorFilter = ColorFilter.tint(checkTint),
+                    colorFilter = ColorFilter.tint(colors.retroidContentOnAccent()),
                     modifier = Modifier.fillMaxSize(0.54f),
                     contentScale = ContentScale.Fit
                 )
@@ -952,12 +925,10 @@ fun TccRadioCheckIndicator(
 }
 
 /**
- * Replicates `com.odin.dualscreen.assistant.dialog.b` modal selection dialog for:
- * - Screen Focus Lock
- * - Performance Mode
- * - Fan Control (including Custom fan speed slider when `selectedId == 6`)
- * - Controller Style
- * - Theme Mode (including scrollable options, dual-tone theme swatches, and accent color presets)
+ * Responsive modal selection dialog consuming [LocalTccLookSpec] and [LocalOverlayViewport].
+ * Uses a preferred canonical width clamped to viewport bounds so option rows stay spacious on
+ * narrower `8:7` screens without over-stretching on wider `4:3` / `16:9` panels, and bounds
+ * total dialog height so multi-footer dialogs (`Theme Mode`, `Record Screen`) never clip vertically.
  */
 @Composable
 fun TccOptionDialog(
@@ -979,15 +950,29 @@ fun TccOptionDialog(
     footerContent: (@Composable () -> Unit)? = null
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val dialogSpec = lookSpec.dialog
+    val viewport = LocalOverlayViewport.current
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
-    val dialogShape: Shape = if (isRetroidLook) RoundedCornerShape(20.dp) else RoundedCornerShape(18.dp)
+
+    val preferredWidth = lerpDp(
+        start = dialogSpec.narrowPreferredWidth,
+        stop = dialogSpec.widePreferredWidth,
+        fraction = viewport.aspectFraction()
+    )
+    val dialogWidth = resolveResponsiveDialogWidthDp(
+        preferredWidth = preferredWidth,
+        viewportWidth = viewport.widthDp,
+        maxViewportWidthFraction = dialogSpec.maxViewportWidthFraction
+    )
+    val widthScale = (dialogWidth / preferredWidth.coerceAtLeast(1.dp)).coerceIn(0.65f, 1f)
+    val rowHorizontalPad = dialogSpec.rowHorizontalPadding * widthScale
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = if (isRetroidLook) 0.55f else 0.45f))
+            .background(Color.Black.copy(alpha = dialogSpec.backdropDimAlpha))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -997,43 +982,44 @@ fun TccOptionDialog(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(if (isRetroidLook) 0.55f else 0.56f)
-                .clip(dialogShape)
+                .width(dialogWidth)
+                .heightIn(max = viewport.heightDp * dialogSpec.maxViewportHeightFraction)
+                .clip(dialogSpec.dialogShape)
                 .background(colors.dialogBackground)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = {}
                 )
-                .padding(vertical = if (isRetroidLook) 22.dp else 12.dp),
+                .padding(vertical = dialogSpec.verticalPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (isRetroidLook) {
+            if (dialogSpec.showHeaderIconAndDivider) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(bottom = 18.dp)
+                    modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
                 ) {
                     if (titleIconRes != null) {
                         Image(
                             painter = painterResource(id = tccDrawable(titleIconRes)),
                             contentDescription = null,
                             colorFilter = ColorFilter.tint(colors.primary),
-                            modifier = Modifier.size(33.dp)
+                            modifier = Modifier.size(dialogSpec.headerIconSize)
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(dialogSpec.headerIconGap))
                     }
                     Text(
                         text = title,
                         color = colors.primary,
-                        fontSize = 26.sp,
+                        fontSize = dialogSpec.titleFontSize,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 44.dp)
+                        .padding(horizontal = dialogSpec.headerDividerHorizontalPadding * widthScale)
                         .height(1.dp)
                         .background(
                             Brush.horizontalGradient(
@@ -1045,21 +1031,24 @@ fun TccOptionDialog(
                             )
                         )
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                if (dialogSpec.headerAfterDividerSpacer > 0.dp) {
+                    Spacer(modifier = Modifier.height(dialogSpec.headerAfterDividerSpacer))
+                }
             } else {
                 Text(
                     text = title,
                     color = colors.primary,
-                    fontSize = 16.sp,
+                    fontSize = dialogSpec.titleFontSize,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
                 )
             }
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = if (isRetroidLook) 380.dp else 320.dp)
+                    .weight(weight = 1f, fill = false)
+                    .heightIn(max = dialogSpec.maxScrollHeight)
                     .verticalScroll(rememberScrollState())
             ) {
                 options.forEachIndexed { index, option ->
@@ -1067,9 +1056,9 @@ fun TccOptionDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(if (isRetroidLook) 76.dp else 46.dp)
+                            .height(dialogSpec.rowHeight)
                             .clickable { onSelectOption(option.id) }
-                            .padding(horizontal = if (isRetroidLook) 64.dp else 20.dp),
+                            .padding(horizontal = rowHorizontalPad),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -1077,23 +1066,22 @@ fun TccOptionDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 12.dp)
+                                .padding(end = dialogSpec.optionEndPadding)
                         ) {
                             if (option.swatchColors != null) {
                                 val (surfaceSwatch, accentSwatch) = option.swatchColors
-                                val swatchShape = if (isRetroidLook) PixelCornerCutShape(3.dp) else CircleShape
                                 Box(
                                     modifier = Modifier
-                                        .size(if (isRetroidLook) 30.dp else 20.dp)
-                                        .clip(swatchShape)
+                                        .size(dialogSpec.swatchOuterSize)
+                                        .clip(dialogSpec.swatchShape)
                                         .background(surfaceSwatch)
-                                        .border(1.5.dp, accentSwatch, swatchShape),
+                                        .border(dialogSpec.swatchBorderWidth, accentSwatch, dialogSpec.swatchShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(if (isRetroidLook) 14.dp else 9.dp)
-                                            .clip(swatchShape)
+                                            .size(dialogSpec.swatchInnerSize)
+                                            .clip(dialogSpec.swatchShape)
                                             .background(accentSwatch)
                                     )
                                 }
@@ -1107,14 +1095,14 @@ fun TccOptionDialog(
                                     painter = painterResource(id = resolvedIcon),
                                     contentDescription = option.label,
                                     colorFilter = if (option.preserveIconColors) null else ColorFilter.tint(colors.primary),
-                                    modifier = Modifier.size(if (isRetroidLook) 34.dp else 20.dp)
+                                    modifier = Modifier.size(dialogSpec.optionIconSize)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(if (isRetroidLook) 26.dp else 14.dp))
+                            Spacer(modifier = Modifier.width(dialogSpec.optionIconGap * widthScale))
                             Text(
                                 text = option.label,
                                 color = colors.primary,
-                                fontSize = if (isRetroidLook) 21.sp else 14.sp,
+                                fontSize = dialogSpec.optionFontSize,
                                 fontFamily = pixelFont,
                                 style = pixelStyle,
                                 fontWeight = FontWeight.Normal,
@@ -1125,7 +1113,7 @@ fun TccOptionDialog(
 
                         TccRadioCheckIndicator(
                             selected = isSelected,
-                            modifier = Modifier.size(if (isRetroidLook) 34.dp else 18.dp)
+                            modifier = Modifier.size(dialogSpec.checkIndicatorSize)
                         )
                     }
 
@@ -1133,16 +1121,16 @@ fun TccOptionDialog(
                         accentPresets.isNotEmpty() ||
                         showOsThemeToggle ||
                         footerContent != null
-                    val showRowDivider = if (isRetroidLook) {
-                        index == options.lastIndex && hasBelowFooter
-                    } else {
+                    val showRowDivider = if (dialogSpec.showInterRowDividers) {
                         index < options.lastIndex || hasBelowFooter
+                    } else {
+                        index == options.lastIndex && hasBelowFooter
                     }
                     if (showRowDivider) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = if (isRetroidLook) 28.dp else 16.dp)
+                                .padding(horizontal = dialogSpec.dividerHorizontalPadding)
                                 .height(1.dp)
                                 .background(colors.fourth)
                         )
@@ -1155,25 +1143,28 @@ fun TccOptionDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
-                            horizontal = if (isRetroidLook) 28.dp else 18.dp,
-                            vertical = if (isRetroidLook) 12.dp else 10.dp
+                            horizontal = dialogSpec.accentRowHorizontalPadding,
+                            vertical = dialogSpec.accentRowVerticalPadding
                         )
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(if (isRetroidLook) 12.dp else 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(dialogSpec.accentSwatchSpacing),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val swatchShape: Shape = if (isRetroidLook) PixelCornerCutShape(3.dp) else CircleShape
                     accentPresets.forEach { preset ->
                         val isSelectedSwatch = selectedAccentArgb != null &&
                             Color(selectedAccentArgb) == preset
                         Box(
                             modifier = Modifier
-                                .size(if (isRetroidLook) 32.dp else 26.dp)
-                                .clip(swatchShape)
+                                .size(dialogSpec.accentSwatchSize)
+                                .clip(dialogSpec.swatchShape)
                                 .background(preset)
                                 .then(
                                     if (isSelectedSwatch) {
-                                        Modifier.border(2.dp, colors.primary, swatchShape)
+                                        Modifier.border(
+                                            dialogSpec.accentSelectedBorderWidth,
+                                            colors.primary,
+                                            dialogSpec.swatchShape
+                                        )
                                     } else {
                                         Modifier
                                     }
@@ -1186,7 +1177,7 @@ fun TccOptionDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = if (isRetroidLook) 28.dp else 16.dp)
+                            .padding(horizontal = dialogSpec.dividerHorizontalPadding)
                             .height(1.dp)
                             .background(colors.fourth)
                     )
@@ -1194,79 +1185,28 @@ fun TccOptionDialog(
             }
 
             if (showOsThemeToggle && onToggleInjectOsTheme != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (isRetroidLook) 54.dp else 44.dp)
-                        .clickable { onToggleInjectOsTheme(!injectOsThemeEnabled) }
-                        .padding(horizontal = if (isRetroidLook) 34.dp else 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Inject Theme Colors into OS",
-                        color = colors.primary,
-                        fontSize = if (isRetroidLook) 16.sp else 13.sp,
-                        fontFamily = pixelFont,
-                        style = pixelStyle,
-                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium
-                    )
-
-                    val trackColor = if (injectOsThemeEnabled) colors.accent else colors.fourth
-                    val thumbColor = if (injectOsThemeEnabled) {
-                        if (isRetroidLook) colors.retroidContentOnAccent()
-                        else if (colors.isMegingiardStyle) colors.onAccent
-                        else Color.White
-                    } else {
-                        colors.secondary
-                    }
-                    val swShape: Shape = if (isRetroidLook) PixelCornerCutShape(3.dp) else RoundedCornerShape(10.dp)
-                    val thumbShape: Shape = if (isRetroidLook) PixelCornerCutShape(2.dp) else CircleShape
-                    Box(
-                        modifier = Modifier
-                            .width(if (isRetroidLook) 46.dp else 38.dp)
-                            .height(if (isRetroidLook) 24.dp else 20.dp)
-                            .clip(swShape)
-                            .background(trackColor)
-                            .then(
-                                if (!injectOsThemeEnabled) {
-                                    Modifier.border(1.dp, colors.tertiary, swShape)
-                                } else {
-                                    Modifier
-                                }
-                            )
-                            .padding(horizontal = 2.dp),
-                        contentAlignment = if (injectOsThemeEnabled) {
-                            Alignment.CenterEnd
-                        } else {
-                            Alignment.CenterStart
-                        }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(if (isRetroidLook) 20.dp else 16.dp)
-                                .clip(thumbShape)
-                                .background(thumbColor)
-                        )
-                    }
-                }
+                TccDialogToggleRow(
+                    label = "Inject Theme Colors into OS",
+                    checked = injectOsThemeEnabled,
+                    onCheckedChange = onToggleInjectOsTheme
+                )
             }
 
             if (showCustomFanSlider && selectedId == 6) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(if (isRetroidLook) 60.dp else 50.dp)
-                        .padding(horizontal = if (isRetroidLook) 34.dp else 20.dp),
+                        .height(dialogSpec.fanSliderRowHeight)
+                        .padding(horizontal = dialogSpec.toggleRowHorizontalPadding),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Image(
                         painter = painterResource(id = tccDrawable(R.drawable.ic_fan_custom_progress)),
                         contentDescription = "Fan Speed",
                         colorFilter = ColorFilter.tint(colors.primary),
-                        modifier = Modifier.size(if (isRetroidLook) 26.dp else 20.dp)
+                        modifier = Modifier.size(dialogSpec.fanSliderIconSize)
                     )
-                    Spacer(modifier = Modifier.width(if (isRetroidLook) 16.dp else 12.dp))
+                    Spacer(modifier = Modifier.width(dialogSpec.fanSliderIconGap))
                     Slider(
                         value = customFanSpeed.coerceIn(35, 100).toFloat(),
                         onValueChange = { onCustomFanSpeedChange?.invoke(it.roundToInt()) },
@@ -1278,14 +1218,14 @@ fun TccOptionDialog(
                             inactiveTrackColor = colors.tertiary
                         )
                     )
-                    Spacer(modifier = Modifier.width(if (isRetroidLook) 10.dp else 8.dp))
+                    Spacer(modifier = Modifier.width(dialogSpec.fanSliderValueGap))
                     Text(
                         text = "${customFanSpeed.coerceIn(35, 100)}%",
                         color = colors.primary,
-                        fontSize = if (isRetroidLook) 16.sp else 13.sp,
+                        fontSize = dialogSpec.toggleFontSize,
                         fontFamily = pixelFont,
                         style = pixelStyle,
-                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
+                        fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Bold
                     )
                 }
             }
@@ -1305,57 +1245,59 @@ fun TccDialogToggleRow(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val dialogSpec = lookSpec.dialog
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
-    val swShape: Shape = if (isRetroidLook) PixelCornerCutShape(3.dp) else RoundedCornerShape(10.dp)
-    val thumbShape: Shape = if (isRetroidLook) PixelCornerCutShape(2.dp) else CircleShape
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (isRetroidLook) 54.dp else 42.dp)
+            .height(dialogSpec.toggleRowHeight)
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = if (isRetroidLook) 34.dp else 20.dp),
+            .padding(horizontal = dialogSpec.toggleRowHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = label,
             color = colors.primary,
-            fontSize = if (isRetroidLook) 16.sp else 13.sp,
+            fontSize = dialogSpec.toggleFontSize,
             fontFamily = pixelFont,
             style = pixelStyle,
-            fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium
+            fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Medium
         )
 
         val trackColor = if (checked) colors.accent else colors.fourth
         val thumbColor = if (checked) {
-            if (isRetroidLook) colors.retroidContentOnAccent()
-            else if (colors.isMegingiardStyle) colors.onAccent
-            else Color.White
+            when {
+                lookSpec.isRetroid -> colors.retroidContentOnAccent()
+                colors.isMegingiardStyle -> colors.onAccent
+                else -> Color.White
+            }
         } else {
             colors.secondary
         }
         Box(
             modifier = Modifier
-                .width(if (isRetroidLook) 46.dp else 38.dp)
-                .height(if (isRetroidLook) 24.dp else 20.dp)
-                .clip(swShape)
+                .width(dialogSpec.switchWidth)
+                .height(dialogSpec.switchHeight)
+                .clip(dialogSpec.switchShape)
                 .background(trackColor)
                 .then(
                     if (!checked) {
-                        Modifier.border(1.dp, colors.tertiary, swShape)
+                        Modifier.border(1.dp, colors.tertiary, dialogSpec.switchShape)
                     } else {
                         Modifier
                     }
                 )
-                .padding(horizontal = 2.dp),
+                .padding(horizontal = dialogSpec.switchHorizontalPadding),
             contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
         ) {
             Box(
                 modifier = Modifier
-                    .size(if (isRetroidLook) 20.dp else 16.dp)
-                    .clip(thumbShape)
+                    .size(dialogSpec.switchThumbSize)
+                    .clip(dialogSpec.switchThumbShape)
                     .background(thumbColor)
             )
         }
@@ -1371,64 +1313,66 @@ fun TccDialogSegmentedRow(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
-    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val lookSpec = LocalTccLookSpec.current
+    val dialogSpec = lookSpec.dialog
     val pixelFont = tccFontFamily()
     val pixelStyle = tccTextStyle()
-    val outerShape: Shape = if (isRetroidLook) PixelCornerCutShape(3.5.dp) else RoundedCornerShape(10.dp)
-    val innerShape: Shape = if (isRetroidLook) PixelCornerCutShape(2.5.dp) else RoundedCornerShape(8.dp)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (isRetroidLook) 54.dp else 42.dp)
-            .padding(horizontal = if (isRetroidLook) 34.dp else 20.dp),
+            .height(dialogSpec.toggleRowHeight)
+            .padding(horizontal = dialogSpec.toggleRowHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = label,
             color = colors.primary,
-            fontSize = if (isRetroidLook) 16.sp else 13.sp,
+            fontSize = dialogSpec.toggleFontSize,
             fontFamily = pixelFont,
             style = pixelStyle,
-            fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Medium
+            fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Medium
         )
 
         Row(
             modifier = Modifier
-                .clip(outerShape)
+                .clip(dialogSpec.segmentedOuterShape)
                 .background(colors.fourth)
-                .padding(if (isRetroidLook) 3.dp else 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(if (isRetroidLook) 3.dp else 2.dp),
+                .padding(dialogSpec.segmentedContainerPadding),
+            horizontalArrangement = Arrangement.spacedBy(dialogSpec.segmentedItemSpacing),
             verticalAlignment = Alignment.CenterVertically
         ) {
             segments.forEach { (id, segLabel) ->
                 val isSelected = selectedId == id
                 val pillBg = if (isSelected) colors.accent else Color.Transparent
                 val pillFg = if (isSelected) {
-                    if (isRetroidLook) colors.retroidContentOnAccent()
-                    else if (colors.isMegingiardStyle) colors.onAccent
-                    else Color.White
+                    when {
+                        lookSpec.isRetroid -> colors.retroidContentOnAccent()
+                        colors.isMegingiardStyle -> colors.onAccent
+                        else -> Color.White
+                    }
                 } else {
                     colors.secondary
                 }
                 Box(
                     modifier = Modifier
-                        .clip(innerShape)
+                        .clip(dialogSpec.segmentedInnerShape)
                         .background(pillBg)
                         .clickable { onSelectId(id) }
                         .padding(
-                            horizontal = if (isRetroidLook) 12.dp else 9.dp,
-                            vertical = if (isRetroidLook) 5.dp else 4.dp
+                            horizontal = dialogSpec.segmentedPillHorizontalPadding,
+                            vertical = dialogSpec.segmentedPillVerticalPadding
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = segLabel,
                         color = pillFg,
-                        fontSize = if (isRetroidLook) 14.sp else 11.sp,
+                        fontSize = dialogSpec.segmentedPillFontSize,
                         fontFamily = pixelFont,
                         style = pixelStyle,
-                        fontWeight = if (isRetroidLook) FontWeight.Normal else FontWeight.Bold
+                        fontWeight = if (lookSpec.isRetroid) FontWeight.Normal else FontWeight.Bold
                     )
                 }
             }

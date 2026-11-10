@@ -26,10 +26,7 @@ import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -50,10 +47,11 @@ import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.overlay.AssistantOverlayScreen
-import com.stormpanda.betterdualscreenassistant.ui.overlay.CloseScreenTipOverlay
+import com.stormpanda.betterdualscreenassistant.ui.theme.computeOverlayNormalizedDensity
 import com.stormpanda.megingiard.update.UpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.roundToInt
 
 private class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -254,54 +252,43 @@ class ScreenOverlayManager(
                 translationY = realSize.y * 0.90f
                 alpha = 0f
                 setContent {
-                    val baseDensity = LocalDensity.current
-                    val effectiveDensity = if (currentProfile.overlayUiScale == 1.0f) {
-                        baseDensity
-                    } else {
-                        Density(
-                            density = baseDensity.density * currentProfile.overlayUiScale,
-                            fontScale = baseDensity.fontScale
-                        )
-                    }
-                    CompositionLocalProvider(LocalDensity provides effectiveDensity) {
-                        AssistantOverlayScreen(
-                            repository = repository,
-                            telemetryMonitor = telemetryMonitor,
-                            activeTabFlow = activeTabState.asStateFlow(),
-                            onSelectTab = { tab -> activeTabState.value = tab.coerceIn(0, 1) },
-                            onOpenRecentsRequest = {
-                                hideAssistantOverlay()
-                                overviewProxyClient.toggleRecentAppsOnBottomScreen()
-                            },
-                            onCleanMemoryRequest = {
-                                performCleanMemoryWithToast()
-                            },
-                            onClearAllTasksRequest = {
-                                performClearAllTasksWithToast()
-                            },
-                            onSwapScreensRequest = {
-                                performSwapScreensWithToast()
-                            },
-                            onToggleTouchLockRequest = {
-                                performToggleTouchLockWithToast()
-                            },
-                            onCaptureScreenshotRequest = { targetMode ->
-                                performScreenshotWithToast(targetMode)
-                            },
-                            onStartScreenRecordingRequest = { targetMode ->
-                                performStartScreenRecording(targetMode)
-                            },
-                            onStopScreenRecordingRequest = {
-                                performStopScreenRecordingWithToast()
-                            },
-                            onOpenEditRequest = {
-                                openMainActivityOnTopScreen()
-                            },
-                            onDismissOverlayRequest = {
-                                hideAssistantOverlay()
-                            }
-                        )
-                    }
+                    AssistantOverlayScreen(
+                        repository = repository,
+                        telemetryMonitor = telemetryMonitor,
+                        activeTabFlow = activeTabState.asStateFlow(),
+                        onSelectTab = { tab -> activeTabState.value = tab.coerceIn(0, 1) },
+                        onOpenRecentsRequest = {
+                            hideAssistantOverlay()
+                            overviewProxyClient.toggleRecentAppsOnBottomScreen()
+                        },
+                        onCleanMemoryRequest = {
+                            performCleanMemoryWithToast()
+                        },
+                        onClearAllTasksRequest = {
+                            performClearAllTasksWithToast()
+                        },
+                        onSwapScreensRequest = {
+                            performSwapScreensWithToast()
+                        },
+                        onToggleTouchLockRequest = {
+                            performToggleTouchLockWithToast()
+                        },
+                        onCaptureScreenshotRequest = { targetMode ->
+                            performScreenshotWithToast(targetMode)
+                        },
+                        onStartScreenRecordingRequest = { targetMode ->
+                            performStartScreenRecording(targetMode)
+                        },
+                        onStopScreenRecordingRequest = {
+                            performStopScreenRecordingWithToast()
+                        },
+                        onOpenEditRequest = {
+                            openMainActivityOnTopScreen()
+                        },
+                        onDismissOverlayRequest = {
+                            hideAssistantOverlay()
+                        }
+                    )
                 }
             }
 
@@ -634,23 +621,30 @@ class ScreenOverlayManager(
 
     fun showBottomToast(message: String) {
         mainHandler.post {
-            val targetBottomDisplayId = bottomDisplayId
+            val currentProfile = profile
+            val targetBottomDisplayId = currentProfile.bottomDisplayId
             val wm = getWindowManagerForDisplay(targetBottomDisplayId) ?: return@post
             val displayContext = getDisplayContext(targetBottomDisplayId)
+            val realSize = getDisplayRealSize(
+                targetBottomDisplayId,
+                fallbackWidth = currentProfile.bottomFallbackWidth,
+                fallbackHeight = currentProfile.bottomFallbackHeight
+            )
+            val scale = computeOverlayNormalizedDensity(realSize.x, realSize.y)
 
             val container = FrameLayout(displayContext)
             val bg = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(displayContext, 20f).toFloat()
+                cornerRadius = 30.75f * scale
                 setColor(Color.parseColor("#CC272727"))
             }
             val textView = TextView(displayContext).apply {
                 text = message
                 setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, 21.5f * scale)
                 background = bg
-                val hPad = dpToPx(displayContext, 20f)
-                val vPad = dpToPx(displayContext, 10f)
+                val hPad = (30.75f * scale).roundToInt()
+                val vPad = (15.4f * scale).roundToInt()
                 setPadding(hPad, vPad, hPad, vPad)
             }
             container.addView(
@@ -671,7 +665,7 @@ class ScreenOverlayManager(
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                y = dpToPx(displayContext, 80f)
+                y = (123f * scale).roundToInt()
             }
 
             try {
@@ -954,13 +948,5 @@ class ScreenOverlayManager(
 
     private fun getWindowManagerForDisplay(displayId: Int): WindowManager? {
         return getDisplayContext(displayId).getSystemService(WindowManager::class.java)
-    }
-
-    private fun dpToPx(ctx: Context, dp: Float): Int {
-        return TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            dp,
-            ctx.resources.displayMetrics
-        ).toInt()
     }
 }

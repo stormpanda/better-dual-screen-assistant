@@ -8,6 +8,8 @@ import io.mockk.mockk
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -79,13 +81,15 @@ class DeviceProfileTest {
         assertEquals(4, ayn.bottomDisplayId)
         assertEquals(1240, ayn.bottomFallbackWidth)
         assertEquals(1080, ayn.bottomFallbackHeight)
-        assertEquals(1.0f, ayn.overlayUiScale, 0.0001f)
+        assertEquals(1, ayn.defaultUiLookPreferenceId)
         assertTrue(ayn.useLocalFocusMode)
         assertFalse(ayn.blankViaBacklightSysfs)
         assertTrue(ayn.supportsAmbientLight)
         assertFalse(ayn.longPressTogglesBottom)
         assertFalse(ayn.dismissOverlayOnBackMapping)
         assertEquals("Odin", ayn.standardControllerLabel)
+        assertNull(ayn.overrideStandardControllerLabel)
+        assertNull(ayn.overrideCloseBottomTipText)
         assertEquals("com.odin.dualscreen.assistant", ayn.stockAssistantPackage)
 
         val retroid = DeviceProfile.RETROID_POCKET_DUO
@@ -94,13 +98,15 @@ class DeviceProfileTest {
         assertEquals(1280, retroid.bottomFallbackWidth)
         assertEquals(960, retroid.bottomFallbackHeight)
         assertEquals(320, retroid.bottomFallbackDensityDpi)
-        assertEquals(2f / 3f, retroid.overlayUiScale, 0.0001f)
+        assertEquals(2, retroid.defaultUiLookPreferenceId)
         assertFalse(retroid.useLocalFocusMode)
         assertTrue(retroid.blankViaBacklightSysfs)
         assertFalse(retroid.supportsAmbientLight)
         assertTrue(retroid.longPressTogglesBottom)
         assertTrue(retroid.dismissOverlayOnBackMapping)
         assertEquals("Retro", retroid.standardControllerLabel)
+        assertEquals("Retro", retroid.overrideStandardControllerLabel)
+        assertNotNull(retroid.overrideCloseBottomTipText)
         assertEquals("com.retroidpocket.dualscreen.assistant", retroid.stockAssistantPackage)
     }
 }
