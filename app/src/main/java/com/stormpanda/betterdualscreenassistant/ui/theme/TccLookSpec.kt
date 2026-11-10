@@ -111,6 +111,7 @@ fun OverlayViewport(
     content: @Composable () -> Unit
 ) {
     val baseDensity = LocalDensity.current
+    val baseLookSpec = LocalTccLookSpec.current
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -137,9 +138,13 @@ fun OverlayViewport(
         val effectiveDensity = remember(normalizedDensity) {
             Density(density = normalizedDensity, fontScale = 1f)
         }
+        val resolvedLookSpec = remember(baseLookSpec, metrics) {
+            baseLookSpec.resolveForViewport(metrics)
+        }
         CompositionLocalProvider(
             LocalDensity provides effectiveDensity,
-            LocalOverlayViewport provides metrics
+            LocalOverlayViewport provides metrics,
+            LocalTccLookSpec provides resolvedLookSpec
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 content()
@@ -176,6 +181,7 @@ data class TileButtonLookSpec(
     val navLabelWidth: Dp,
     val iconSizeRatio: Float,
     val topGap: Dp,
+    val modeTopGap: Dp = topGap,
     val compactTopGap: Dp,
     val modeLabelTopGap: Dp,
     val qsLabelTopGap: Dp,
@@ -463,7 +469,7 @@ val RetroidLookSpec = TccLookSpec(
     panelCardShape = RoundedCornerShape(22.dp),
     statusBar = StatusBarLookSpec(
         topPadding = 34.5.dp,
-        bottomPadding = 28.5.dp,
+        bottomPadding = 15.dp,
         horizontalPadding = 14.dp,
         timeHorizontalPadding = 0.dp,
         itemSpacing = 10.dp,
@@ -486,11 +492,12 @@ val RetroidLookSpec = TccLookSpec(
         navLabelWidth = 110.dp,
         iconSizeRatio = 0.56f,
         topGap = 5.dp,
+        modeTopGap = 11.dp,
         compactTopGap = 3.dp,
-        modeLabelTopGap = 12.dp,
+        modeLabelTopGap = 0.dp,
         qsLabelTopGap = 8.dp,
         compactLabelTopGap = 5.dp,
-        modeTitleHeight = 26.dp,
+        modeTitleHeight = 40.dp,
         qsTitleHeight = 36.dp,
         compactTitleHeight = 22.dp,
         modeLabelFontSize = 15.sp,
@@ -513,17 +520,17 @@ val RetroidLookSpec = TccLookSpec(
     modeTab = ModeTabLookSpec(
         upperCardWeight = 0.44f,
         lowerRowWeight = 0.56f,
-        upperCardTopPadding = 0.dp,
+        upperCardTopPadding = 4.5.dp,
         upperCardInnerVerticalPadding = 10.dp,
         modeItemHorizontalPadding = 6.dp,
         modeItemVerticalPadding = 4.dp,
-        middleGap = 30.dp,
-        lowerRowBottomPadding = 25.5.dp,
+        middleGap = 15.dp,
+        lowerRowBottomPadding = 0.dp,
         cardHalfGap = 7.5.dp,
         cardHorizontalPadding = 16.dp,
         fixedCardVerticalPadding = 14.dp,
         threeSliderRowHeight = 54.dp,
-        fourSliderRowHeight = 44.dp
+        fourSliderRowHeight = 46.dp
     ),
     settingsTab = SettingsTabLookSpec(
         topRowWeight = 0.68f,
@@ -532,8 +539,8 @@ val RetroidLookSpec = TccLookSpec(
         wideLeftColWeight = 0.345f,
         cardHalfGap = 7.5.dp,
         topRowTopPadding = 4.5.dp,
-        topRowBottomPadding = 8.25.dp,
-        bottomRowTopPadding = 8.25.dp,
+        topRowBottomPadding = 7.5.dp,
+        bottomRowTopPadding = 7.5.dp,
         pagerPadding = PaddingValues(top = 12.dp, bottom = 2.dp, start = 14.dp, end = 14.dp),
         indicatorDotSize = 8.dp,
         indicatorDotSpacing = 10.dp,
@@ -607,7 +614,7 @@ val RetroidReadableLookSpec: TccLookSpec = RetroidLookSpec.copy(
     retroidReadabilityBoost = true,
     statusBar = RetroidLookSpec.statusBar.copy(
         topPadding = 30.dp,
-        bottomPadding = 24.dp,
+        bottomPadding = 15.dp,
         fontSize = 29.sp,
         recordingFontSize = 22.sp
     ),
@@ -616,11 +623,12 @@ val RetroidReadableLookSpec: TccLookSpec = RetroidLookSpec.copy(
         qsLabelWidth = 156.dp,
         navLabelWidth = 136.dp,
         topGap = 2.dp,
+        modeTopGap = 12.dp,
         compactTopGap = 2.dp,
-        modeLabelTopGap = 7.dp,
+        modeLabelTopGap = 0.dp,
         qsLabelTopGap = 5.dp,
         compactLabelTopGap = 4.dp,
-        modeTitleHeight = 54.dp,
+        modeTitleHeight = 50.dp,
         qsTitleHeight = 52.dp,
         compactTitleHeight = 32.dp,
         modeLabelFontSize = 22.5.sp,
@@ -636,10 +644,12 @@ val RetroidReadableLookSpec: TccLookSpec = RetroidLookSpec.copy(
     modeTab = RetroidLookSpec.modeTab.copy(
         cardHorizontalPadding = 12.dp,
         fixedCardVerticalPadding = 10.dp,
-        threeSliderRowHeight = 56.dp,
-        fourSliderRowHeight = 48.dp
+        threeSliderRowHeight = 60.dp,
+        fourSliderRowHeight = 54.dp
     ),
     settingsTab = RetroidLookSpec.settingsTab.copy(
+        narrowLeftColWeight = 0.345f,
+        wideLeftColWeight = 0.345f,
         fpsBadgePreferredWidth = 276.dp,
         fpsBadgeHeight = 46.dp,
         fpsBadgeFontSize = 27.sp,
@@ -670,6 +680,43 @@ val RetroidReadableLookSpec: TccLookSpec = RetroidLookSpec.copy(
     )
 )
 
+/**
+ * Adapts [RetroidReadableLookSpec] to narrower secondary display aspect ratios (such as the
+ * AYN Thor `1240×1080` ~`8:7` bottom screen where `aspectFraction == 0f`) while keeping `4:3`
+ * displays (such as the Retroid Pocket Duo `1280×960` where `aspectFraction == 1f`) unchanged.
+ */
+fun TccLookSpec.resolveForViewport(viewport: OverlayViewportMetrics): TccLookSpec {
+    if (!isRetroid || !retroidReadabilityBoost) return this
+    val aspectFrac = viewport.aspectFraction()
+    if (aspectFrac >= 0.999f) return this
+    val pagerHorizPad = lerpDp(8.dp, 14.dp, aspectFrac)
+    return copy(
+        tile = tile.copy(
+            modeLabelFontSize = lerpSp(20.5.sp, tile.modeLabelFontSize, aspectFrac),
+            modeLabelLineHeight = lerpSp(23.5.sp, tile.modeLabelLineHeight, aspectFrac),
+            qsLabelFontSize = lerpSp(19.sp, tile.qsLabelFontSize, aspectFrac),
+            qsLabelLineHeight = lerpSp(22.sp, tile.qsLabelLineHeight, aspectFrac)
+        ),
+        slider = slider.copy(
+            labelFontSize = lerpSp(19.sp, slider.labelFontSize, aspectFrac),
+            labelLineHeight = lerpSp(21.5.sp, slider.labelLineHeight, aspectFrac)
+        ),
+        settingsTab = settingsTab.copy(
+            pagerPadding = PaddingValues(
+                top = 12.dp,
+                bottom = 2.dp,
+                start = pagerHorizPad,
+                end = pagerHorizPad
+            ),
+            fpsBadgePreferredWidth = settingsTab.fpsBadgePreferredWidth?.let {
+                lerpDp(236.dp, it, aspectFrac)
+            },
+            fpsBadgeFontSize = lerpSp(23.5.sp, settingsTab.fpsBadgeFontSize, aspectFrac),
+            fpsTipFontSize = lerpSp(22.5.sp, settingsTab.fpsTipFontSize, aspectFrac)
+        )
+    )
+}
+
 fun lookSpecFor(
     uiLook: TccUiLook,
     retroidReadabilityBoost: Boolean = false
@@ -679,5 +726,8 @@ fun lookSpecFor(
 }
 
 fun lerpDp(start: Dp, stop: Dp, fraction: Float): Dp = lerp(start, stop, fraction.coerceIn(0f, 1f))
+
+fun lerpSp(start: TextUnit, stop: TextUnit, fraction: Float): TextUnit =
+    lerp(start, stop, fraction.coerceIn(0f, 1f))
 
 val LocalTccLookSpec = compositionLocalOf { AynLookSpec }

@@ -264,7 +264,11 @@ fun TccButton(
         defaultLabelWidth
     }
     val iconBoxSize = tileBoxSize * tileSpec.iconSizeRatio
-    val topGap = if (isCompact) tileSpec.compactTopGap else tileSpec.topGap
+    val topGap = when (variant) {
+        TccTileVariant.MODE -> tileSpec.modeTopGap
+        TccTileVariant.QUICK_SETTING -> tileSpec.topGap
+        TccTileVariant.NAV_BAR -> tileSpec.compactTopGap
+    }
     val labelTopGap = when (variant) {
         TccTileVariant.MODE -> tileSpec.modeLabelTopGap
         TccTileVariant.QUICK_SETTING -> tileSpec.qsLabelTopGap
@@ -342,7 +346,7 @@ fun TccButton(
                     .width(columnWidth)
                     .height(titleBoxHeight)
                     .padding(horizontal = if (isRetroid) 2.dp else 1.dp),
-                contentAlignment = if (isRetroid && !isCompact) {
+                contentAlignment = if (isRetroid && variant == TccTileVariant.QUICK_SETTING) {
                     Alignment.TopCenter
                 } else {
                     Alignment.Center

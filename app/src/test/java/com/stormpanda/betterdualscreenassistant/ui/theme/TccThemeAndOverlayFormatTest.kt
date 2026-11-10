@@ -438,5 +438,27 @@ class TccThemeAndOverlayFormatTest {
         assertTrue(RetroidReadableLookSpec.settingsTab.ringValueScale > RetroidLookSpec.settingsTab.ringValueScale)
         assertTrue(RetroidReadableLookSpec.dialog.optionFontSize.value > RetroidLookSpec.dialog.optionFontSize.value)
         assertTrue(RetroidReadableLookSpec.dialog.toggleFontSize.value > RetroidLookSpec.dialog.toggleFontSize.value)
+
+        // 6. Mode card margins and vertical mode tile centering
+        assertEquals(
+            RetroidLookSpec.modeTab.cardHalfGap.value * 2f,
+            RetroidLookSpec.modeTab.middleGap.value,
+            0.01f
+        )
+        assertEquals(0f, RetroidLookSpec.modeTab.lowerRowBottomPadding.value, 0.01f)
+        assertEquals(0f, RetroidLookSpec.tile.modeLabelTopGap.value, 0.01f)
+        assertEquals(0f, RetroidReadableLookSpec.tile.modeLabelTopGap.value, 0.01f)
+
+        // 7. Viewport resolution keeps Retroid Pocket Duo (4:3) 100% unchanged while adapting narrow AYN Thor (~8:7)
+        val duoResolved = RetroidReadableLookSpec.resolveForViewport(duoMetrics)
+        assertEquals(RetroidReadableLookSpec, duoResolved)
+
+        val thorResolved = RetroidReadableLookSpec.resolveForViewport(thorMetrics)
+        assertTrue(thorResolved.tile.qsLabelFontSize.value < RetroidReadableLookSpec.tile.qsLabelFontSize.value)
+        assertTrue(thorResolved.tile.qsLabelFontSize.value > RetroidLookSpec.tile.qsLabelFontSize.value)
+        assertTrue(thorResolved.tile.modeLabelFontSize.value < RetroidReadableLookSpec.tile.modeLabelFontSize.value)
+        assertTrue(thorResolved.tile.modeLabelFontSize.value > RetroidLookSpec.tile.modeLabelFontSize.value)
+        assertTrue(thorResolved.slider.labelFontSize.value < RetroidReadableLookSpec.slider.labelFontSize.value)
+        assertTrue(thorResolved.slider.labelFontSize.value > RetroidLookSpec.slider.labelFontSize.value)
     }
 }
