@@ -757,6 +757,7 @@ private fun SystemSettingsTab(
 ) {
     val refreshRate by repository.refreshRate.collectAsState()
     val tempFahrenheit by repository.tempFahrenheit.collectAsState()
+    val rememberLastQuickTogglePage by repository.rememberLastQuickTogglePage.collectAsState()
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
     val settingsSpec = lookSpec.settingsTab
@@ -777,7 +778,23 @@ private fun SystemSettingsTab(
 
     val pages = remember(tiles) { tiles.chunked(8) }
     val pageCount = pages.size.coerceAtLeast(1)
-    val pagerState = rememberPagerState(pageCount = { pageCount })
+    val initialPage = if (rememberLastQuickTogglePage) {
+        repository.lastQuickTogglePage.value.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    } else {
+        0
+    }
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { pageCount }
+    )
+
+    LaunchedEffect(pagerState.currentPage, rememberLastQuickTogglePage) {
+        if (rememberLastQuickTogglePage) {
+            repository.setLastQuickTogglePage(pagerState.currentPage)
+        } else {
+            repository.setLastQuickTogglePage(0)
+        }
+    }
 
     LaunchedEffect(pageCount) {
         if (pagerState.currentPage >= pageCount) {

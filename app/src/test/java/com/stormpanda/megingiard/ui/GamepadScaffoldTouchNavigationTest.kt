@@ -897,10 +897,10 @@ class GamepadScaffoldTouchNavigationTest {
         assertNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
         assertEquals("Better Dual Screen Assistant", activity.title.toString())
 
-        // Enter General deck and navigate to the very bottom item (10th card, 9 D-pad Down presses)
+        // Enter General deck and navigate to the very bottom item (11th card, 10 D-pad Down presses)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 100)
-        repeat(9) {
+        repeat(10) {
             sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
             idleCompose(activity, 80)
         }

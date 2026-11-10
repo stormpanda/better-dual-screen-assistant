@@ -223,6 +223,9 @@ class ScreenOverlayManager(
             } else if (!isAssistantShowing && !repository.rememberLastTab.value) {
                 activeTabState.value = 0
             }
+            if (!isAssistantShowing && !repository.rememberLastQuickTogglePage.value) {
+                repository.setLastQuickTogglePage(0)
+            }
             if (isAssistantShowing) return@post
             cleanupExitingAssistant()
 

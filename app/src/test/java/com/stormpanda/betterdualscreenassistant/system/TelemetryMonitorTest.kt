@@ -223,4 +223,21 @@ class TelemetryMonitorTest {
         assertEquals(3.2f, zeroMax, 0.01f)
         assertEquals("GHz", zeroUnit)
     }
+
+    @Test
+    fun `rememberLastQuickTogglePage defaults to true and resets lastQuickTogglePage when disabled`() {
+        val repo = SystemSettingsRepository(context)
+        assertTrue(repo.rememberLastQuickTogglePage.value)
+        assertEquals(0, repo.lastQuickTogglePage.value)
+
+        repo.setLastQuickTogglePage(2)
+        assertEquals(2, repo.lastQuickTogglePage.value)
+
+        repo.setRememberLastQuickTogglePage(false)
+        assertFalse(repo.rememberLastQuickTogglePage.value)
+        assertEquals(0, repo.lastQuickTogglePage.value)
+
+        repo.setRememberLastQuickTogglePage(true)
+        assertTrue(repo.rememberLastQuickTogglePage.value)
+    }
 }

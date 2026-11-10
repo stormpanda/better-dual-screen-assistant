@@ -546,6 +546,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val syncedMegingiardOption by repo.syncedMegingiardOption.collectAsState()
     val showCloseBottomScreenTip by repo.showCloseBottomScreenTip.collectAsState()
     val rememberLastTab by repo.rememberLastTab.collectAsState()
+    val rememberLastQuickTogglePage by repo.rememberLastQuickTogglePage.collectAsState()
     val showLedBrightnessSlider by repo.showLedBrightnessSlider.collectAsState()
     val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
     val showEditButton by repo.showEditButton.collectAsState()
@@ -777,6 +778,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 stockDisabled = stockDisabled,
                                                 showCloseBottomScreenTip = showCloseBottomScreenTip,
                                                 rememberLastTab = rememberLastTab,
+                                                rememberLastQuickTogglePage = rememberLastQuickTogglePage,
                                                 showEditButton = showEditButton,
                                                 showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
@@ -796,6 +798,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleRememberLastTab = { enabled ->
                                                     repo.setRememberLastTab(enabled)
+                                                },
+                                                onToggleRememberLastQuickTogglePage = { enabled ->
+                                                    repo.setRememberLastQuickTogglePage(enabled)
                                                 },
                                                 onToggleShowEditButton = { enabled ->
                                                     repo.setShowEditButton(enabled)
@@ -999,6 +1004,7 @@ private fun GeneralSettingsTabContent(
     stockDisabled: Boolean,
     showCloseBottomScreenTip: Boolean,
     rememberLastTab: Boolean,
+    rememberLastQuickTogglePage: Boolean,
     showEditButton: Boolean,
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
@@ -1009,6 +1015,7 @@ private fun GeneralSettingsTabContent(
     onToggleReplaceStock: (Boolean) -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
     onToggleRememberLastTab: (Boolean) -> Unit,
+    onToggleRememberLastQuickTogglePage: (Boolean) -> Unit,
     onToggleShowEditButton: (Boolean) -> Unit,
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit,
@@ -1089,6 +1096,14 @@ private fun GeneralSettingsTabContent(
         checked = rememberLastTab,
         icon = Icons.Rounded.Tab,
         onCheckedChange = onToggleRememberLastTab
+    )
+
+    GamepadToggleCard(
+        title = "Remember Last Quick Toggle Panel",
+        description = "Keep the last open quick toggle page in memory when switching tabs or reopening the $roleLower",
+        checked = rememberLastQuickTogglePage,
+        icon = Icons.Rounded.GridView,
+        onCheckedChange = onToggleRememberLastQuickTogglePage
     )
 
     GamepadToggleCard(

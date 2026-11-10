@@ -86,6 +86,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREFS_NAME = "better_dsa_prefs"
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
         const val PREF_REMEMBER_LAST_TAB = "remember_last_tab"
+        const val PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE = "remember_last_quick_toggle_page"
         const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
@@ -291,6 +292,14 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
     )
     val rememberLastTab: StateFlow<Boolean> = _rememberLastTab.asStateFlow()
+
+    private val _rememberLastQuickTogglePage = MutableStateFlow(
+        prefs.getBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, true)
+    )
+    val rememberLastQuickTogglePage: StateFlow<Boolean> = _rememberLastQuickTogglePage.asStateFlow()
+
+    private val _lastQuickTogglePage = MutableStateFlow(0)
+    val lastQuickTogglePage: StateFlow<Int> = _lastQuickTogglePage.asStateFlow()
 
     private val _showLedBrightnessSlider = MutableStateFlow(
         prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
@@ -512,6 +521,13 @@ class SystemSettingsRepository(private val context: Context) {
             }
             PREF_REMEMBER_LAST_TAB -> {
                 _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+            }
+            PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE -> {
+                val enabled = prefs.getBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, true)
+                _rememberLastQuickTogglePage.value = enabled
+                if (!enabled) {
+                    _lastQuickTogglePage.value = 0
+                }
             }
             PREF_SHOW_LED_BRIGHTNESS_SLIDER -> {
                 _showLedBrightnessSlider.value =
@@ -858,6 +874,7 @@ class SystemSettingsRepository(private val context: Context) {
         _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
         _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+        _rememberLastQuickTogglePage.value = prefs.getBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, true)
         _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
@@ -1805,6 +1822,22 @@ class SystemSettingsRepository(private val context: Context) {
     fun setRememberLastTab(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_REMEMBER_LAST_TAB, enabled).apply()
         _rememberLastTab.value = enabled
+    }
+
+    fun setRememberLastQuickTogglePage(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, enabled).apply()
+        _rememberLastQuickTogglePage.value = enabled
+        if (!enabled) {
+            _lastQuickTogglePage.value = 0
+        }
+    }
+
+    fun setLastQuickTogglePage(page: Int) {
+        _lastQuickTogglePage.value = if (_rememberLastQuickTogglePage.value) {
+            page.coerceAtLeast(0)
+        } else {
+            0
+        }
     }
 
     fun setShowLedBrightnessSlider(enabled: Boolean) {
