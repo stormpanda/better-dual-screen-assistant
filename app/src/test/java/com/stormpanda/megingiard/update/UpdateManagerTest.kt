@@ -64,11 +64,17 @@ class UpdateManagerTest {
     }
 
     @Test
-    fun `parseGithubReleaseJson returns null on blank tag_name missing html_url or invalid JSON`() {
-        assertNull(UpdateManager.parseGithubReleaseJson("""{"tag_name": "   ", "html_url": "https://example.com"}"""))
+    fun `parseGithubReleaseJson returns null on blank tag_name missing html_url non-GitHub URL or invalid JSON`() {
+        assertNull(UpdateManager.parseGithubReleaseJson("""{"tag_name": "   ", "html_url": "https://github.com/stormpanda/bdsa"}"""))
         assertNull(UpdateManager.parseGithubReleaseJson("""{"tag_name": "v1.0.0", "html_url": ""}"""))
+        assertNull(UpdateManager.parseGithubReleaseJson("""{"tag_name": "v1.0.0", "html_url": "http://github.com/stormpanda/bdsa/releases"}"""))
+        assertNull(UpdateManager.parseGithubReleaseJson("""{"tag_name": "v1.0.0", "html_url": "https://evil.example.com/github.com/releases"}"""))
+        assertNull(UpdateManager.parseGithubReleaseJson("""{"tag_name": "v1.0.0", "html_url": "intent://scan/#Intent;scheme=zxing;end"}"""))
         assertNull(UpdateManager.parseGithubReleaseJson("""{"name": "No Tag"}"""))
         assertNull(UpdateManager.parseGithubReleaseJson("not valid json"))
+        assertTrue(UpdateManager.isValidGithubReleaseUrl("https://github.com/stormpanda/better-dual-screen-assistant/releases/tag/v1.0.0"))
+        assertFalse(UpdateManager.isValidGithubReleaseUrl("http://github.com/stormpanda/better-dual-screen-assistant/releases"))
+        assertFalse(UpdateManager.isValidGithubReleaseUrl("https://attacker.com/github.com"))
     }
 
     @Test
@@ -124,6 +130,18 @@ class UpdateManagerTest {
     fun `checkForUpdates skips network call when within 24h throttle window and not forced`() {
         UpdateManager.init(context, currentVersion = "1.0.0")
         UpdateManager.lastCheckTimeMs = System.currentTimeMillis()
+
+        UpdateManager.checkForUpdates(force = false, currentVersion = "1.0.0")
+        assertFalse(UpdateManager.isChecking.value)
+        assertNull(UpdateManager.checkError.value)
+    }
+
+    @Test
+    fun `checkForUpdates skips network call during offline failure backoff window when not forced`() {
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(5_000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        UpdateManager.init(context, currentVersion = "1.0.0")
+        UpdateManager.lastFailedCheckElapsedMs = android.os.SystemClock.elapsedRealtime()
+        assertTrue(UpdateManager.lastFailedCheckElapsedMs > 0L)
 
         UpdateManager.checkForUpdates(force = false, currentVersion = "1.0.0")
         assertFalse(UpdateManager.isChecking.value)

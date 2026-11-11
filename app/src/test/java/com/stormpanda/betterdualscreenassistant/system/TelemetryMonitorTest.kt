@@ -25,6 +25,10 @@ class TelemetryMonitorTest {
 
     @Before
     fun setUp() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
+        TelemetryMonitor.resetThermalPathCacheForTesting()
+        PrivilegedBridge.resetForTesting()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -35,6 +39,10 @@ class TelemetryMonitorTest {
 
     @After
     fun tearDown() {
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
+        TelemetryMonitor.resetThermalPathCacheForTesting()
+        PrivilegedBridge.resetForTesting()
         setHelperBinder(null)
     }
 
@@ -158,5 +166,131 @@ class TelemetryMonitorTest {
         assertEquals(60, TelemetryMonitor.normalizeGameFpsForPanel(59.21f, 60f))
         assertEquals(59, TelemetryMonitor.normalizeGameFpsForPanel(58.27f, 60f))
         assertEquals(30, TelemetryMonitor.normalizeGameFpsForPanel(29.60f, 60f))
+    }
+
+    @Test
+    fun `scaleGpuFrequency dynamically switches between MHz and GHz across Adreno 740 and Adreno 722`() {
+        // Adreno 740 (680 MHz max)
+        val (curMhz, maxMhz, unitMhz) = TelemetryMonitor.scaleGpuFrequency(315_000_000L, 680_000_000L)
+        assertEquals(315f, curMhz, 0.01f)
+        assertEquals(680f, maxMhz, 0.01f)
+        assertEquals("MHz", unitMhz)
+
+        // Adreno 722 (1.15 GHz max): switches dynamically between MHz when <1 GHz and GHz when >=1 GHz
+        val (idleCur, idleMax, idleUnit) = TelemetryMonitor.scaleGpuFrequency(225_000_000L, 1_150_000_000L)
+        assertEquals(225f, idleCur, 0.01f)
+        assertEquals(1150f, idleMax, 0.01f)
+        assertEquals("MHz", idleUnit)
+
+        val (boostCur, boostMax, boostUnit) = TelemetryMonitor.scaleGpuFrequency(1_150_000_000L, 1_150_000_000L)
+        assertEquals(1.15f, boostCur, 0.01f)
+        assertEquals(1.15f, boostMax, 0.01f)
+        assertEquals("GHz", boostUnit)
+
+        // Initial pre-loop call with curGpuRaw == 0L
+        val (initCur, initMax, initUnit) = TelemetryMonitor.scaleGpuFrequency(0L, 1_150_000_000L)
+        assertEquals(0f, initCur, 0.01f)
+        assertEquals(1.15f, initMax, 0.01f)
+        assertEquals("GHz", initUnit)
+    }
+
+    @Test
+    fun `isCpuFreqScalingModeEnabled defaults to false and respects preference toggle`() {
+        val monitor = TelemetryMonitor(context)
+        assertFalse(monitor.isCpuFreqScalingModeEnabled())
+
+        val repo = SystemSettingsRepository(context)
+        assertFalse(repo.cpuFreqScalingMode.value)
+
+        repo.setCpuFreqScalingMode(true)
+        assertTrue(repo.cpuFreqScalingMode.value)
+        assertTrue(monitor.isCpuFreqScalingModeEnabled())
+
+        repo.setCpuFreqScalingMode(false)
+        assertFalse(repo.cpuFreqScalingMode.value)
+        assertFalse(monitor.isCpuFreqScalingModeEnabled())
+    }
+
+    @Test
+    fun `scaleCpuFrequency formats hardware max and performance mode scaling limits`() {
+        // AYN Thor hardware max (3,187,200 kHz -> 3.19 GHz)
+        val (thorCur, thorMax, thorUnit) = TelemetryMonitor.scaleCpuFrequency(1_843_200L, 3_187_200L)
+        assertEquals(1.84f, thorCur, 0.01f)
+        assertEquals(3.19f, thorMax, 0.01f)
+        assertEquals("GHz", thorUnit)
+
+        // Retroid Pocket Duo Standard mode scaling limit (1,766,400 kHz -> 1.77 GHz)
+        val (duoCur, duoMax, duoUnit) = TelemetryMonitor.scaleCpuFrequency(1_113_600L, 1_766_400L)
+        assertEquals(1.11f, duoCur, 0.01f)
+        assertEquals(1.77f, duoMax, 0.01f)
+        assertEquals("GHz", duoUnit)
+
+        // Fallback when sysfs returns 0
+        val (zeroCur, zeroMax, zeroUnit) = TelemetryMonitor.scaleCpuFrequency(0L, 0L)
+        assertEquals(0f, zeroCur, 0.01f)
+        assertEquals(3.2f, zeroMax, 0.01f)
+        assertEquals("GHz", zeroUnit)
+    }
+
+    @Test
+    fun `rememberLastQuickTogglePage defaults to true and resets lastQuickTogglePage when disabled`() {
+        val repo = SystemSettingsRepository(context)
+        assertTrue(repo.rememberLastQuickTogglePage.value)
+        assertEquals(0, repo.lastQuickTogglePage.value)
+
+        repo.setLastQuickTogglePage(2)
+        assertEquals(2, repo.lastQuickTogglePage.value)
+
+        repo.setRememberLastQuickTogglePage(false)
+        assertFalse(repo.rememberLastQuickTogglePage.value)
+        assertEquals(0, repo.lastQuickTogglePage.value)
+
+        repo.setRememberLastQuickTogglePage(true)
+        assertTrue(repo.rememberLastQuickTogglePage.value)
+    }
+
+    @Test
+    fun `resolveCpuThermalPath discovers Retroid cpuss zone and avoids caching fallback when sysfs is unreadable`() {
+        // 1. Before PrivilegedHelperMain connects (sysfs returns ""), fallback is returned WITHOUT latching cache
+        setHelperBinder(null)
+        assertEquals(
+            "/sys/devices/virtual/thermal/thermal_zone48/temp",
+            TelemetryMonitor.resolveCpuThermalPath()
+        )
+
+        // 2. Once helper connects on Retroid Pocket Duo (thermal_zone7 = cpuss-0, thermal_zone48 = non-CPU),
+        // resolveCpuThermalPath immediately discovers thermal_zone7
+        val sysfs = mutableMapOf(
+            "/sys/devices/virtual/thermal/thermal_zone48/type" to "modem-skin-usr",
+            "/sys/devices/virtual/thermal/thermal_zone7/type" to "cpuss-0",
+            "/sys/devices/virtual/thermal/thermal_zone7/temp" to "48500"
+        )
+        val binder = mockk<IBinder>(relaxed = true)
+        every { binder.isBinderAlive } returns true
+        every { binder.transact(PrivilegedHelperMain.TRANSACTION_READ_FILE, any(), any(), any()) } answers {
+            val data = secondArg<Parcel>()
+            val reply = thirdArg<Parcel?>()
+            data.setDataPosition(0)
+            data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+            val path = data.readString().orEmpty()
+            reply?.writeNoException()
+            reply?.writeString(sysfs[path].orEmpty())
+            reply?.setDataPosition(0)
+            true
+        }
+        setHelperBinder(binder)
+
+        assertEquals(
+            "/sys/devices/virtual/thermal/thermal_zone7/temp",
+            TelemetryMonitor.resolveCpuThermalPath()
+        )
+
+        // 3. Resetting cache on AYN Thor (thermal_zone48 = cpuss-0-usr) takes the fast path
+        TelemetryMonitor.resetThermalPathCacheForTesting()
+        sysfs["/sys/devices/virtual/thermal/thermal_zone48/type"] = "cpuss-0-usr"
+        assertEquals(
+            "/sys/devices/virtual/thermal/thermal_zone48/temp",
+            TelemetryMonitor.resolveCpuThermalPath()
+        )
     }
 }

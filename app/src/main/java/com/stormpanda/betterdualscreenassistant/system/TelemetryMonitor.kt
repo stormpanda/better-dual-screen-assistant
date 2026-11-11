@@ -46,13 +46,57 @@ class TelemetryMonitor(private val context: Context) {
     companion object {
         private const val CPU_CUR_FREQ_PATH = "/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_cur_freq"
         private const val CPU_MAX_FREQ_PATH = "/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_max_freq"
+        private const val CPU_SCALING_CUR_FREQ_PATH = "/sys/devices/system/cpu/cpu7/cpufreq/scaling_cur_freq"
+        private const val CPU_SCALING_MAX_FREQ_PATH = "/sys/devices/system/cpu/cpu7/cpufreq/scaling_max_freq"
         private const val GPU_CUR_FREQ_PATH = "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq"
         private const val GPU_MAX_FREQ_PATH = "/sys/class/kgsl/kgsl-3d0/devfreq/max_freq"
-        private const val THERMAL_CPU_PATH = "/sys/devices/virtual/thermal/thermal_zone48/temp"
+        private const val DEFAULT_THERMAL_CPU_PATH = "/sys/devices/virtual/thermal/thermal_zone48/temp"
+        private const val DEFAULT_THERMAL_CPU_TYPE_PATH = "/sys/devices/virtual/thermal/thermal_zone48/type"
         private const val BATTERY_CURRENT_NOW_PATH = "/sys/class/power_supply/battery/current_now"
         private const val BATTERY_VOLTAGE_NOW_PATH = "/sys/class/power_supply/battery/voltage_now"
         internal const val ACCURATE_FPS_POLL_INTERVAL_MS = 500L
         internal const val LEGACY_FPS_POLL_INTERVAL_MS = 1500L
+
+        @Volatile
+        private var cachedCpuThermalPath: String? = null
+
+        internal fun resetThermalPathCacheForTesting() {
+            cachedCpuThermalPath = null
+        }
+
+        internal fun resolveCpuThermalPath(): String {
+            cachedCpuThermalPath?.let { return it }
+
+            // Fast path for AYN Thor (`kalama`, where thermal_zone48 is `cpuss-0-usr`)
+            val defaultType = PrivilegedBridge.readSysfsFile(DEFAULT_THERMAL_CPU_TYPE_PATH).lowercase()
+            if (defaultType.contains("cpu")) {
+                cachedCpuThermalPath = DEFAULT_THERMAL_CPU_PATH
+                return DEFAULT_THERMAL_CPU_PATH
+            }
+
+            // Probe Retroid Pocket Duo (`sun` -> thermal_zone7 `cpuss-0`, thermal_zone4 `cpuss-1`) and remaining zones
+            val candidateZones = buildList {
+                add(7)
+                add(4)
+                for (i in 0..64) {
+                    if (i != 7 && i != 4 && i != 48) add(i)
+                }
+            }
+            for (zone in candidateZones) {
+                val typePath = "/sys/devices/virtual/thermal/thermal_zone$zone/type"
+                val typeStr = PrivilegedBridge.readSysfsFile(typePath).lowercase()
+                if (typeStr.startsWith("cpuss") || typeStr.startsWith("cpu-") || typeStr == "cpu") {
+                    val tempPath = "/sys/devices/virtual/thermal/thermal_zone$zone/temp"
+                    if (PrivilegedBridge.readSysfsLong(tempPath) > 0L) {
+                        cachedCpuThermalPath = tempPath
+                        return tempPath
+                    }
+                }
+            }
+
+            // Do not cache fallback when sysfs was unreadable (e.g. before PrivilegedHelperMain connects)
+            return DEFAULT_THERMAL_CPU_PATH
+        }
 
         /**
          * The AYN Thor top AMOLED panel (`1080x1920`, MIPI-DSI Command Mode, `port=131`) generates
@@ -65,7 +109,11 @@ class TelemetryMonitor(private val context: Context) {
         internal const val TOP_PANEL_TE_CLOCK_RATIO = 118.412f / 120f
         private const val VSYNC_CEILING_RAMP_FRACTION = 110f / 120f
 
-        internal fun normalizeGameFpsForPanel(rawFps: Float, nominalPeakRate: Float): Int {
+        internal fun normalizeGameFpsForPanel(
+            rawFps: Float,
+            nominalPeakRate: Float,
+            teClockRatio: Float = TOP_PANEL_TE_CLOCK_RATIO
+        ): Int {
             if (!rawFps.isFinite() || rawFps <= 0f) return 0
             val peakInt = nominalPeakRate.roundToInt().coerceAtLeast(1)
             val nominalPeak = peakInt.toFloat()
@@ -73,7 +121,7 @@ class TelemetryMonitor(private val context: Context) {
             // Top VSYNC-ceiling ramp ([110..118.412] -> [110..120] in 120Hz mode, or
             // [55..59.206] -> [55..60] in 60Hz mode) so 0 missed VSYNCs reports full peak FPS
             // while 1, 2, 3... missed VSYNCs step down smoothly without dead numbers.
-            val physicalPeak = nominalPeak * TOP_PANEL_TE_CLOCK_RATIO
+            val physicalPeak = nominalPeak * teClockRatio
             val ceilingRampStart = nominalPeak * VSYNC_CEILING_RAMP_FRACTION
             if (rawFps > ceilingRampStart && physicalPeak > ceilingRampStart) {
                 val progress = ((rawFps - ceilingRampStart) / (physicalPeak - ceilingRampStart))
@@ -88,13 +136,64 @@ class TelemetryMonitor(private val context: Context) {
             // [55..59.206] -> [55..60] and clamp [59.206..60.0] to 60 so both report 60 without
             // pushing a 60.0f wall-clock game up to 61.
             if (nominalPeak >= 115f && rawFps > 55f && rawFps <= 60f) {
-                val halfPhysical = 60f * TOP_PANEL_TE_CLOCK_RATIO
+                val halfPhysical = 60f * teClockRatio
                 val progress = ((rawFps - 55f) / (halfPhysical - 55f)).coerceIn(0f, 1f)
                 val calibrated = 55f + progress * 5f
                 return calibrated.roundToInt().coerceIn(0, peakInt)
             }
 
             return rawFps.roundToInt().coerceIn(0, peakInt)
+        }
+
+        internal fun scaleCpuFrequency(
+            curCpuRaw: Long,
+            maxCpuRaw: Long,
+            fallbackMaxGhz: Float = 3.2f
+        ): Triple<Float, Float, String> {
+            val (maxVal, unitStr) = when {
+                maxCpuRaw >= 1_000_000L -> roundDiv(maxCpuRaw, 1_000_000L) to "GHz"
+                maxCpuRaw >= 1_000L -> roundDiv(maxCpuRaw, 1_000L) to "MHz"
+                else -> fallbackMaxGhz to "GHz"
+            }
+            val curVal = if (curCpuRaw > 0L) {
+                if (unitStr == "GHz") {
+                    roundDiv(curCpuRaw, 1_000_000L)
+                } else {
+                    roundDiv(curCpuRaw, 1_000L)
+                }
+            } else {
+                0f
+            }
+            return Triple(curVal, maxVal, unitStr)
+        }
+
+        internal fun scaleGpuFrequency(
+            curGpuRaw: Long,
+            maxGpuRaw: Long
+        ): Triple<Float, Float, String> {
+            return when {
+                curGpuRaw >= 1_000_000_000L -> Triple(
+                    roundDiv(curGpuRaw, 1_000_000_000L),
+                    if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000_000L) else 1.15f,
+                    "GHz"
+                )
+                curGpuRaw >= 1_000_000L -> Triple(
+                    roundDiv(curGpuRaw, 1_000_000L),
+                    if (maxGpuRaw > 0L) roundDiv(maxGpuRaw, 1_000_000L) else 680f,
+                    "MHz"
+                )
+                maxGpuRaw >= 1_000_000_000L -> Triple(
+                    0f,
+                    roundDiv(maxGpuRaw, 1_000_000_000L),
+                    "GHz"
+                )
+                maxGpuRaw >= 1_000_000L -> Triple(
+                    0f,
+                    roundDiv(maxGpuRaw, 1_000_000L),
+                    "MHz"
+                )
+                else -> Triple(0f, 680f, "MHz")
+            }
         }
 
         private fun roundDiv(numerator: Long, denominator: Long, scale: Int = 2): Float {
@@ -107,10 +206,7 @@ class TelemetryMonitor(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollingJob: Job? = null
-    private val prefs = context.getSharedPreferences(
-        SystemSettingsRepository.PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs = DirectBootPrefs.open(context, SystemSettingsRepository.PREFS_NAME)
 
     private val _state = MutableStateFlow(HardwareTelemetryState())
     val state: StateFlow<HardwareTelemetryState> = _state.asStateFlow()
@@ -156,23 +252,23 @@ class TelemetryMonitor(private val context: Context) {
                 }
             }
 
-            val maxCpuRaw = PrivilegedBridge.readSysfsLong(CPU_MAX_FREQ_PATH)
-            val (cpuMaxVal, cpuUnitStr) = if (maxCpuRaw >= 1_000_000L) {
-                roundDiv(maxCpuRaw, 1_000_000L) to "GHz"
-            } else if (maxCpuRaw >= 1_000L) {
-                roundDiv(maxCpuRaw, 1_000L) to "MHz"
+            val fallbackCpuMaxGhz = if (DeviceProfile.current(context) == DeviceProfile.RETROID_POCKET_DUO) {
+                2.8f
             } else {
-                3.2f to "GHz"
+                3.2f
             }
+            var hardwareMaxCpuRaw = PrivilegedBridge.readSysfsLong(CPU_MAX_FREQ_PATH)
+            val initialMaxCpuRaw = if (isCpuFreqScalingModeEnabled()) {
+                PrivilegedBridge.readSysfsLong(CPU_SCALING_MAX_FREQ_PATH)
+                    .takeIf { it > 0L } ?: hardwareMaxCpuRaw
+            } else {
+                hardwareMaxCpuRaw
+            }
+            val (_, initialCpuMaxVal, initialCpuUnitStr) =
+                scaleCpuFrequency(0L, initialMaxCpuRaw, fallbackCpuMaxGhz)
 
-            val maxGpuRaw = PrivilegedBridge.readSysfsLong(GPU_MAX_FREQ_PATH)
-            val (gpuMaxVal, gpuUnitStr) = if (maxGpuRaw >= 1_000_000_000L) {
-                roundDiv(maxGpuRaw, 1_000_000_000L) to "GHz"
-            } else if (maxGpuRaw >= 1_000_000L) {
-                roundDiv(maxGpuRaw, 1_000_000L) to "MHz"
-            } else {
-                680f to "MHz"
-            }
+            var maxGpuRaw = PrivilegedBridge.readSysfsLong(GPU_MAX_FREQ_PATH)
+            val (_, initialGpuMaxVal, initialGpuUnitStr) = scaleGpuFrequency(0L, maxGpuRaw)
 
             val am = context.getSystemService(ActivityManager::class.java)
             val memInfo = ActivityManager.MemoryInfo()
@@ -184,36 +280,58 @@ class TelemetryMonitor(private val context: Context) {
             }
 
             _state.value = _state.value.copy(
-                cpuMaxFreqGhz = cpuMaxVal,
-                cpuUnit = cpuUnitStr,
-                gpuMaxFreqMhz = gpuMaxVal,
-                gpuUnit = gpuUnitStr,
+                cpuMaxFreqGhz = initialCpuMaxVal,
+                cpuUnit = initialCpuUnitStr,
+                gpuMaxFreqMhz = initialGpuMaxVal,
+                gpuUnit = initialGpuUnitStr,
                 ramTotalGb = totalRamGb
             )
+
+            var cpuThermalPath = resolveCpuThermalPath()
 
             // Replicate stock CpuRingView / GpuRingView / PwrRingView / RamRingView onAttachedToWindow
             // postDelayed(..., 500L) before starting the first animated progress update
             delay(500L)
 
             while (isActive) {
-                val tempRaw = PrivilegedBridge.readSysfsLong(THERMAL_CPU_PATH)
-                val cpuTemp = if (tempRaw > 1000L) tempRaw / 1000f else tempRaw.toFloat()
+                if (cachedCpuThermalPath == null) {
+                    cpuThermalPath = resolveCpuThermalPath()
+                }
+                val tempRaw = PrivilegedBridge.readSysfsLong(cpuThermalPath)
+                val cpuTemp = when {
+                    tempRaw > 1000L -> tempRaw / 1000f
+                    tempRaw > 0L -> tempRaw.toFloat()
+                    else -> _state.value.cpuTempCelsius
+                }
 
                 val fanPercent = (FanControlClient.getSpeedPercentage() * 100f).toInt().coerceIn(0, 100)
 
-                val curCpuRaw = PrivilegedBridge.readSysfsLong(CPU_CUR_FREQ_PATH)
-                val cpuCurVal = if (cpuUnitStr == "GHz") {
-                    roundDiv(curCpuRaw, 1_000_000L)
-                } else {
-                    roundDiv(curCpuRaw, 1_000L)
+                if (hardwareMaxCpuRaw <= 0L) {
+                    hardwareMaxCpuRaw = PrivilegedBridge.readSysfsLong(CPU_MAX_FREQ_PATH)
                 }
+                if (maxGpuRaw <= 0L) {
+                    maxGpuRaw = PrivilegedBridge.readSysfsLong(GPU_MAX_FREQ_PATH)
+                }
+                val scalingMode = isCpuFreqScalingModeEnabled()
+                val curCpuRaw = if (scalingMode) {
+                    PrivilegedBridge.readSysfsLong(CPU_SCALING_CUR_FREQ_PATH)
+                        .takeIf { it > 0L } ?: PrivilegedBridge.readSysfsLong(CPU_CUR_FREQ_PATH)
+                } else {
+                    PrivilegedBridge.readSysfsLong(CPU_CUR_FREQ_PATH)
+                        .takeIf { it > 0L } ?: PrivilegedBridge.readSysfsLong(CPU_SCALING_CUR_FREQ_PATH)
+                }
+                val maxCpuRaw = if (scalingMode) {
+                    PrivilegedBridge.readSysfsLong(CPU_SCALING_MAX_FREQ_PATH)
+                        .takeIf { it > 0L } ?: hardwareMaxCpuRaw
+                } else {
+                    hardwareMaxCpuRaw
+                }
+                val (cpuCurVal, dynamicCpuMaxVal, dynamicCpuUnitStr) =
+                    scaleCpuFrequency(curCpuRaw, maxCpuRaw, fallbackCpuMaxGhz)
 
                 val curGpuRaw = PrivilegedBridge.readSysfsLong(GPU_CUR_FREQ_PATH)
-                val gpuCurVal = if (gpuUnitStr == "GHz") {
-                    roundDiv(curGpuRaw, 1_000_000_000L)
-                } else {
-                    roundDiv(curGpuRaw, 1_000_000L)
-                }
+                val (gpuCurVal, dynamicGpuMaxVal, dynamicGpuUnitStr) =
+                    scaleGpuFrequency(curGpuRaw, maxGpuRaw)
 
                 val currentNowUa = PrivilegedBridge.readSysfsLong(BATTERY_CURRENT_NOW_PATH)
                 val voltageNowUv = PrivilegedBridge.readSysfsLong(BATTERY_VOLTAGE_NOW_PATH)
@@ -227,11 +345,11 @@ class TelemetryMonitor(private val context: Context) {
                     cpuTempCelsius = cpuTemp,
                     fanSpeedPercent = fanPercent,
                     cpuCurFreqGhz = cpuCurVal,
-                    cpuMaxFreqGhz = cpuMaxVal,
-                    cpuUnit = cpuUnitStr,
+                    cpuMaxFreqGhz = dynamicCpuMaxVal,
+                    cpuUnit = dynamicCpuUnitStr,
                     gpuCurFreqMhz = gpuCurVal,
-                    gpuMaxFreqMhz = gpuMaxVal,
-                    gpuUnit = gpuUnitStr,
+                    gpuMaxFreqMhz = dynamicGpuMaxVal,
+                    gpuUnit = dynamicGpuUnitStr,
                     powerWatts = powerWatts.coerceIn(-20f, 25f),
                     ramUsedGb = usedRamGb,
                     ramTotalGb = totalRamGb
@@ -257,6 +375,10 @@ class TelemetryMonitor(private val context: Context) {
         return prefs.getBoolean(SystemSettingsRepository.PREF_ACCURATE_GAME_FPS, true)
     }
 
+    internal fun isCpuFreqScalingModeEnabled(): Boolean {
+        return prefs.getBoolean(SystemSettingsRepository.PREF_CPU_FREQ_SCALING_MODE, false)
+    }
+
     private fun readPeakRefreshRate(): Float {
         val dm = context.getSystemService(DisplayManager::class.java)
         val displayRate = dm?.getDisplay(0)?.refreshRate ?: 60f
@@ -269,9 +391,10 @@ class TelemetryMonitor(private val context: Context) {
 
     internal fun sampleAccurateGameFps(): Int {
         val peakRate = readPeakRefreshRate()
+        val teClockRatio = DeviceProfile.current(context).topPanelTeClockRatio
         val helperFps = PrivilegedBridge.getGameFps()
         if (helperFps.isFinite() && helperFps >= 0f) {
-            return normalizeGameFpsForPanel(helperFps, peakRate)
+            return normalizeGameFpsForPanel(helperFps, peakRate, teClockRatio)
         }
         val flips = PrivilegedBridge.getSurfaceFlingerFlips()
         val now = SystemClock.elapsedRealtime()
@@ -286,7 +409,7 @@ class TelemetryMonitor(private val context: Context) {
             return 0
         }
         val rawFps = ((flips - prevFlips) * 1000f) / (now - prevTime).toFloat()
-        return normalizeGameFpsForPanel(rawFps, peakRate)
+        return normalizeGameFpsForPanel(rawFps, peakRate, teClockRatio)
     }
 
     internal fun sampleFps(): Int {

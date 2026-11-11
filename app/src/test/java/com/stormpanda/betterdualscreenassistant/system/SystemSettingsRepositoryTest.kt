@@ -33,14 +33,25 @@ class SystemSettingsRepositoryTest {
     private var lastCapturedRecFps = 0
     private var lastCapturedRecInternal = false
     private var lastCapturedRecMic = false
+    private val appliedOsThemes = java.util.Collections.synchronizedList(
+        mutableListOf<Triple<List<String>, List<Int>, String>>()
+    )
 
     @Before
     fun setUp() {
+        PrivilegedBridge.resetForTesting()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .clear()
             .commit()
+        context.createDeviceProtectedStorageContext()
+            ?.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+            ?.edit()
+            ?.clear()
+            ?.commit()
         systemProps.clear()
         simulatedRecActive = false
         simulatedRecTarget = 0
@@ -51,6 +62,7 @@ class SystemSettingsRepositoryTest {
         lastCapturedRecFps = 0
         lastCapturedRecInternal = false
         lastCapturedRecMic = false
+        appliedOsThemes.clear()
 
         val helper = mockk<IBinder>(relaxed = true)
         every { helper.isBinderAlive } returns true
@@ -126,6 +138,16 @@ class SystemSettingsRepositoryTest {
                         reply.writeString(simulatedRecCompletedPath)
                         reply.writeString(simulatedRecStopReason)
                     }
+                    PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        val names = data.createStringArray()?.toList().orEmpty()
+                        val colors = data.createIntArray()?.toList().orEmpty()
+                        data.readInt() // targetNightMode
+                        data.readInt() // savedNightMode
+                        val injectedJson = data.readString() ?: ""
+                        appliedOsThemes.add(Triple(names, colors, injectedJson))
+                        reply.writeNoException()
+                    }
                     else -> {
                         reply.writeNoException()
                     }
@@ -142,6 +164,9 @@ class SystemSettingsRepositoryTest {
 
     @After
     fun tearDown() {
+        PrivilegedBridge.resetForTesting()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
         val field = PrivilegedBridge::class.java.getDeclaredField("helperBinder").apply {
             isAccessible = true
         }
@@ -395,11 +420,77 @@ class SystemSettingsRepositoryTest {
     }
 
     @Test
+    fun `moveActiveQuickTile on Retroid Pocket Duo aligns indices with visible supported tiles`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val repo = SystemSettingsRepository(context)
+        repo.resetQuickTilesToDefault()
+        // Also enable unsupported PREVENT_ACCIDENTAL_HOME in prefs to ensure both hidden tiles are skipped cleanly
+        repo.setQuickTileEnabled(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME, true)
+
+        fun visibleActiveTiles(): List<QuickSettingTileId> {
+            val supported = QuickSettingTileId.supportedEntries(DeviceProfile.RETROID_POCKET_DUO).toSet()
+            return repo.quickTileOrder.value.filter { it in supported && it !in repo.disabledQuickTiles.value }
+        }
+
+        val initialVisible = visibleActiveTiles()
+        // Default visible active order on Duo has FORCE_LANDSCAPE at index 7 and THEME_MODE at index 8
+        assertEquals(QuickSettingTileId.FORCE_LANDSCAPE, initialVisible[7])
+        assertEquals(QuickSettingTileId.THEME_MODE, initialVisible[8])
+
+        // Moving THEME_MODE (8) left to FORCE_LANDSCAPE (7) must swap them visibly (not swap with hidden AMBIENT_LIGHT)
+        repo.moveActiveQuickTile(fromActiveIndex = 8, toActiveIndex = 7)
+        val afterSwap = visibleActiveTiles()
+        assertEquals(QuickSettingTileId.THEME_MODE, afterSwap[7])
+        assertEquals(QuickSettingTileId.FORCE_LANDSCAPE, afterSwap[8])
+
+        // Moving FORCE_LANDSCAPE (now at visible index 8) to slot 0 moves FORCE_LANDSCAPE to the front
+        repo.moveActiveQuickTile(fromActiveIndex = 8, toActiveIndex = 0)
+        assertEquals(QuickSettingTileId.FORCE_LANDSCAPE, visibleActiveTiles()[0])
+
+        repo.unregister()
+    }
+
+    @Test
     fun `theme mode custom accent and UI visibility preferences update stateFlows`() {
         val repo = SystemSettingsRepository(context)
 
         repo.setThemeMode(AppThemeOption.VALHALLA.id)
         assertEquals(AppThemeOption.VALHALLA.id, repo.themeMode.value)
+
+        // Retroid readability boost defaults to true and persists across repository instances
+        assertTrue(repo.retroidReadabilityBoost.value)
+        repo.setRetroidReadabilityBoost(false)
+        assertFalse(repo.retroidReadabilityBoost.value)
+        assertFalse(SystemSettingsRepository(context).retroidReadabilityBoost.value)
+        repo.setRetroidReadabilityBoost(true)
+        assertTrue(repo.retroidReadabilityBoost.value)
+
+        // External SharedPreferences edits & refreshAll() resync uiLookMode and retroidReadabilityBoost
+        repo.register()
+        val prefs = context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt(SystemSettingsRepository.PREF_UI_LOOK_MODE, 2)
+            .putBoolean(SystemSettingsRepository.PREF_RETROID_READABILITY_BOOST, false)
+            .commit()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertEquals(2, repo.uiLookMode.value)
+        assertFalse(repo.retroidReadabilityBoost.value)
+
+        prefs.edit()
+            .putBoolean(SystemSettingsRepository.PREF_RETROID_READABILITY_BOOST, true)
+            .commit()
+        repo.refreshAll(refreshDisplayBrightness = false, refreshMegingiardTheme = false)
+        assertTrue(repo.retroidReadabilityBoost.value)
+
+        // Unsupported preventAccidentalHome reads false without side effects and resets via background helper
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        Settings.System.putInt(context.contentResolver, SystemSettingsRepository.KEY_PREVENT_ACCIDENTAL_HOME, 1)
+        repo.refreshAll(refreshDisplayBrightness = false, refreshMegingiardTheme = false)
+        assertFalse(repo.preventAccidentalHome.value)
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_PREVENT_ACCIDENTAL_HOME, -1))
+        repo.resetUnsupportedPreventAccidentalHomeIfNeeded()
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_PREVENT_ACCIDENTAL_HOME, -1))
+        DeviceProfile.testOverride = null
 
         repo.setCustomAccentArgb(0xFF112233.toInt())
         assertEquals(0xFF112233.toInt(), repo.customAccentArgb.value)
@@ -641,27 +732,260 @@ class SystemSettingsRepositoryTest {
         assertTrue(reloaded.screenRecordMicAudio.value)
         assertEquals(30, reloaded.screenRecordFps.value)
 
-        val started = reloaded.startScreenRecording(targetMode = 99, outputPath = "/tmp/test_both.mp4")
+        val validRecPath = "/sdcard/Movies/ScreenRecordings/test_both.mp4"
+        val started = reloaded.startScreenRecording(targetMode = 99, outputPath = validRecPath)
         assertTrue(started)
         assertFalse(lastCapturedRecInternal)
         assertTrue(lastCapturedRecMic)
         assertEquals(30, lastCapturedRecFps)
         assertTrue(reloaded.screenRecordingState.value.isRecording)
         assertEquals(2, reloaded.screenRecordingState.value.targetMode)
-        assertEquals("/tmp/test_both.mp4", reloaded.screenRecordingState.value.outputPath)
+        assertEquals(validRecPath, reloaded.screenRecordingState.value.outputPath)
 
         // Verify syncScreenRecordingStateFromHelper reflects live helper state on a fresh instance
         val synced = repo.syncScreenRecordingStateFromHelper()
         assertTrue(synced.isRecording)
         assertEquals(2, synced.targetMode)
-        assertEquals("/tmp/test_both.mp4", synced.outputPath)
+        assertEquals(validRecPath, synced.outputPath)
 
         val stoppedState = reloaded.stopScreenRecording("user")
         assertFalse(stoppedState.isRecording)
-        assertEquals("/tmp/test_both.mp4", stoppedState.lastCompletedPath)
+        assertEquals(validRecPath, stoppedState.lastCompletedPath)
         assertEquals("user", stoppedState.lastStopReason)
 
         repo.unregister()
         reloaded.unregister()
+    }
+
+    @Test
+    fun `DirectBootPrefs persists locked-boot mutations and merges into credential storage upon unlock`() {
+        val prefName = "direct_boot_test_prefs"
+        val ceBacking = context.getSharedPreferences("${prefName}_ce", Context.MODE_PRIVATE).apply {
+            edit().clear().putString("existing_ce_key", "preserved").commit()
+        }
+        val deBacking = context.getSharedPreferences("${prefName}_de", Context.MODE_PRIVATE).apply {
+            edit().clear().putBoolean("replace_stock", true).commit()
+        }
+
+        var unlocked = false
+        val mockUm = mockk<android.os.UserManager>()
+        every { mockUm.isUserUnlocked } answers { unlocked }
+
+        val deContext = object : android.content.ContextWrapper(context) {
+            override fun isDeviceProtectedStorage(): Boolean = true
+            override fun getSharedPreferences(name: String?, mode: Int) = deBacking
+        }
+        val lockedAwareContext = object : android.content.ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun isDeviceProtectedStorage(): Boolean = false
+            override fun createDeviceProtectedStorageContext(): Context = deContext
+            override fun getSystemServiceName(serviceClass: Class<*>): String? {
+                if (serviceClass == android.os.UserManager::class.java) {
+                    return Context.USER_SERVICE
+                }
+                return super.getSystemServiceName(serviceClass)
+            }
+            override fun getSystemService(name: String): Any? {
+                if (name == Context.USER_SERVICE) {
+                    return mockUm
+                }
+                return super.getSystemService(name)
+            }
+            override fun getSharedPreferences(name: String?, mode: Int): android.content.SharedPreferences {
+                if (!unlocked) {
+                    throw IllegalStateException("SharedPreferences in credential encrypted storage are not available until after user is unlocked")
+                }
+                return ceBacking
+            }
+        }
+
+        val prefs = DirectBootPrefs.open(lockedAwareContext, prefName)
+        // 1. Read & write during Direct Boot (locked) must NOT throw IllegalStateException
+        assertTrue(prefs.getBoolean("replace_stock", false))
+        prefs.edit().putInt("locked_boot_page", 2).commit()
+        assertEquals(2, prefs.getInt("locked_boot_page", 0))
+
+        // 2. Unlock user -> locked-boot mutation merges into CE storage while preserving existing CE keys
+        unlocked = true
+        assertEquals(2, prefs.getInt("locked_boot_page", 0))
+        assertEquals("preserved", prefs.getString("existing_ce_key", null))
+        assertEquals(2, ceBacking.getInt("locked_boot_page", 0))
+    }
+
+    @Test
+    fun `readSavedDisabledQuickTiles keeps at least one supported tile enabled on Retroid Pocket Duo`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val supported = QuickSettingTileId.supportedEntries(DeviceProfile.RETROID_POCKET_DUO)
+        // Disable all 22 supported Retroid tiles while leaving unsupported AYN-only tiles out of disabled set
+        DirectBootPrefs.open(context, SystemSettingsRepository.PREFS_NAME).edit()
+            .putString("disabled_quick_tiles", supported.joinToString(",") { it.key })
+            .putString("known_quick_tiles", QuickSettingTileId.entries.joinToString(",") { it.key })
+            .commit()
+
+        val repo = SystemSettingsRepository(context)
+        val activeSupported = supported.filter { it !in repo.disabledQuickTiles.value }
+        assertTrue("Expected at least 1 supported tile active on Retroid Pocket Duo", activeSupported.isNotEmpty())
+        repo.unregister()
+    }
+
+    @Test
+    fun `setDisplayBrightnessPercent stages pendingBlankedBottomLinear while OLED bottom screen is blanked`() {
+        DeviceProfile.testOverride = DeviceProfile.AYN_THOR
+        var setBrightnessCalls = 0
+        val helper = mockk<IBinder>(relaxed = true)
+        every { helper.isBinderAlive } returns true
+        every { helper.transact(any(), any(), any(), any()) } answers {
+            val code = firstArg<Int>()
+            val reply = thirdArg<Parcel?>()
+            if (code == PrivilegedHelperMain.TRANSACTION_SET_BRIGHTNESS) {
+                setBrightnessCalls++
+            }
+            if (reply != null) {
+                when (code) {
+                    PrivilegedHelperMain.TRANSACTION_GET_BRIGHTNESS -> {
+                        reply.writeNoException()
+                        reply.writeFloatArray(floatArrayOf(0.5f, 0.0f, 1.0f, 0.5f))
+                    }
+                    else -> reply.writeNoException()
+                }
+                reply.setDataPosition(0)
+            }
+            true
+        }
+        val field = PrivilegedBridge::class.java.getDeclaredField("helperBinder").apply { isAccessible = true }
+        field.set(PrivilegedBridge, helper)
+
+        val repo = SystemSettingsRepository(context)
+        repo.setDualScreenDisplayMode(1) // Only Top Screen -> Bottom OLED display 4 is blanked
+        setBrightnessCalls = 0
+
+        repo.setDisplayBrightnessPercent(displayId = 4, percent = 80, temporary = false)
+        assertEquals("Changing slider while OLED bottom screen is blanked must not wake display hardware", 0, setBrightnessCalls)
+        val pending = repo.consumePendingBlankedBottomLinear()
+        org.junit.Assert.assertNotNull(pending)
+        assertEquals(0.8f, pending!!, 0.01f)
+        org.junit.Assert.assertNull(repo.consumePendingBlankedBottomLinear())
+        repo.unregister()
+    }
+
+    class FakeMegingiardThemeProvider : android.content.ContentProvider() {
+        companion object {
+            var syncedMode: String = "DARK_OLED"
+            var syncedAccentArgb: Int = 0xFF26A69A.toInt()
+        }
+
+        override fun onCreate(): Boolean = true
+        override fun query(
+            uri: android.net.Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?
+        ): android.database.Cursor {
+            return android.database.MatrixCursor(arrayOf("theme_mode", "accent_color")).apply {
+                addRow(arrayOf<Any?>(syncedMode, syncedAccentArgb))
+            }
+        }
+        override fun getType(uri: android.net.Uri): String? = null
+        override fun insert(uri: android.net.Uri, values: android.content.ContentValues?): android.net.Uri? = null
+        override fun delete(uri: android.net.Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+        override fun update(
+            uri: android.net.Uri,
+            values: android.content.ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?
+        ): Int = 0
+    }
+
+    @Test
+    fun `setThemeMode SYNC_MEGINGIARD injects OS theme when provider values were already cached and flushes on focus loss`() {
+        val syncedTealArgb = 0xFF26A69A.toInt()
+        FakeMegingiardThemeProvider.syncedMode = "DARK_OLED"
+        FakeMegingiardThemeProvider.syncedAccentArgb = syncedTealArgb
+        val mgAppInfo = android.content.pm.ApplicationInfo().apply {
+            packageName = "com.stormpanda.megingiard"
+        }
+        val providerInfo = android.content.pm.ProviderInfo().apply {
+            name = FakeMegingiardThemeProvider::class.java.name
+            authority = "com.stormpanda.megingiard.provider"
+            packageName = "com.stormpanda.megingiard"
+            applicationInfo = mgAppInfo
+            exported = true
+        }
+        val pkgInfo = android.content.pm.PackageInfo().apply {
+            packageName = "com.stormpanda.megingiard"
+            applicationInfo = mgAppInfo
+            providers = arrayOf(providerInfo)
+        }
+        org.robolectric.Shadows.shadowOf(context.packageManager).installPackage(pkgInfo)
+        val provider = FakeMegingiardThemeProvider().apply { attachInfo(context, providerInfo) }
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal(
+            providerInfo.authority,
+            provider
+        )
+
+        fun awaitCondition(timeoutMs: Long = 1500L, predicate: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                org.robolectric.shadows.ShadowLooper.idleMainLooper()
+                if (predicate()) return
+                Thread.sleep(15L)
+            }
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertTrue("Timed out waiting for async condition", predicate())
+        }
+
+        val repo = SystemSettingsRepository(context)
+        repo.setThemeMode(AppThemeOption.MEGINGIARD_DARK.id)
+        repo.setCustomAccentArgb(0xFFCC0000.toInt())
+        repo.setInjectOsTheme(true)
+        repo.refreshAll()
+
+        // Wait until Megingiard provider values are cached while still on MEGINGIARD_DARK
+        awaitCondition {
+            repo.isMegingiardProviderAvailable.value &&
+                repo.syncedMegingiardOption.value == AppThemeOption.MEGINGIARD_DARK_OLED &&
+                repo.syncedMegingiardAccentArgb.value == syncedTealArgb &&
+                appliedOsThemes.isNotEmpty()
+        }
+        appliedOsThemes.clear()
+
+        // 1. Inside MainActivity (focused): switch to SYNC_MEGINGIARD while provider values are already cached.
+        //    OS injection must stay deferred while focused, then flush IMMEDIATELY (< 650ms) when focus is lost.
+        val activityToken = 777
+        repo.setSettingsUiActive(activityToken, active = true)
+        repo.setThemeMode(AppThemeOption.SYNC_MEGINGIARD.id)
+        Thread.sleep(60L)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertTrue("OS theme sync must remain deferred while MainActivity is focused", appliedOsThemes.isEmpty())
+
+        // Simulate pulling down the notification shade immediately (< 650ms debounce window)
+        repo.setSettingsUiActive(activityToken, active = false, flushIfInactive = true)
+        awaitCondition { appliedOsThemes.isNotEmpty() }
+
+        val (names1, colors1, json1) = appliedOsThemes.last()
+        val colorMap1 = names1.indices.associate { names1[it] to colors1[it] }
+        assertTrue("Expected synced Teal hex in injectedJson: $json1", json1.contains("26A69A"))
+        assertEquals(syncedTealArgb, colorMap1["android:color/system_shade_active_dark"])
+
+        // 2. Outside MainActivity (e.g. bottom-screen overlay dialog): switch to STOCK_DARK and back to
+        //    SYNC_MEGINGIARD while cached provider values remain unchanged -> must still inject after debounce!
+        repo.setThemeMode(AppThemeOption.STOCK_DARK.id)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(700L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCondition { appliedOsThemes.last().first.isEmpty() }
+        appliedOsThemes.clear()
+
+        repo.setThemeMode(AppThemeOption.SYNC_MEGINGIARD.id)
+        // Give themeSyncExecutor a moment to complete and schedule the debounced sync, then advance looper
+        Thread.sleep(80L)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(700L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCondition { appliedOsThemes.isNotEmpty() }
+
+        val (names2, colors2, json2) = appliedOsThemes.last()
+        val colorMap2 = names2.indices.associate { names2[it] to colors2[it] }
+        assertTrue(json2.contains("26A69A"))
+        assertEquals(syncedTealArgb, colorMap2["android:color/system_shade_active_dark"])
+
+        repo.unregister()
     }
 }

@@ -8,14 +8,20 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
+import android.os.Process
 import android.os.SystemClock
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkAll
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -24,6 +30,21 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class PrivilegedBinderProviderAndHelperTest {
+
+    @Before
+    fun setUp() {
+        PrivilegedBridge.resetForTesting()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
+    }
+
+    @After
+    fun tearDown() {
+        PrivilegedBridge.resetForTesting()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
+        unmockkAll()
+    }
 
     @Test
     fun `PrivilegedBinderProvider handles standard ContentProvider methods and METHOD_REGISTER_BINDER`() {
@@ -47,6 +68,35 @@ class PrivilegedBinderProviderAndHelperTest {
         val result = provider.call(PrivilegedHelperMain.METHOD_REGISTER_BINDER, null, extras)
         assertNotNull(result)
         assertTrue(PrivilegedBridge.ping())
+    }
+
+    @Test
+    fun `PrivilegedBinderProvider and HelperBinder reject Process SYSTEM_UID 1000 callers`() {
+        // 1. PrivilegedBinderProvider rejects Binder.getCallingUid() == Process.SYSTEM_UID (1000)
+        PrivilegedBridge.resetForTesting()
+        val provider = PrivilegedBinderProvider()
+        val helperBinder = createAuthorizedHelperBinder()
+        val extras = Bundle().apply {
+            putBinder(PrivilegedHelperMain.EXTRA_BINDER, helperBinder)
+        }
+        mockkStatic(Binder::class)
+        every { Binder.getCallingUid() } returns Process.SYSTEM_UID
+        provider.call(PrivilegedHelperMain.METHOD_REGISTER_BINDER, null, extras)
+        unmockkAll()
+        assertFalse(PrivilegedBridge.ping())
+
+        // 2. HelperBinder.isAuthorizedCaller rejects Process.SYSTEM_UID (1000), accepts root (0) and app UID
+        val isAuthorizedMethod = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredMethod("isAuthorizedCaller", Int::class.javaPrimitiveType).apply {
+                isAccessible = true
+            }
+        val uidField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("cachedAppUid").apply { isAccessible = true }
+        uidField.setInt(helperBinder, 10234)
+
+        assertFalse(isAuthorizedMethod.invoke(helperBinder, Process.SYSTEM_UID) as Boolean)
+        assertTrue(isAuthorizedMethod.invoke(helperBinder, 0) as Boolean)
+        assertTrue(isAuthorizedMethod.invoke(helperBinder, 10234) as Boolean)
     }
 
     @Test
@@ -664,6 +714,383 @@ class PrivilegedBinderProviderAndHelperTest {
         assertEquals("shutdown", activeStatus.lastStopReason)
         ShadowLooper.idleMainLooper(100L, TimeUnit.MILLISECONDS)
         assertTrue(exited)
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_SET_BACKLIGHT_POWER writes allowlisted panels and restoreDisplayAndStockAssistant resets both panels`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val writes = mutableListOf<Pair<Int, Boolean>>()
+        helperBinder.backlightWriteOverride = { panelIndex, blanked ->
+            writes.add(panelIndex to blanked)
+        }
+
+        fun sendBacklightTx(panelIndex: Int, blanked: Boolean) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeInt(panelIndex)
+                writeInt(if (blanked) 1 else 0)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SET_BACKLIGHT_POWER,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+        }
+
+        sendBacklightTx(panelIndex = 1, blanked = true)
+        sendBacklightTx(panelIndex = 0, blanked = false)
+        // Out-of-range panel indices are ignored safely
+        sendBacklightTx(panelIndex = -1, blanked = true)
+        sendBacklightTx(panelIndex = 2, blanked = true)
+
+        assertEquals(listOf(1 to true, 0 to false), writes)
+
+        // Uninstall recovery resets both panel0 and panel1 bl_power to false ("0")
+        writes.clear()
+        val restoreMethod = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredMethod("restoreDisplayAndStockAssistant").apply { isAccessible = true }
+        restoreMethod.invoke(helperBinder)
+
+        assertTrue(writes.contains(0 to false))
+        assertTrue(writes.contains(1 to false))
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_WINDOW_SESSION_TRANSACT validates IWindowSession descriptor token and code`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        helperBinder.allowedWindowSessionCodesOverride = setOf(42)
+
+        var transactCount = 0
+        var receivedCode = -1
+        var receivedFlags = -1
+        var receivedWindowType = -1
+        val mockSessionBinder = object : Binder() {
+            init {
+                attachInterface(null, PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            }
+
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (code == IBinder.INTERFACE_TRANSACTION) {
+                    reply?.writeString(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+                    return true
+                }
+                transactCount++
+                data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+                receivedCode = code
+                receivedFlags = flags
+                receivedWindowType = data.readInt()
+                reply?.writeNoException()
+                reply?.writeInt(7) // e.g. WindowManagerGlobal.ADD_OKAY | ADD_FLAG_APP_VISIBLE
+                return true
+            }
+        }
+
+        // 1. Valid IWindowSession binder, allowlisted addToDisplay code, and valid interface token -> forwarded
+        val validForwardPayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(2038) // TYPE_APPLICATION_OVERLAY
+        }
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(mockSessionBinder)
+            writeInt(42) // allowlisted targetCode
+            writeInt(0)  // targetFlags
+            appendFrom(validForwardPayload, 0, validForwardPayload.dataSize())
+        }
+        validForwardPayload.recycle()
+
+        val reply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                data,
+                reply,
+                0
+            )
+        )
+        reply.setDataPosition(0)
+        reply.readException()
+        assertEquals(1, reply.readInt()) // ok == 1
+        reply.readException() // forwarded reply exception header
+        assertEquals(7, reply.readInt()) // forwarded result
+        assertEquals(1, transactCount)
+        assertEquals(42, receivedCode)
+        assertEquals(0, receivedFlags)
+        assertEquals(2038, receivedWindowType)
+        data.recycle()
+        reply.recycle()
+
+        // 2. Non-IWindowSession system service binder (e.g. IActivityManager) -> rejected
+        val nonWindowBinder = object : Binder() {
+            init {
+                attachInterface(null, "android.app.IActivityManager")
+            }
+
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                if (code == IBinder.INTERFACE_TRANSACTION) {
+                    reply?.writeString("android.app.IActivityManager")
+                    return true
+                }
+                transactCount++
+                return true
+            }
+        }
+        val wrongServicePayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(1)
+        }
+        val wrongServiceData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(nonWindowBinder)
+            writeInt(42)
+            writeInt(0)
+            appendFrom(wrongServicePayload, 0, wrongServicePayload.dataSize())
+        }
+        wrongServicePayload.recycle()
+        val wrongServiceReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                wrongServiceData,
+                wrongServiceReply,
+                0
+            )
+        )
+        wrongServiceReply.setDataPosition(0)
+        wrongServiceReply.readException()
+        assertEquals(0, wrongServiceReply.readInt())
+        assertEquals(1, transactCount)
+        wrongServiceData.recycle()
+        wrongServiceReply.recycle()
+
+        // 3. Disallowed transaction code -> rejected
+        val badCodePayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(2038)
+        }
+        val badCodeData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(mockSessionBinder)
+            writeInt(999) // non-addToDisplay code
+            writeInt(0)
+            appendFrom(badCodePayload, 0, badCodePayload.dataSize())
+        }
+        badCodePayload.recycle()
+        val badCodeReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                badCodeData,
+                badCodeReply,
+                0
+            )
+        )
+        badCodeReply.setDataPosition(0)
+        badCodeReply.readException()
+        assertEquals(0, badCodeReply.readInt())
+        assertEquals(1, transactCount)
+        badCodeData.recycle()
+        badCodeReply.recycle()
+
+        // 4. Empty allowlisted codes -> fails closed (never permits arbitrary code forwarding)
+        helperBinder.allowedWindowSessionCodesOverride = emptySet()
+        val emptyCodesPayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(2038)
+        }
+        val emptyCodesData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(mockSessionBinder)
+            writeInt(42)
+            writeInt(0)
+            appendFrom(emptyCodesPayload, 0, emptyCodesPayload.dataSize())
+        }
+        emptyCodesPayload.recycle()
+        val emptyCodesReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                emptyCodesData,
+                emptyCodesReply,
+                0
+            )
+        )
+        emptyCodesReply.setDataPosition(0)
+        emptyCodesReply.readException()
+        assertEquals(0, emptyCodesReply.readInt())
+        assertEquals(1, transactCount)
+        emptyCodesData.recycle()
+        emptyCodesReply.recycle()
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_CAPTURE_SCREENSHOT dispatches and parses physical display IDs`() {
+        // 1. Verify uniqueId and address extraction
+        assertEquals(
+            "4630946482288158084",
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId("local:4630946482288158084")
+        )
+        assertEquals(
+            "4630946671160541331",
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId("4630946671160541331")
+        )
+        val fakeAddress = object {
+            @Suppress("unused")
+            fun getPhysicalDisplayId(): Long = 4630946671160541331L
+        }
+        assertEquals(
+            "4630946671160541331",
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromAddress(fakeAddress)
+        )
+
+        // 2. Verify flattened single-line dumpsys SurfaceFlinger --display-id parsing for Thor & Duo
+        val thorSfFlattened =
+            "Display 4630946441858561667 (HWC display 0): port=131 pnpId=QCM displayName=\"\" " +
+                "Display 4630946482288158084 (HWC display 3): port=132 pnpId=QCM displayName=\"\""
+        assertEquals(
+            "4630946441858561667" to "4630946482288158084",
+            PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(thorSfFlattened)
+        )
+
+        val duoSfFlattened =
+            "Display 4630947039571902866 (HWC display 0): port=146 pnpId=QCM displayName=\"\" " +
+                "Display 4630946671160541331 (HWC display 3): port=147 pnpId=QCM displayName=\"\""
+        assertEquals(
+            "4630947039571902866" to "4630946671160541331",
+            PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(duoSfFlattened)
+        )
+
+        // 3. Verify scoped screenshot and screen recording output path validation
+        assertTrue(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertTrue(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/storage/emulated/0/Pictures/Screenshots/Screenshot_20261110_120000_Top.png"
+            )
+        )
+        assertFalse(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/sdcard/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertFalse(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/sdcard/Pictures/../Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertFalse(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/data/local/tmp/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertTrue(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/sdcard/Movies/ScreenRecordings/ScreenRecord_20261110_120000_Both.mp4"
+            )
+        )
+        assertTrue(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/storage/emulated/0/Movies/ScreenRecordings/ScreenRecord_20261110_120000_Top.mp4"
+            )
+        )
+        assertFalse(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/tmp/test_both.mp4"
+            )
+        )
+        assertFalse(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/sdcard/Movies/../ScreenRecord_20261110_120000_Both.mp4"
+            )
+        )
+
+        // 4. Verify TRANSACTION_CAPTURE_SCREENSHOT binder transaction
+        val helperBinder = createAuthorizedHelperBinder()
+        val capturedCalls = mutableListOf<Triple<Int, String, String>>()
+        helperBinder.screenshotCaptureOverride = { mode, top, bottom ->
+            capturedCalls.add(Triple(mode, top, bottom))
+            true
+        }
+
+        val data = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(2)
+            writeString("/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Top.png")
+            writeString("/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png")
+        }
+        val reply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_CAPTURE_SCREENSHOT,
+                data,
+                reply,
+                0
+            )
+        )
+        reply.setDataPosition(0)
+        reply.readException()
+        assertEquals(1, reply.readInt())
+        assertEquals(
+            listOf(
+                Triple(
+                    2,
+                    "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Top.png",
+                    "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png"
+                )
+            ),
+            capturedCalls
+        )
+        data.recycle()
+        reply.recycle()
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_APPLY_OS_THEME re-commits fabricated overlays even when palette matches previous call`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val committedPalettes = mutableListOf<Pair<List<String>, List<Int>>>()
+        helperBinder.commitOsThemeOverlaysOverride = { names, colors ->
+            committedPalettes.add(names.toList() to colors.toList())
+        }
+
+        fun sendApplyOsTheme(names: Array<String>, colors: IntArray) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeStringArray(names)
+                writeIntArray(colors)
+                writeInt(2)
+                writeInt(2)
+                writeString("")
+                writeString("")
+            }
+            val reply = Parcel.obtain()
+            assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0))
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+            ShadowLooper.idleMainLooper(50L, TimeUnit.MILLISECONDS)
+        }
+
+        val sampleNames = arrayOf("android:color/system_shade_active_dark", "android:color/system_accent1_100")
+        val sampleColors = intArrayOf(0xFFCC0000.toInt(), 0xFFCC0000.toInt())
+
+        sendApplyOsTheme(sampleNames, sampleColors)
+        sendApplyOsTheme(sampleNames, sampleColors)
+
+        assertEquals(2, committedPalettes.size)
+        assertEquals(sampleColors.toList(), committedPalettes[0].second)
+        assertEquals(sampleColors.toList(), committedPalettes[1].second)
     }
 
     private fun registerMockClientAndCaptureDeathRecipient(

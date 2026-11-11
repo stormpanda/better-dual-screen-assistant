@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="45dp"
+    android:height="41dp"
+    android:viewportWidth="45"
+    android:viewportHeight="41">
+    <!-- Authentic 5px-grid pixel Wi-Fi signal arcs matching rp_ic_status_wifi_3 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,3H35V8H10V3ZM5,8H10V13H5V8ZM35,8H40V13H35V8ZM0,13H5V18H0V13ZM40,13H45V18H40V13Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,18H30V23H15V18ZM10,23H15V28H10V23ZM30,23H35V28H30V23Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,33H25V38H20V33Z" />
+</vector>

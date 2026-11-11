@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:height="40dp"
+    android:width="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 39.9844L31.824 39.9844V35.9044H8.16V39.9844Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 4.08008L31.824 4.08008V7.82013e-05H8.16V4.08008Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08 31.8242L4.08 8.16022L2.18954e-06 8.16022L1.90735e-06 31.8242L4.08 31.8242Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M39.9842 31.8242L39.9842 8.16022L35.9042 8.16022L35.9042 31.8242L39.9842 31.8242Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 4.08008L4.08 4.08008V8.16008H8.16V4.08008Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16 35.9043L4.08 35.9043V31.8243H8.16V35.9043Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042 4.08008L31.8242 4.08008V8.16008H35.9042V4.08008Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M32.0801 8L28.0001 8V12.08H32.0801V8Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M28.0801 12L24.0001 12V16.08H28.0801V12Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24.0801 16L20.0001 16V20.08H24.0801V16Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20.0801 20L16.0001 20V24.08H20.0801V20Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.0801 24L12.0001 24V28.08H16.0801V24Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12.0801 28L8.00006 28V32.08H12.0801V28Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042 35.9043L31.8242 35.9043V31.8243H35.9042V35.9043Z"/>
+</vector>

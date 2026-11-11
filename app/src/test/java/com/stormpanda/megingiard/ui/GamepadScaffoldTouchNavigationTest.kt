@@ -99,6 +99,8 @@ class GamepadScaffoldTouchNavigationTest {
 
     @Before
     fun setUp() {
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride = null
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.resetCacheForTesting()
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         resetComposeUiDispatcher(installFactory = true)
         resetSystemSettingsRepositorySingleton()
@@ -124,6 +126,8 @@ class GamepadScaffoldTouchNavigationTest {
         PrimaryOverlayInputBridge.resetJoystickState()
         DialogToastManager.clear()
         unmockkAll()
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride = null
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.resetCacheForTesting()
         resetSystemSettingsRepositorySingleton()
         resetComposeUiDispatcher(installFactory = false)
         shadowOf(Looper.getMainLooper()).idle()
@@ -370,31 +374,31 @@ class GamepadScaffoldTouchNavigationTest {
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_R1)
         idleCompose(activity, 250)
         assertNotNull("R1 should switch to Appearance tab", findNodeWithTextOrNull(activity, "Theme Source"))
-        assertNotNull("Initial Theme Source should be Stock AYN", findNodeWithTextOrNull(activity, "Stock AYN"))
+        assertNotNull("Initial Theme Source should be Stock", findNodeWithExactTextOrNull(activity, "Stock"))
 
         // 2. Focus is on "Theme Source" (firstDeckItem). Press A to enter carousel adjustment mode.
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 100)
 
-        // Press D-pad Right to change Theme Source ("Stock AYN" -> "Custom Palette", mutating LocalTccColors)
+        // Press D-pad Right to change Theme Source ("Stock" -> "Custom Palette", mutating LocalTccColors)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 200)
         assertNotNull(
-            "Theme Source should advance from Stock AYN",
+            "Theme Source should advance from Stock",
             findNodeWithTextOrNull(activity, "Custom Palette") ?: findNodeWithTextOrNull(activity, "Sync with Megingiard")
         )
 
-        // Immediately press D-pad Left -> MUST cycle Theme Source back to "Stock AYN" instead of backing out to sidebar!
+        // Immediately press D-pad Left -> MUST cycle Theme Source back to "Stock" instead of backing out to sidebar!
         sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT)
         idleCompose(activity, 200)
         assertNotNull(
-            "D-pad Left after changing carousel value must cycle back to Stock AYN instead of backing out of menu",
-            findNodeWithTextOrNull(activity, "Stock AYN")
+            "D-pad Left after changing carousel value must cycle back to Stock instead of backing out of menu",
+            findNodeWithExactTextOrNull(activity, "Stock")
         )
 
         // Verify we are STILL in adjustment mode inside the deck (NOT in the sidebar): D-pad Down would change category if we backed out to sidebar!
         // First advance to Custom Palette, exit adjustment mode with B, then D-pad Down to "Custom Palette" choice card.
-        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // wraps Stock AYN -> Custom Palette
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // wraps Stock -> Custom Palette
         idleCompose(activity, 200)
         assertNotNull("Wrapping Left on Theme Source should select Custom Palette", findNodeWithTextOrNull(activity, "Custom Palette"))
 
@@ -485,18 +489,18 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 150)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT) // Enter Appearance deck -> focuses Theme Source
         idleCompose(activity, 150)
-        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A) // Must enter adjustment mode WITHOUT cycling Custom Palette -> Stock AYN
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A) // Must enter adjustment mode WITHOUT cycling Custom Palette -> Stock
         idleCompose(activity, 150)
         assertNotNull(
             "Button A on carousel after touch mode must enter adjustment mode without prematurely changing value",
             findNodeWithTextOrNull(activity, "Custom Palette")
         )
 
-        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT) // Custom Palette -> Stock AYN
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT) // Custom Palette -> Stock
         idleCompose(activity, 200)
-        assertNotNull(findNodeWithTextOrNull(activity, "Stock AYN"))
+        assertNotNull(findNodeWithExactTextOrNull(activity, "Stock"))
 
-        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // Stock AYN -> Custom Palette (must NOT back out to sidebar!)
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // Stock -> Custom Palette (must NOT back out to sidebar!)
         idleCompose(activity, 200)
         assertNotNull(
             "D-pad Left after changing carousel value post-touch must cycle back to Custom Palette without backing out",
@@ -897,10 +901,10 @@ class GamepadScaffoldTouchNavigationTest {
         assertNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
         assertEquals("Better Dual Screen Assistant", activity.title.toString())
 
-        // Enter General deck and navigate to the very bottom item (9th card, 8 D-pad Down presses)
+        // Enter General deck and navigate to the very bottom item (11th card, 10 D-pad Down presses)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 100)
-        repeat(8) {
+        repeat(10) {
             sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
             idleCompose(activity, 80)
         }
@@ -948,6 +952,98 @@ class GamepadScaffoldTouchNavigationTest {
             android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             pm.getComponentEnabledSetting(assistantComp)
         )
+    }
+
+    @Test
+    @Config(qualifiers = "w832dp-h468dp-369dpi")
+    fun `MainActivity renders Retroid Pocket Duo strings Quick Toggles count and structured Licenses sub-pages`() {
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride =
+            com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO
+        resetSystemSettingsRepositorySingleton()
+
+        mockkObject(PServerClient)
+        mockkObject(PrivilegedBridge)
+        mockkObject(UpdateManager)
+        every { PServerClient.isAvailable() } returns true
+        every { PServerClient.isStockAssistantEnabled(any()) } returns false
+        every { PServerClient.ensurePermissionsGranted(any()) } just runs
+        every { PrivilegedBridge.ensureInitialized(any()) } just runs
+        every { UpdateManager.init(any()) } just runs
+        every { UpdateManager.checkForUpdates(any(), any()) } just runs
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        activeControllers.add(controller)
+        val activity = controller.get()
+        idleCompose(activity, 300)
+
+        // 1. General tab shows Retroid Pocket Duo button/vendor strings
+        assertNotNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
+        assertNotNull(findNodeWithTextOrNull(activity, "physical Dual Screen button"))
+
+        // 2. Quick Toggles tab filters unsupported tiles (Ambient Light & Double-Tap Home -> 22 supported tiles)
+        tapClickableNodeWithText(activity, "Quick Toggles")
+        idleCompose(activity, 300)
+        val supportedCount = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+            .supportedEntries(com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO)
+            .size
+        assertEquals(22, supportedCount)
+        assertNotNull(findNodeWithTextOrNull(activity, "9 / 22 Active"))
+
+        // 3. Updates tab no longer shows Licenses; General tab places "Licenses & Third-Party Notices" at the very bottom
+        tapClickableNodeWithText(activity, "Updates")
+        idleCompose(activity, 300)
+        assertNull(findNodeWithTextOrNull(activity, "Licenses & Third-Party Notices"))
+
+        tapClickableNodeWithText(activity, "General")
+        idleCompose(activity, 300)
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
+        idleCompose(activity, 100)
+        repeat(10) {
+            sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
+            idleCompose(activity, 80)
+        }
+        assertNotNull(findNodeWithTextOrNull(activity, "Licenses & Third-Party Notices"))
+
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
+        idleCompose(activity, 500)
+        assertNotNull(findNodeWithTextOrNull(activity, "Source-Available v1.0"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Fusion Pixel 12px Monospaced"))
+        assertNotNull(findNodeWithTextOrNull(activity, "DOSIyagiBoldface"))
+        assertNotNull(findNodeWithTextOrNull(activity, "MIT (Font Only)"))
+        assertNotNull(findNodeWithTextOrNull(activity, "AndroidX & Jetpack Compose"))
+        assertNull(
+            "Overview screen must not dump raw MIT license text inline",
+            findNodeWithTextOrNull(activity, "Permission is hereby granted, free of charge")
+        )
+
+        // 4. Drill into Better Dual Screen Assistant app license -> single continuous document pane
+        tapClickableNodeWithText(activity, "Source-Available v1.0")
+        idleCompose(activity, 500)
+        val appLicenseDocNode = findNodeWithText(activity, "1. Grant of Rights")
+        val fullDocRenderedText = appLicenseDocNode.config.getOrNull(SemanticsProperties.Text)
+            ?.joinToString("\n") { it.text }
+            .orEmpty()
+        assertTrue(
+            "Full app license must be rendered in a single continuous text block instead of split cards",
+            fullDocRenderedText.contains("1. Grant of Rights") &&
+                fullDocRenderedText.contains("7. Project Discontinuation and Open Source Transition")
+        )
+
+        // Scroll via D-pad Down inside the continuous document pane without leaving the sub-page
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
+        idleCompose(activity, 200)
+        assertNotNull(findNodeWithTextOrNull(activity, "Better Dual Screen Assistant Source-Available License v1.0"))
+
+        // 5. Back out to overview and drill into DOSIyagiBoldface -> explicitly scopes MIT to the font file
+        enterTouchMode(activity)
+        activity.onBackPressedDispatcher.onBackPressed()
+        idleCompose(activity, 500)
+        assertNotNull(findNodeWithTextOrNull(activity, "MIT (Font Only)"))
+
+        tapClickableNodeWithText(activity, "DOSIyagiBoldface")
+        idleCompose(activity, 500)
+        assertNotNull(findNodeWithTextOrNull(activity, "Font License Scope — DOSIyagiBoldface Only"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Permission is hereby granted, free of charge"))
     }
 
     private fun resetSystemSettingsRepositorySingleton() {
@@ -1056,6 +1152,13 @@ class GamepadScaffoldTouchNavigationTest {
         val rootForTest = findComposeHostView(activity.window.decorView) as RootForTest
         return allSemanticsNodes(rootForTest.semanticsOwner.unmergedRootSemanticsNode).firstOrNull { node ->
             node.config.getOrNull(SemanticsProperties.Text)?.any { it.text.contains(substring) } == true
+        }
+    }
+
+    private fun findNodeWithExactTextOrNull(activity: ComponentActivity, exactText: String): SemanticsNode? {
+        val rootForTest = findComposeHostView(activity.window.decorView) as RootForTest
+        return allSemanticsNodes(rootForTest.semanticsOwner.unmergedRootSemanticsNode).firstOrNull { node ->
+            node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == exactText } == true
         }
     }
 

@@ -2,11 +2,14 @@ package com.stormpanda.megingiard.update
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
 import com.stormpanda.betterdualscreenassistant.BuildConfig
+import com.stormpanda.betterdualscreenassistant.system.DirectBootPrefs
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.megingiard.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,12 +31,21 @@ object UpdateManager {
     const val BDSA_OBTAINIUM_FALLBACK_URL =
         "https://github.com/ImranR98/Obtainium"
     const val AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
+    const val FAILURE_BACKOFF_INTERVAL_MS = 10 * 60 * 1000L // 10 minutes
+    private const val MAX_RELEASE_JSON_CHARS = 256 * 1024 // 256 KiB
 
     private const val PREF_AUTO_UPDATE_CHECK_ENABLED = "auto_update_check_enabled"
     private const val PREF_LATEST_RELEASE_TAG = "latest_release_tag"
     private const val PREF_LATEST_RELEASE_URL = "latest_release_url"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val checkLock = Any()
+
+    @Volatile
+    private var activeCheckJob: Job? = null
+
+    @Volatile
+    private var checkGeneration: Long = 0L
 
     @Volatile
     private var appContext: Context? = null
@@ -43,6 +55,9 @@ object UpdateManager {
 
     @Volatile
     internal var lastCheckTimeMs: Long = 0L
+
+    @Volatile
+    internal var lastFailedCheckElapsedMs: Long = 0L
 
     private val _autoUpdateCheckEnabled = MutableStateFlow(true)
     val autoUpdateCheckEnabled: StateFlow<Boolean> = _autoUpdateCheckEnabled.asStateFlow()
@@ -62,33 +77,47 @@ object UpdateManager {
     private fun getPrefs(): SharedPreferences? {
         val ctx = appContext ?: return null
         return runCatching {
-            ctx.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+            DirectBootPrefs.open(ctx, SystemSettingsRepository.PREFS_NAME)
         }.getOrNull()
+    }
+
+    internal fun isValidGithubReleaseUrl(urlStr: String): Boolean {
+        if (urlStr.isBlank()) return false
+        return try {
+            val parsed = URL(urlStr.trim())
+            val host = parsed.host?.lowercase().orEmpty()
+            parsed.protocol.equals("https", ignoreCase = true) &&
+                (host == "github.com" || host.endsWith(".github.com"))
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun init(
         context: Context,
         currentVersion: String = BuildConfig.VERSION_NAME
     ) {
-        if (appContext == null) {
-            appContext = context.applicationContext
-        }
-        if (prefsLoaded) return
-
-        val prefs = getPrefs() ?: return
-        prefsLoaded = true
-        runCatching {
-            val autoEnabled = prefs.getBoolean(PREF_AUTO_UPDATE_CHECK_ENABLED, true)
-            _autoUpdateCheckEnabled.value = autoEnabled
-
-            val savedTag = prefs.getString(PREF_LATEST_RELEASE_TAG, "") ?: ""
-            val savedUrl = prefs.getString(PREF_LATEST_RELEASE_URL, "") ?: ""
-            if (savedTag.isNotEmpty() && savedUrl.isNotEmpty()) {
-                val info = AppReleaseInfo(tagName = savedTag, htmlUrl = savedUrl)
-                applyReleaseInfo(info, currentVersion)
+        synchronized(checkLock) {
+            if (appContext == null) {
+                appContext = context.applicationContext ?: context
             }
-        }.onFailure { e ->
-            AppLog.e(TAG, "Failed to load update preferences", e)
+            if (prefsLoaded) return
+
+            val prefs = getPrefs() ?: return
+            prefsLoaded = true
+            runCatching {
+                val autoEnabled = prefs.getBoolean(PREF_AUTO_UPDATE_CHECK_ENABLED, true)
+                _autoUpdateCheckEnabled.value = autoEnabled
+
+                val savedTag = prefs.getString(PREF_LATEST_RELEASE_TAG, "") ?: ""
+                val savedUrl = prefs.getString(PREF_LATEST_RELEASE_URL, "") ?: ""
+                if (savedTag.isNotEmpty() && isValidGithubReleaseUrl(savedUrl)) {
+                    val info = AppReleaseInfo(tagName = savedTag, htmlUrl = savedUrl)
+                    applyReleaseInfo(info, currentVersion)
+                }
+            }.onFailure { e ->
+                AppLog.e(TAG, "Failed to load update preferences", e)
+            }
         }
     }
 
@@ -110,46 +139,79 @@ object UpdateManager {
         currentVersion: String = BuildConfig.VERSION_NAME,
         releasesApiUrl: String = DEFAULT_RELEASES_API_URL
     ) {
-        scope.launch {
-            if (!force) {
-                if (!_autoUpdateCheckEnabled.value) {
-                    AppLog.d(TAG, "Auto update check is disabled; skipping")
-                    return@launch
-                }
-                val now = System.currentTimeMillis()
-                if (lastCheckTimeMs > 0L && (now - lastCheckTimeMs) < AUTO_UPDATE_CHECK_INTERVAL_MS) {
-                    AppLog.d(TAG, "Auto update check already performed recently; skipping")
-                    return@launch
-                }
+        if (!force) {
+            if (!prefsLoaded || !_autoUpdateCheckEnabled.value) {
+                AppLog.d(TAG, "Auto update check is disabled or uninitialized; skipping")
+                return
             }
+            val ctx = appContext
+            if (ctx != null && !DirectBootPrefs.isUserUnlocked(ctx)) {
+                AppLog.d(TAG, "User storage still in Direct Boot; deferring auto update check")
+                return
+            }
+            val now = System.currentTimeMillis()
+            if (lastCheckTimeMs > 0L && now >= lastCheckTimeMs && (now - lastCheckTimeMs) < AUTO_UPDATE_CHECK_INTERVAL_MS) {
+                AppLog.d(TAG, "Auto update check already performed recently; skipping")
+                return
+            }
+            val nowElapsed = SystemClock.elapsedRealtime()
+            if (lastFailedCheckElapsedMs > 0L &&
+                nowElapsed >= lastFailedCheckElapsedMs &&
+                (nowElapsed - lastFailedCheckElapsedMs) < FAILURE_BACKOFF_INTERVAL_MS
+            ) {
+                AppLog.d(TAG, "Auto update check in offline failure backoff window; skipping")
+                return
+            }
+        }
 
-            if (_isChecking.value) return@launch
+        val myGeneration: Long
+        synchronized(checkLock) {
+            if (_isChecking.value || activeCheckJob?.isActive == true) return
             _isChecking.value = true
             _checkError.value = null
-
-            try {
-                val releaseInfo = fetchLatestRelease(releasesApiUrl)
-                if (releaseInfo != null) {
-                    lastCheckTimeMs = System.currentTimeMillis()
-                    applyReleaseInfo(releaseInfo, currentVersion)
-                    runCatching {
-                        getPrefs()?.edit()
-                            ?.putString(PREF_LATEST_RELEASE_TAG, releaseInfo.tagName)
-                            ?.putString(PREF_LATEST_RELEASE_URL, releaseInfo.htmlUrl)
-                            ?.apply()
+            myGeneration = ++checkGeneration
+            activeCheckJob = scope.launch {
+                try {
+                    val releaseInfo = fetchLatestRelease(releasesApiUrl)
+                    synchronized(checkLock) {
+                        if (myGeneration != checkGeneration) return@launch
+                        if (releaseInfo != null) {
+                            lastCheckTimeMs = System.currentTimeMillis()
+                            lastFailedCheckElapsedMs = 0L
+                            applyReleaseInfo(releaseInfo, currentVersion)
+                            runCatching {
+                                getPrefs()?.edit()
+                                    ?.putString(PREF_LATEST_RELEASE_TAG, releaseInfo.tagName)
+                                    ?.putString(PREF_LATEST_RELEASE_URL, releaseInfo.htmlUrl)
+                                    ?.apply()
+                            }
+                            AppLog.i(
+                                TAG,
+                                "Update check complete: latest=${releaseInfo.tagName}, current=$currentVersion, available=${_updateAvailable.value}"
+                            )
+                        } else {
+                            lastFailedCheckElapsedMs = SystemClock.elapsedRealtime()
+                            _checkError.value = "Failed to fetch release info"
+                        }
                     }
-                    AppLog.i(
-                        TAG,
-                        "Update check complete: latest=${releaseInfo.tagName}, current=$currentVersion, available=${_updateAvailable.value}"
-                    )
-                } else {
-                    _checkError.value = "Failed to fetch release info"
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    synchronized(checkLock) {
+                        if (myGeneration == checkGeneration) {
+                            lastFailedCheckElapsedMs = SystemClock.elapsedRealtime()
+                            AppLog.e(TAG, "Error checking for updates", e)
+                            _checkError.value = e.message ?: "Network error"
+                        }
+                    }
+                } finally {
+                    synchronized(checkLock) {
+                        if (myGeneration == checkGeneration) {
+                            _isChecking.value = false
+                            activeCheckJob = null
+                        }
+                    }
                 }
-            } catch (e: Exception) {
-                AppLog.e(TAG, "Error checking for updates", e)
-                _checkError.value = e.message ?: "Network error"
-            } finally {
-                _isChecking.value = false
             }
         }
     }
@@ -176,7 +238,17 @@ object UpdateManager {
                 }
                 val responseCode = connection.responseCode
                 if (responseCode in 200..299) {
-                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    val body = connection.inputStream.bufferedReader().use { reader ->
+                        val sb = StringBuilder()
+                        val buf = CharArray(4096)
+                        while (sb.length < MAX_RELEASE_JSON_CHARS) {
+                            val toRead = minOf(buf.size, MAX_RELEASE_JSON_CHARS - sb.length)
+                            val n = reader.read(buf, 0, toRead)
+                            if (n == -1) break
+                            sb.append(buf, 0, n)
+                        }
+                        sb.toString()
+                    }
                     parseGithubReleaseJson(body)
                 } else {
                     AppLog.w(TAG, "GitHub API returned HTTP $responseCode")
@@ -192,7 +264,7 @@ object UpdateManager {
             val json = JSONObject(rawJson)
             val tagName = json.optString("tag_name", "").trim()
             val htmlUrl = json.optString("html_url", "").trim()
-            if (tagName.isNotEmpty() && htmlUrl.isNotEmpty()) {
+            if (tagName.isNotEmpty() && isValidGithubReleaseUrl(htmlUrl)) {
                 AppReleaseInfo(tagName = tagName, htmlUrl = htmlUrl)
             } else {
                 null
@@ -202,12 +274,18 @@ object UpdateManager {
         }.getOrNull()
 
     internal fun resetForTesting() {
-        prefsLoaded = false
-        lastCheckTimeMs = 0L
-        _autoUpdateCheckEnabled.value = true
-        _updateAvailable.value = false
-        _latestReleaseInfo.value = null
-        _isChecking.value = false
-        _checkError.value = null
+        synchronized(checkLock) {
+            checkGeneration++
+            activeCheckJob?.cancel()
+            activeCheckJob = null
+            prefsLoaded = false
+            lastCheckTimeMs = 0L
+            lastFailedCheckElapsedMs = 0L
+            _autoUpdateCheckEnabled.value = true
+            _updateAvailable.value = false
+            _latestReleaseInfo.value = null
+            _isChecking.value = false
+            _checkError.value = null
+        }
     }
 }

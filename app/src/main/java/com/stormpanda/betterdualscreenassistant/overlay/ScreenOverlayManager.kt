@@ -3,6 +3,7 @@ package com.stormpanda.betterdualscreenassistant.overlay
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
+import android.annotation.SuppressLint
 import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
@@ -18,6 +19,7 @@ import android.os.Looper
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -42,14 +44,16 @@ import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.overlay.AssistantOverlayScreen
-import com.stormpanda.betterdualscreenassistant.ui.overlay.CloseScreenTipOverlay
+import com.stormpanda.betterdualscreenassistant.ui.theme.computeOverlayNormalizedDensity
 import com.stormpanda.megingiard.update.UpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.roundToInt
 
 private class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -149,17 +153,28 @@ class ScreenOverlayManager(
     companion object {
         private const val TAG = "ScreenOverlayManager"
         const val TOP_DISPLAY_ID = 0
-        const val BOTTOM_DISPLAY_ID = 4
+        /**
+         * Privileged system window type `2021` (`WindowManager.LayoutParams.TYPE_BOOT_PROGRESS`,
+         * matching stock `TccServices.u()` / `ScreenUtil.c()` / `ScreenUtil.d()`).
+         * Exempt from `PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` when added via
+         * [PrivilegedBridge.installPrivilegedWindowSession].
+         */
+        const val PRIVILEGED_OVERLAY_WINDOW_TYPE = PrivilegedBridge.PRIVILEGED_OVERLAY_WINDOW_TYPE
         private const val FADE_DURATION_MS = 200L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val displayManager = context.getSystemService(DisplayManager::class.java)
+    private val profile: DeviceProfile
+        get() = DeviceProfile.current(context)
+    private val bottomDisplayId: Int
+        get() = profile.bottomDisplayId
 
     private var assistantView: ComposeView? = null
     private var assistantLifecycle: OverlayLifecycleOwner? = null
     private var exitingAssistantView: ComposeView? = null
     private var exitingAssistantLifecycle: OverlayLifecycleOwner? = null
+    @Volatile
     var isAssistantShowing: Boolean = false
         private set
 
@@ -167,16 +182,20 @@ class ScreenOverlayManager(
 
     private var topBlankView: View? = null
     private var bottomBlankView: View? = null
+    private var hasSyncedInitialTopBacklight: Boolean = false
+    private var hasSyncedInitialBottomBacklight: Boolean = false
+    private var activeToastView: View? = null
+    private var activeToastDisplayId: Int = -1
+    private val dismissToastRunnable = Runnable { dismissActiveToast() }
+    @Volatile
     var isTopScreenBlanked: Boolean = false
         private set
+    @Volatile
     var isBottomScreenBlanked: Boolean = false
         private set
 
     var isTemporaryBottomClosed: Boolean = false
         private set
-
-    private var tipDialogView: ComposeView? = null
-    private var tipDialogLifecycle: OverlayLifecycleOwner? = null
 
     private var savedTopBrightnessLinear: Float? = null
     private var savedBottomBrightnessLinear: Float? = null
@@ -199,7 +218,7 @@ class ScreenOverlayManager(
         if (oldView != null) {
             try {
                 oldView.animate().cancel()
-                getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)?.removeViewImmediate(oldView)
+                getWindowManagerForDisplay(bottomDisplayId)?.removeViewImmediate(oldView)
             } catch (_: Throwable) {
             }
         }
@@ -214,6 +233,9 @@ class ScreenOverlayManager(
             } else if (!isAssistantShowing && !repository.rememberLastTab.value) {
                 activeTabState.value = 0
             }
+            if (!isAssistantShowing && !repository.rememberLastQuickTogglePage.value) {
+                repository.setLastQuickTogglePage(0)
+            }
             if (isAssistantShowing) return@post
             cleanupExitingAssistant()
 
@@ -224,15 +246,33 @@ class ScreenOverlayManager(
                 // Temporarily allow bottom-screen touch while the Assistant Overlay is open
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
             }
-            val wm = getWindowManagerForDisplay(BOTTOM_DISPLAY_ID) ?: return@post
-            val displayContext = getDisplayContext(BOTTOM_DISPLAY_ID)
-            val realSize = getDisplayRealSize(BOTTOM_DISPLAY_ID, fallbackWidth = 1240, fallbackHeight = 1080)
+            val currentProfile = profile
+            val targetDisplayId = currentProfile.bottomDisplayId
+            val wm = getWindowManagerForDisplay(targetDisplayId) ?: return@post
+            val displayContext = getDisplayContext(targetDisplayId)
+            val realSize = getDisplayRealSize(
+                targetDisplayId,
+                fallbackWidth = currentProfile.bottomFallbackWidth,
+                fallbackHeight = currentProfile.bottomFallbackHeight
+            )
 
             val lifecycleOwner = OverlayLifecycleOwner().apply {
                 onCreate()
                 onResume()
             }
             val composeView = ComposeView(displayContext).apply {
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setOnKeyListener { _, keyCode, event ->
+                    if ((keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_BUTTON_B) &&
+                        event.action == KeyEvent.ACTION_UP
+                    ) {
+                        hideAssistantOverlay()
+                        true
+                    } else {
+                        false
+                    }
+                }
                 setViewTreeLifecycleOwner(lifecycleOwner)
                 setViewTreeViewModelStoreOwner(lifecycleOwner)
                 setViewTreeSavedStateRegistryOwner(lifecycleOwner)
@@ -280,21 +320,25 @@ class ScreenOverlayManager(
                 }
             }
 
-            // Replicate TccServices.u(): exact pixel dimensions of Display 4 (1240x1080),
-            // Gravity.CENTER, and no FLAG_LAYOUT_NO_LIMITS so it never overflows to 1920 width.
+            // Replicate TccServices.u(): exact pixel dimensions of bottom display (Display 4 on AYN Thor,
+            // Display 2 on Retroid Pocket Duo), Gravity.CENTER, and no FLAG_LAYOUT_NO_LIMITS so it never overflows.
+            var overlayFlags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
+                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+            if (currentProfile.useLocalFocusMode) {
+                overlayFlags = overlayFlags or WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
+            }
             val lp = WindowManager.LayoutParams(
                 realSize.x,
                 realSize.y,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
-                    WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
-                    WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE,
+                overlayFlags,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.CENTER
                 softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
                 windowAnimations = R.style.tcc_anim
+                fitInsetsTypes = 0
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
@@ -303,7 +347,7 @@ class ScreenOverlayManager(
                 if (!android.provider.Settings.canDrawOverlays(context)) {
                     PServerClient.ensurePermissionsGranted(context)
                 }
-                wm.addView(composeView, lp)
+                addOverlayViewWithPrivilegeFallback(wm, composeView, lp)
                 applyImmersiveFullscreen(composeView)
                 composeView.requestFocus()
                 composeView.animate()
@@ -316,7 +360,7 @@ class ScreenOverlayManager(
                 assistantLifecycle = lifecycleOwner
                 isAssistantShowing = true
             } catch (t: Throwable) {
-                Log.e(TAG, "Failed to add assistant overlay on display 4", t)
+                Log.e(TAG, "Failed to add assistant overlay on display $targetDisplayId", t)
                 lifecycleOwner.onDestroy()
             }
         }
@@ -335,7 +379,7 @@ class ScreenOverlayManager(
             if (immediate) {
                 try {
                     view.animate().cancel()
-                    getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)?.removeViewImmediate(view)
+                    getWindowManagerForDisplay(bottomDisplayId)?.removeViewImmediate(view)
                 } catch (_: Throwable) {
                 }
                 lifecycle?.onPause()
@@ -347,7 +391,8 @@ class ScreenOverlayManager(
             exitingAssistantView = view
             exitingAssistantLifecycle = lifecycle
 
-            val slideOutDistance = (view.height.takeIf { it > 0 } ?: 1080) * 0.90f
+            val slideOutDistance =
+                (view.height.takeIf { it > 0 } ?: profile.bottomFallbackHeight) * 0.90f
             view.animate()
                 .translationY(slideOutDistance)
                 .alpha(0f)
@@ -358,7 +403,7 @@ class ScreenOverlayManager(
                         cleanupExitingAssistant()
                     } else {
                         try {
-                            getWindowManagerForDisplay(BOTTOM_DISPLAY_ID)?.removeViewImmediate(view)
+                            getWindowManagerForDisplay(bottomDisplayId)?.removeViewImmediate(view)
                         } catch (_: Throwable) {
                         }
                         lifecycle?.onPause()
@@ -415,21 +460,40 @@ class ScreenOverlayManager(
     }
 
     /**
-     * Called when the device screen turns off or wakes up so brightness is restored prior to sleep.
+     * Called when the device screen turns off or wakes up so brightness is restored prior to sleep
+     * (on AYN Thor) or backlight power is re-asserted on wake (on Retroid Pocket Duo).
      */
     fun onDeviceScreenInteractiveChanged(interactive: Boolean) {
         mainHandler.post {
+            val currentProfile = profile
+            if (currentProfile.blankViaBacklightSysfs) {
+                if (!interactive) {
+                    hideAssistantOverlay(immediate = true)
+                } else {
+                    repository.reapplyTouchDisableForCurrentMode()
+                    PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = isTopScreenBlanked)
+                    PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = isBottomScreenBlanked)
+                }
+                return@post
+            }
+
+            val targetBottomDisplayId = currentProfile.bottomDisplayId
             if (!interactive) {
                 hideAssistantOverlay(immediate = true)
-                dismissCloseScreenTip()
                 if (isTopScreenBlanked) {
+                    repository.consumePendingBlankedTopLinear()?.takeIf { it > 0f }?.also {
+                        savedTopBrightnessLinear = it
+                    }
                     savedTopBrightnessLinear?.let {
                         PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, it, false)
                     }
                 }
                 if (isBottomScreenBlanked) {
+                    repository.consumePendingBlankedBottomLinear()?.takeIf { it > 0f }?.also {
+                        savedBottomBrightnessLinear = it
+                    }
                     savedBottomBrightnessLinear?.let {
-                        PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, it, false)
+                        PrivilegedBridge.setDisplayBrightness(context, targetBottomDisplayId, it, false)
                     }
                 }
             } else {
@@ -442,8 +506,18 @@ class ScreenOverlayManager(
                 if (isBottomScreenBlanked) {
                     bottomBlankView?.let { applyImmersiveFullscreen(it) }
                     PrivilegedBridge.setBottomScreenBlanked(context, blank = true, showCoverWindow = true)
-                    PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
+                    PrivilegedBridge.setDisplayBrightness(context, targetBottomDisplayId, -1.0f, false)
                 }
+            }
+        }
+    }
+
+    fun reassertBlankedHardwareStateIfNeeded() {
+        mainHandler.post {
+            repository.reapplyTouchDisableForCurrentMode()
+            if (profile.blankViaBacklightSysfs) {
+                PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = isTopScreenBlanked)
+                PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = isBottomScreenBlanked)
             }
         }
     }
@@ -587,24 +661,46 @@ class ScreenOverlayManager(
         }
     }
 
+    private fun dismissActiveToast() {
+        mainHandler.removeCallbacks(dismissToastRunnable)
+        val oldToast = activeToastView ?: return
+        val oldDisplayId = activeToastDisplayId
+        activeToastView = null
+        activeToastDisplayId = -1
+        try {
+            val targetId = if (oldDisplayId >= 0) oldDisplayId else bottomDisplayId
+            getWindowManagerForDisplay(targetId)?.removeViewImmediate(oldToast)
+        } catch (_: Throwable) {
+        }
+    }
+
     fun showBottomToast(message: String) {
         mainHandler.post {
-            val wm = getWindowManagerForDisplay(BOTTOM_DISPLAY_ID) ?: return@post
-            val displayContext = getDisplayContext(BOTTOM_DISPLAY_ID)
+            dismissActiveToast()
+            val currentProfile = profile
+            val targetBottomDisplayId = currentProfile.bottomDisplayId
+            val wm = getWindowManagerForDisplay(targetBottomDisplayId) ?: return@post
+            val displayContext = getDisplayContext(targetBottomDisplayId)
+            val realSize = getDisplayRealSize(
+                targetBottomDisplayId,
+                fallbackWidth = currentProfile.bottomFallbackWidth,
+                fallbackHeight = currentProfile.bottomFallbackHeight
+            )
+            val scale = computeOverlayNormalizedDensity(realSize.x, realSize.y)
 
             val container = FrameLayout(displayContext)
             val bg = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(displayContext, 20f).toFloat()
+                cornerRadius = 30.75f * scale
                 setColor(Color.parseColor("#CC272727"))
             }
             val textView = TextView(displayContext).apply {
                 text = message
                 setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, 21.5f * scale)
                 background = bg
-                val hPad = dpToPx(displayContext, 20f)
-                val vPad = dpToPx(displayContext, 10f)
+                val hPad = (30.75f * scale).roundToInt()
+                val vPad = (15.4f * scale).roundToInt()
                 setPadding(hPad, vPad, hPad, vPad)
             }
             container.addView(
@@ -625,17 +721,14 @@ class ScreenOverlayManager(
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                y = dpToPx(displayContext, 80f)
+                y = (123f * scale).roundToInt()
             }
 
             try {
-                wm.addView(container, lp)
-                mainHandler.postDelayed({
-                    try {
-                        wm.removeViewImmediate(container)
-                    } catch (_: Throwable) {
-                    }
-                }, 2200L)
+                addOverlayViewWithPrivilegeFallback(wm, container, lp)
+                activeToastView = container
+                activeToastDisplayId = targetBottomDisplayId
+                mainHandler.postDelayed(dismissToastRunnable, 2200L)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to show bottom toast", t)
             }
@@ -643,10 +736,18 @@ class ScreenOverlayManager(
     }
 
     private fun setTopScreenBlanked(blank: Boolean) {
+        if (profile.blankViaBacklightSysfs) {
+            if (blank == isTopScreenBlanked && hasSyncedInitialTopBacklight) return
+            hasSyncedInitialTopBacklight = true
+            isTopScreenBlanked = blank
+            PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = blank)
+            return
+        }
         if (blank == isTopScreenBlanked) return
         val wm = getWindowManagerForDisplay(TOP_DISPLAY_ID) ?: return
         if (blank) {
             isTopScreenBlanked = true
+            repository.consumePendingBlankedTopLinear()
             val info = PrivilegedBridge.getDisplayBrightnessInfo(context, TOP_DISPLAY_ID)
             val cur = info.getOrElse(0) { 0.4f }
             if (cur >= 0f) {
@@ -666,7 +767,7 @@ class ScreenOverlayManager(
             }
             val lp = createBlankOverlayLayoutParams(TOP_DISPLAY_ID, 1920, 1080)
             try {
-                wm.addView(view, lp)
+                addOverlayViewWithPrivilegeFallback(wm, view, lp)
                 applyImmersiveFullscreen(view)
                 view.requestFocus()
                 topBlankView = view
@@ -692,7 +793,8 @@ class ScreenOverlayManager(
         } else {
             isTopScreenBlanked = false
             PrivilegedBridge.setTopScreenBlanked(context, blank = false, showCoverWindow = false)
-            val restore = savedTopBrightnessLinear
+            val restore = repository.consumePendingBlankedTopLinear()?.takeIf { it > 0f }
+                ?: savedTopBrightnessLinear
                 ?: (repository.topBrightness.value / 100f).coerceIn(0.01f, 1f)
             savedTopBrightnessLinear = null
             PrivilegedBridge.setDisplayBrightness(context, TOP_DISPLAY_ID, restore, false)
@@ -714,11 +816,21 @@ class ScreenOverlayManager(
     }
 
     private fun setBottomScreenBlanked(blank: Boolean) {
+        val currentProfile = profile
+        if (currentProfile.blankViaBacklightSysfs) {
+            if (blank == isBottomScreenBlanked && hasSyncedInitialBottomBacklight) return
+            hasSyncedInitialBottomBacklight = true
+            isBottomScreenBlanked = blank
+            PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = blank)
+            return
+        }
         if (blank == isBottomScreenBlanked) return
-        val wm = getWindowManagerForDisplay(BOTTOM_DISPLAY_ID) ?: return
+        val targetBottomDisplayId = currentProfile.bottomDisplayId
+        val wm = getWindowManagerForDisplay(targetBottomDisplayId) ?: return
         if (blank) {
             isBottomScreenBlanked = true
-            val info = PrivilegedBridge.getDisplayBrightnessInfo(context, BOTTOM_DISPLAY_ID)
+            repository.consumePendingBlankedBottomLinear()
+            val info = PrivilegedBridge.getDisplayBrightnessInfo(context, targetBottomDisplayId)
             val cur = info.getOrElse(0) { 0.4f }
             if (cur >= 0f) {
                 savedBottomBrightnessLinear = cur
@@ -732,12 +844,16 @@ class ScreenOverlayManager(
                 }
                 bottomBlankView = null
             }
-            val view = BlankOverlayView(getDisplayContext(BOTTOM_DISPLAY_ID)).apply {
+            val view = BlankOverlayView(getDisplayContext(targetBottomDisplayId)).apply {
                 alpha = 0f
             }
-            val lp = createBlankOverlayLayoutParams(BOTTOM_DISPLAY_ID, 1240, 1080)
+            val lp = createBlankOverlayLayoutParams(
+                targetBottomDisplayId,
+                currentProfile.bottomFallbackWidth,
+                currentProfile.bottomFallbackHeight
+            )
             try {
-                wm.addView(view, lp)
+                addOverlayViewWithPrivilegeFallback(wm, view, lp)
                 applyImmersiveFullscreen(view)
                 view.requestFocus()
                 bottomBlankView = view
@@ -751,7 +867,12 @@ class ScreenOverlayManager(
                                     blank = true,
                                     showCoverWindow = true
                                 )
-                                PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
+                                PrivilegedBridge.setDisplayBrightness(
+                                    context,
+                                    targetBottomDisplayId,
+                                    -1.0f,
+                                    false
+                                )
                             }
                         }
                     })
@@ -765,16 +886,22 @@ class ScreenOverlayManager(
                         blank = true,
                         showCoverWindow = true
                     )
-                    PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, -1.0f, false)
+                    PrivilegedBridge.setDisplayBrightness(
+                        context,
+                        targetBottomDisplayId,
+                        -1.0f,
+                        false
+                    )
                 }
             }
         } else {
             isBottomScreenBlanked = false
             PrivilegedBridge.setBottomScreenBlanked(context, blank = false, showCoverWindow = false)
-            val restore = savedBottomBrightnessLinear
+            val restore = repository.consumePendingBlankedBottomLinear()?.takeIf { it > 0f }
+                ?: savedBottomBrightnessLinear
                 ?: (repository.bottomBrightness.value / 100f).coerceIn(0.01f, 1f)
             savedBottomBrightnessLinear = null
-            PrivilegedBridge.setDisplayBrightness(context, BOTTOM_DISPLAY_ID, restore, false)
+            PrivilegedBridge.setDisplayBrightness(context, targetBottomDisplayId, restore, false)
             val view = bottomBlankView ?: return
             bottomBlankView = null
             ObjectAnimator.ofFloat(view, "alpha", view.alpha, 0f).apply {
@@ -792,19 +919,6 @@ class ScreenOverlayManager(
         }
     }
 
-    private fun dismissCloseScreenTip() {
-        val view = tipDialogView ?: return
-        val wm = getWindowManagerForDisplay(TOP_DISPLAY_ID)
-        try {
-            wm?.removeViewImmediate(view)
-        } catch (_: Throwable) {
-        }
-        tipDialogLifecycle?.onPause()
-        tipDialogLifecycle?.onDestroy()
-        tipDialogLifecycle = null
-        tipDialogView = null
-    }
-
     private fun createBlankOverlayLayoutParams(
         displayId: Int,
         fallbackWidth: Int,
@@ -814,13 +928,15 @@ class ScreenOverlayManager(
         // Replicate stock ScreenUtil.c()/d() flags (132608 = FLAG_ALT_FOCUSABLE_IM | FLAG_FULLSCREEN |
         // FLAG_LAYOUT_NO_LIMITS) without FLAG_NOT_FOCUSABLE so DisplayPolicy/InsetsPolicy allows this
         // fullscreen window to hide the Status Bar and Gesture Bar on Display 0.
-        // Never include FLAG_LAYOUT_NO_LIMITS on Display 4 (BOTTOM_DISPLAY_ID).
+        // Never include FLAG_LAYOUT_NO_LIMITS on the secondary bottom display.
         var flags = WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
             WindowManager.LayoutParams.FLAG_FULLSCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR or
-            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
-            WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
+        if (profile.useLocalFocusMode) {
+            flags = flags or WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
+        }
         if (displayId == TOP_DISPLAY_ID) {
             flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         }
@@ -884,11 +1000,33 @@ class ScreenOverlayManager(
         return getDisplayContext(displayId).getSystemService(WindowManager::class.java)
     }
 
-    private fun dpToPx(ctx: Context, dp: Float): Int {
-        return TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            dp,
-            ctx.resources.displayMetrics
-        ).toInt()
+    /**
+     * Attaches [view] using privileged window type [PRIVILEGED_OVERLAY_WINDOW_TYPE] (`2021` /
+     * `TYPE_BOOT_PROGRESS`, matching stock `TccServices.u()`) when the root-backed
+     * `IWindowSession` proxy is active so the overlay is never force-hidden by
+     * `PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` (e.g. `com.android.documentsui`),
+     * automatically falling back to `TYPE_APPLICATION_OVERLAY` (`2038`) if unavailable.
+     */
+    @SuppressLint("WrongConstant")
+    private fun addOverlayViewWithPrivilegeFallback(
+        wm: WindowManager,
+        view: View,
+        lp: WindowManager.LayoutParams
+    ) {
+        if (PrivilegedBridge.installPrivilegedWindowSession()) {
+            lp.type = PRIVILEGED_OVERLAY_WINDOW_TYPE
+            try {
+                wm.addView(view, lp)
+                return
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "Privileged window type ${lp.type} addView failed; falling back to TYPE_APPLICATION_OVERLAY",
+                    t
+                )
+            }
+        }
+        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        wm.addView(view, lp)
     }
 }

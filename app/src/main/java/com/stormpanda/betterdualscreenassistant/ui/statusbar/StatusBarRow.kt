@@ -1,5 +1,6 @@
 package com.stormpanda.betterdualscreenassistant.ui.statusbar
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
@@ -59,17 +61,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
+import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
+import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
+import com.stormpanda.betterdualscreenassistant.ui.theme.aynSp
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayTextStyle
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
- * Replicates `StatusBar` (`status_bar.xml`):
- * `marginTop = 15dp`, `paddingHorizontal = 15dp`.
- * Left: `TimeView` (tapping triggers memory cleanup just like the stock app).
+ * Replicates `StatusBar` (`status_bar.xml`) across AYN Smooth and Retroid Pixel UI looks.
+ * Left: `TimeView` (tapping triggers memory cleanup just like the stock app) + optional recording badge.
  * Right: `BluetoothView`, `InternetSpeedView`, `WifiView`, and `BatteryView`.
  */
 @Composable
@@ -82,6 +88,12 @@ fun StatusBarRow(
 ) {
     val context = LocalContext.current
     val colors = LocalTccColors.current
+    val lookSpec = LocalTccLookSpec.current
+    val isRetroid = lookSpec.isRetroid
+    val spec = lookSpec.statusBar
+    val displayStyle = tccDisplayTextStyle()
+    val statusFontSize = spec.fontSize
+    val statusFontWeight = if (isRetroid) FontWeight.Normal else FontWeight.Bold
 
     var timeText by remember { mutableStateOf(formatCurrentTime(context)) }
     var batteryLevel by remember { mutableIntStateOf(100) }
@@ -215,21 +227,27 @@ fun StatusBarRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 15.dp, start = 15.dp, end = 15.dp),
+            .padding(
+                top = spec.topPadding,
+                bottom = spec.bottomPadding,
+                start = spec.horizontalPadding,
+                end = spec.horizontalPadding
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(spec.itemSpacing * 0.8f)
         ) {
             Text(
                 text = timeText,
                 color = colors.primary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = statusFontSize,
+                style = displayStyle,
+                fontWeight = statusFontWeight,
                 modifier = Modifier
-                    .padding(horizontal = 6.dp)
+                    .padding(horizontal = spec.timeHorizontalPadding)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -240,7 +258,7 @@ fun StatusBarRow(
             if (isRecording) {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(if (isRetroid) 4.dp else aynDp(10f)))
                         .background(Color(0xFFE53935))
                         .then(
                             if (onStopRecordingClick != null) {
@@ -249,21 +267,25 @@ fun StatusBarRow(
                                 Modifier
                             }
                         )
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                        .padding(
+                            horizontal = if (isRetroid) 8.dp else aynDp(8f),
+                            vertical = if (isRetroid) 3.dp else aynDp(3f)
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (isRetroid) 5.dp else aynDp(5f))
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
+                            .size(if (isRetroid) 7.dp else aynDp(7f))
+                            .clip(if (isRetroid) RectangleShape else CircleShape)
                             .background(Color.White)
                     )
                     Text(
                         text = recordingElapsedText.ifEmpty { "00:00" },
                         color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = spec.recordingFontSize,
+                        style = displayStyle,
+                        fontWeight = statusFontWeight
                     )
                 }
             }
@@ -271,14 +293,14 @@ fun StatusBarRow(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(spec.itemSpacing)
         ) {
             if (isBluetoothConnected) {
                 Image(
                     painter = painterResource(id = tccDrawable(R.drawable.ic_bluetooth)),
                     contentDescription = "Bluetooth",
                     colorFilter = ColorFilter.tint(colors.primary),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(spec.bluetoothIconSize)
                 )
             }
 
@@ -286,8 +308,9 @@ fun StatusBarRow(
                 Text(
                     text = netSpeedText,
                     color = colors.primary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = statusFontSize,
+                    style = displayStyle,
+                    fontWeight = statusFontWeight
                 )
             }
 
@@ -301,11 +324,18 @@ fun StatusBarRow(
                 Image(
                     painter = painterResource(id = tccDrawable(wifiRes)),
                     contentDescription = "Wi-Fi",
-                    colorFilter = ColorFilter.tint(
-                        color = colors.primary,
-                        blendMode = if (colors.isDark) BlendMode.Modulate else BlendMode.SrcIn
-                    ),
-                    modifier = Modifier.size(17.dp)
+                    colorFilter = if (isRetroid) {
+                        ColorFilter.tint(colors.primary)
+                    } else {
+                        ColorFilter.tint(
+                            color = colors.primary,
+                            blendMode = if (colors.isDark) BlendMode.Modulate else BlendMode.SrcIn
+                        )
+                    },
+                    modifier = Modifier.size(
+                        width = spec.wifiWidth,
+                        height = spec.wifiHeight
+                    )
                 )
             }
 
@@ -313,14 +343,19 @@ fun StatusBarRow(
                 BatteryIconCanvas(
                     level = batteryLevel,
                     isCharging = isCharging,
-                    modifier = Modifier.size(width = 25.dp, height = 14.dp)
+                    useSegmentedPixelBattery = isRetroid,
+                    modifier = Modifier.size(
+                        width = spec.batteryWidth,
+                        height = spec.batteryHeight
+                    )
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(spec.batteryPercentGap))
                 Text(
                     text = "$batteryLevel%",
                     color = colors.primary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = statusFontSize,
+                    style = displayStyle,
+                    fontWeight = statusFontWeight
                 )
             }
         }
@@ -331,13 +366,79 @@ fun StatusBarRow(
 private fun BatteryIconCanvas(
     level: Int,
     isCharging: Boolean,
+    useSegmentedPixelBattery: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTccColors.current
     Canvas(modifier = modifier) {
-        // Replicates BatteryView.a rotated 90 degrees clockwise:
-        // Left nub, outer body frame in primaryColor, fill from right to left in secondaryColor
-        // (interpolated towards red below 50%), and green lightning bolt on top when charging.
+        if (useSegmentedPixelBattery) {
+            val wall = (3.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()
+            val nubW = (2.25.dp.toPx()).roundToInt().coerceAtLeast(1).toFloat()
+            val nubH = (9.8.dp.toPx()).roundToInt().coerceAtLeast(2).toFloat()
+            val bodyW = (size.width - nubW).coerceAtLeast(wall * 4f)
+            val bodyH = size.height
+
+            // Top & bottom horizontal walls (inset by `wall` on left & right for 1-step pixel corner cut)
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(wall, 0f),
+                size = Size((bodyW - wall * 2f).coerceAtLeast(0f), wall)
+            )
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(wall, bodyH - wall),
+                size = Size((bodyW - wall * 2f).coerceAtLeast(0f), wall)
+            )
+            // Left & right vertical walls
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(0f, wall),
+                size = Size(wall, (bodyH - wall * 2f).coerceAtLeast(0f))
+            )
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(bodyW - wall, wall),
+                size = Size(wall, (bodyH - wall * 2f).coerceAtLeast(0f))
+            )
+            // Right-side positive terminal nub
+            drawRect(
+                color = colors.primary,
+                topLeft = Offset(bodyW, ((bodyH - nubH) * 0.5f).roundToInt().toFloat()),
+                size = Size(nubW, nubH)
+            )
+
+            // 4 vertical pixel bars filling left-to-right
+            val clamped = level.coerceIn(0, 100)
+            val activeBars = when {
+                clamped <= 0 -> 0
+                clamped < 30 -> 1
+                clamped < 55 -> 2
+                clamped < 80 -> 3
+                else -> 4
+            }
+            val barColor = when {
+                isCharging && clamped < 100 -> colors.lightning
+                clamped <= 20 -> colors.error
+                else -> colors.primary
+            }
+            val innerPadX = (4.5.dp.toPx()).roundToInt().toFloat()
+            val innerPadY = (3.dp.toPx()).roundToInt().toFloat()
+            val availW = (bodyW - wall * 2f - innerPadX * 2f).coerceAtLeast(0f)
+            val barGap = (3.dp.toPx()).roundToInt().toFloat()
+            val barW = ((availW - barGap * 3f) / 4f).coerceAtLeast(1f)
+            val barH = (bodyH - wall * 2f - innerPadY * 2f).coerceAtLeast(1f)
+            val barTop = wall + innerPadY
+            val startX = wall + innerPadX
+            for (i in 0 until activeBars) {
+                drawRect(
+                    color = barColor,
+                    topLeft = Offset(startX + i * (barW + barGap), barTop),
+                    size = Size(barW, barH)
+                )
+            }
+            return@Canvas
+        }
+
         val strokeW = size.height * 0.10f
         val nubWidth = size.width * 0.07f
         val nubHeight = size.height * 0.45f
@@ -435,6 +536,7 @@ private fun checkNetworkConnected(context: Context): Boolean {
     }
 }
 
+@SuppressLint("MissingPermission")
 private fun checkBluetoothConnected(context: Context): Boolean {
     return try {
         val bm = context.getSystemService(BluetoothManager::class.java) ?: return false

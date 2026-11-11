@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="40dp"
+    android:viewportWidth="50"
+    android:viewportHeight="40">
+    <!-- Hollow 5px-stroke pixel camcorder body with open stepped corners -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,5H30V10H5V5ZM5,30H30V35H5V30ZM0,10H5V30H0V10ZM30,10H35V30H30V10Z" />
+    <!-- Center pixel record square -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,16H21V24H14V16Z" />
+    <!-- Stepped pixel lens cone on right -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35,10H40V15H35V10ZM35,25H40V30H35V25ZM40,5H45V10H40V5ZM40,30H45V35H40V30ZM45,5H50V35H45V5Z" />
+</vector>

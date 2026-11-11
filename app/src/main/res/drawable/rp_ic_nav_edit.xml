@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Top pixel slider track + hollow 5px-walled pixel knob -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,11H12V16H0V11ZM29,11H48V16H29V11ZM17,3H24V8H17V3ZM17,19H24V24H17V19ZM12,8H17V19H12V8ZM24,8H29V19H24V8Z" />
+    <!-- Bottom pixel slider track + hollow 5px-walled pixel knob -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,32H19V37H0V32ZM36,32H48V37H36V32ZM24,24H31V29H24V24ZM24,40H31V45H24V40ZM19,29H24V40H19V29ZM31,29H36V40H31V29Z" />
+</vector>

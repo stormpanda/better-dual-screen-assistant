@@ -1,9 +1,23 @@
 package com.stormpanda.betterdualscreenassistant.ui.theme
 
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
+import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelCornerCutShape
+import com.stormpanda.betterdualscreenassistant.ui.components.PixelNotchedShape
 import com.stormpanda.betterdualscreenassistant.ui.overlay.formatCpuTemperature
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -91,20 +105,35 @@ class TccThemeAndOverlayFormatTest {
     }
 
     @Test
-    fun `buildOsDynamicColorOverlayEntries generates all 60 Android 13 Material You color keys with opaque ARGB`() {
+    fun `buildOsDynamicColorOverlayEntries generates all 65 tonal and 156 Android 14 to 16 semantic color keys with opaque ARGB`() {
         val palette = resolveTccPalette(AppThemeOption.MEGINGIARD_DARK, systemDark = true)
         val (keys, colors) = buildOsDynamicColorOverlayEntries(palette)
 
-        // 5 tonal palettes (accent1, accent2, accent3, neutral1, neutral2) * 12 steps = 60 entries
-        assertEquals(60, keys.size)
-        assertEquals(60, colors.size)
-        assertEquals(60, keys.toSet().size)
+        // 5 tonal palettes * 13 steps (65) + 156 Android 14-16 semantic dynamic tokens = 221 entries
+        assertEquals(221, keys.size)
+        assertEquals(221, colors.size)
+        assertEquals(221, keys.toSet().size)
 
+        // Tonal keys (Android 12-13+)
+        assertTrue(keys.contains("android:color/system_accent1_0"))
         assertTrue(keys.contains("android:color/system_accent1_500"))
         assertTrue(keys.contains("android:color/system_accent2_500"))
         assertTrue(keys.contains("android:color/system_accent3_500"))
         assertTrue(keys.contains("android:color/system_neutral1_900"))
         assertTrue(keys.contains("android:color/system_neutral2_800"))
+
+        // Semantic keys (Android 14-16 com.android.systemui:dynamic)
+        assertTrue(keys.contains("android:color/system_primary_dark"))
+        assertTrue(keys.contains("android:color/system_primary_container_dark"))
+        assertTrue(keys.contains("android:color/system_surface_dark"))
+        assertTrue(keys.contains("android:color/system_surface_container_dark"))
+        assertTrue(keys.contains("android:color/system_surface_container_high_dark"))
+        assertTrue(keys.contains("android:color/system_shade_active_dark"))
+        assertTrue(keys.contains("android:color/system_on_shade_active_dark"))
+        assertTrue(keys.contains("android:color/system_shade_inactive_dark"))
+        assertTrue(keys.contains("android:color/system_under_surface_dark"))
+        assertTrue(keys.contains("android:color/system_inverse_surface_dark"))
+        assertTrue(keys.contains("android:color/system_surface_tint_dark"))
 
         for (color in colors) {
             assertEquals(0xFF, (color ushr 24) and 0xFF)
@@ -139,5 +168,349 @@ class TccThemeAndOverlayFormatTest {
 
         assertEquals("100℃", formatCpuTemperature(100f, useFahrenheit = false))
         assertEquals("212℉", formatCpuTemperature(100f, useFahrenheit = true))
+    }
+
+    @Test
+    fun `TccUiLookPreference resolves Auto per DeviceProfile and works orthogonally with all themes`() {
+        assertEquals(TccUiLookPreference.AUTO, TccUiLookPreference.fromId(0))
+        assertEquals(TccUiLookPreference.AYN, TccUiLookPreference.fromId(1))
+        assertEquals(TccUiLookPreference.RETROID, TccUiLookPreference.fromId(2))
+        assertEquals(TccUiLookPreference.AUTO, TccUiLookPreference.fromId(999))
+
+        assertEquals(TccUiLook.AYN, TccUiLookPreference.AUTO.resolve(DeviceProfile.AYN_THOR))
+        assertEquals(TccUiLook.RETROID, TccUiLookPreference.AUTO.resolve(DeviceProfile.RETROID_POCKET_DUO))
+        assertEquals(TccUiLook.AYN, TccUiLookPreference.AYN.resolve(DeviceProfile.RETROID_POCKET_DUO))
+        assertEquals(TccUiLook.RETROID, TccUiLookPreference.RETROID.resolve(DeviceProfile.AYN_THOR))
+
+        assertEquals("Auto (AYN Smooth)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.AYN_THOR))
+        assertEquals("Auto (Retroid Pixel)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.RETROID_POCKET_DUO))
+
+        assertTrue(RetroidPixelTealSwatch in MegingiardAccentPresets)
+        assertTrue(RetroidPixelOrangeSwatch in MegingiardAccentPresets)
+
+        // Stock Dark & Light switch between AYN and Retroid Pixel palettes based on uiLook
+        val aynStockDark = resolveTccPalette(
+            option = AppThemeOption.STOCK_DARK,
+            systemDark = true,
+            uiLook = TccUiLook.AYN
+        )
+        val retroidStockDark = resolveTccPalette(
+            option = AppThemeOption.STOCK_DARK,
+            systemDark = true,
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(PureBlackTccPalette, aynStockDark)
+        assertEquals(RpPixelPureBlackTccPalette, retroidStockDark)
+        assertEquals(Color(0xFF141414), retroidStockDark.primaryBackground)
+        assertEquals(Color.Black, retroidStockDark.panelBackground)
+        assertEquals(Color(0xFFFF760A), retroidStockDark.accent)
+        assertEquals(Color.Black, retroidStockDark.retroidContentOnAccent())
+
+        val retroidStockLight = resolveTccPalette(
+            option = AppThemeOption.STOCK_LIGHT,
+            systemDark = false,
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(RpPixelLightTccPalette, retroidStockLight)
+        assertEquals(Color(0xFFFF760A), retroidStockLight.accent)
+        assertEquals(Color.Black, retroidStockLight.retroidContentOnAccent())
+
+        // retroidContentOnAccent adapts contrast for dark vs bright Megingiard accents
+        val darkCrimsonMegingiard = resolveTccPalette(
+            option = AppThemeOption.MEGINGIARD_DARK,
+            systemDark = true,
+            customAccentArgb = 0xFFD50000.toInt(),
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(Color.White, darkCrimsonMegingiard.retroidContentOnAccent())
+
+        val orangeMegingiard = resolveTccPalette(
+            option = AppThemeOption.MEGINGIARD_DARK,
+            systemDark = true,
+            customAccentArgb = 0xFFFF760A.toInt(),
+            uiLook = TccUiLook.RETROID
+        )
+        assertEquals(Color.Black, orangeMegingiard.retroidContentOnAccent())
+
+        // Every AppThemeOption palette resolves cleanly regardless of UI Look (AYN or RETROID)
+        for (look in TccUiLook.entries) {
+            for (option in AppThemeOption.entries) {
+                val palette = resolveTccPalette(
+                    option = option,
+                    systemDark = true,
+                    customAccentArgb = RetroidPixelTealSwatch.toArgb(),
+                    uiLook = look
+                )
+                assertNotNull("$look x $option must produce valid palette", palette)
+                assertTrue(palette.panelBackground.alpha > 0f)
+            }
+        }
+    }
+
+    @Test
+    fun `retroidPixelDrawableOrNull maps all quick setting navigation and status icons to rp_ic resources`() {
+        for (tile in QuickSettingTileId.entries) {
+            val mapped = retroidPixelDrawableOrNull(tile.iconRes)
+            assertNotNull("Missing rp_ic_* mapping for ${tile.name}", mapped)
+            assertNotEquals(tile.iconRes, mapped)
+        }
+
+        val additionalIcons = listOf(
+            R.drawable.ic_screen_control,
+            R.drawable.ic_task_manage,
+            R.drawable.ic_system_set,
+            R.drawable.ic_nav_edit,
+            R.drawable.ic_qs_swap_screens,
+            R.drawable.ic_dual_screen_display,
+            R.drawable.ic_just_screen_above,
+            R.drawable.ic_just_screen_below,
+            R.drawable.ic_fan_quiet_mode,
+            R.drawable.ic_fan_smart_mode,
+            R.drawable.ic_fan_sport_mode,
+            R.drawable.ic_fan_custom_mode,
+            R.drawable.ic_fan_custom_progress,
+            R.drawable.ic_qs_system_theme,
+            R.drawable.ic_qs_light_theme,
+            R.drawable.ic_qs_dark_theme,
+            R.drawable.ic_ban_on_use,
+            R.drawable.ic_brightness_0,
+            R.drawable.ic_brightness_1,
+            R.drawable.ic_brightness_2,
+            R.drawable.ic_volume_0,
+            R.drawable.ic_volume_1,
+            R.drawable.ic_volume_2,
+            R.drawable.ic_volume_3,
+            R.drawable.ic_status_wifi_0,
+            R.drawable.ic_status_wifi_1,
+            R.drawable.ic_status_wifi_2,
+            R.drawable.ic_status_wifi_3,
+            R.drawable.ic_temp,
+            R.drawable.ic_fan_normal,
+            R.drawable.ic_tip
+        )
+        for (resId in additionalIcons) {
+            val mapped = retroidPixelDrawableOrNull(resId)
+            assertNotNull("Expected rp_ic_* mapping for resId=$resId", mapped)
+            assertNotEquals(resId, mapped)
+        }
+    }
+
+    @Test
+    fun `PixelNotchedShape and PixelCornerCutShape build pixel outlines and fall back to rectangle when zero`() {
+        val density = Density(1.33125f)
+        val notchedOutline = PixelNotchedShape(9.dp).createOutline(
+            size = Size(120f, 80f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(notchedOutline is Outline.Generic)
+
+        val zeroOutline = PixelNotchedShape(0.dp).createOutline(
+            size = Size(120f, 80f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(zeroOutline is Outline.Rectangle)
+
+        val cutOutline = PixelCornerCutShape(9.dp).createOutline(
+            size = Size(70f, 70f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(cutOutline is Outline.Generic)
+
+        val zeroCutOutline = PixelCornerCutShape(0.dp).createOutline(
+            size = Size(70f, 70f),
+            layoutDirection = LayoutDirection.Ltr,
+            density = density
+        )
+        assertTrue(zeroCutOutline is Outline.Rectangle)
+    }
+
+    @Test
+    fun `computeOverlayNormalizedDensity and LookSpecs preserve exact native pixels and scale cross-device proportionally`() {
+        val thorDensity = computeOverlayNormalizedDensity(widthPx = 1240, heightPx = 1080)
+        val duoDensity = computeOverlayNormalizedDensity(widthPx = 1280, heightPx = 960)
+        val future720pDensity = computeOverlayNormalizedDensity(widthPx = 1280, heightPx = 720)
+
+        assertEquals(1.5f, thorDensity, 0.0001f)
+        assertEquals(4f / 3f, duoDensity, 0.0001f)
+        assertEquals(1.0f, future720pDensity, 0.0001f)
+        assertEquals(1.5f, computeOverlayNormalizedDensity(widthPx = 0, heightPx = 0, fallbackDensity = 1.5f), 0.0001f)
+
+        // 1. Thor + AYN Look: exact bit-for-bit pixel match with stock 369 dpi (2.30625x)
+        val rawThorStockDensity = 369f / 160f
+        assertEquals(
+            50.5f * rawThorStockDensity,
+            AynLookSpec.tile.modeTileSize.value * thorDensity,
+            0.001f
+        )
+        assertEquals(
+            15f * rawThorStockDensity,
+            AynLookSpec.statusBar.fontSize.value * thorDensity,
+            0.001f
+        )
+        assertEquals(
+            46f * rawThorStockDensity,
+            AynLookSpec.dialog.rowHeight.value * thorDensity,
+            0.001f
+        )
+
+        // 2. Duo + Retroid Look: exact pixel match with calibrated 1280x960 stock assistant
+        assertEquals(90f, RetroidLookSpec.tile.modeTileSize.value * duoDensity, 0.01f)
+        assertEquals(70f, RetroidLookSpec.tile.qsTileSize.value * duoDensity, 0.01f)
+        assertEquals(101.333f, RetroidLookSpec.dialog.rowHeight.value * duoDensity, 0.01f)
+
+        // 3. Cross-device height proportionality (960 / 1080 on Duo+AYN, 1080 / 960 on Thor+Retroid)
+        assertEquals(
+            (AynLookSpec.tile.modeTileSize.value * thorDensity) * (960f / 1080f),
+            AynLookSpec.tile.modeTileSize.value * duoDensity,
+            0.01f
+        )
+        assertEquals(
+            (RetroidLookSpec.tile.modeTileSize.value * duoDensity) * (1080f / 960f),
+            RetroidLookSpec.tile.modeTileSize.value * thorDensity,
+            0.01f
+        )
+
+        // 4. Aspect-ratio interpolation and responsive dialog width clamping across display shapes
+        val thorMetrics = OverlayViewportMetrics(
+            widthPx = 1240,
+            heightPx = 1080,
+            normalizedDensity = thorDensity,
+            widthDp = (1240f / thorDensity).dp,
+            heightDp = 720.dp,
+            aspectRatio = 1240f / 1080f
+        )
+        val duoMetrics = OverlayViewportMetrics(
+            widthPx = 1280,
+            heightPx = 960,
+            normalizedDensity = duoDensity,
+            widthDp = 960.dp,
+            heightDp = 720.dp,
+            aspectRatio = 1280f / 960f
+        )
+        val squareMetrics = OverlayViewportMetrics(
+            widthPx = 1080,
+            heightPx = 1080,
+            normalizedDensity = 1.5f,
+            widthDp = 720.dp,
+            heightDp = 720.dp,
+            aspectRatio = 1.0f
+        )
+
+        assertEquals(0f, thorMetrics.aspectFraction(), 0.001f)
+        assertEquals(1f, duoMetrics.aspectFraction(), 0.001f)
+        assertEquals(0f, squareMetrics.aspectFraction(), 0.001f)
+
+        // Retroid dialog keeps full 528dp width on both Duo (960dp) and Thor (826.7dp), clamping on 1:1 (720dp)
+        assertEquals(
+            528f,
+            resolveResponsiveDialogWidthDp(528.dp, duoMetrics.widthDp, 0.72f).value,
+            0.01f
+        )
+        assertEquals(
+            528f,
+            resolveResponsiveDialogWidthDp(528.dp, thorMetrics.widthDp, 0.72f).value,
+            0.01f
+        )
+        assertEquals(
+            720f * 0.72f,
+            resolveResponsiveDialogWidthDp(528.dp, squareMetrics.widthDp, 0.72f).value,
+            0.01f
+        )
+
+        assertEquals(AynLookSpec, lookSpecFor(TccUiLook.AYN))
+        assertEquals(AynLookSpec, lookSpecFor(TccUiLook.AYN, retroidReadabilityBoost = true))
+        assertEquals(RetroidLookSpec, lookSpecFor(TccUiLook.RETROID))
+        assertEquals(RetroidLookSpec, lookSpecFor(TccUiLook.RETROID, retroidReadabilityBoost = false))
+        assertEquals(RetroidReadableLookSpec, lookSpecFor(TccUiLook.RETROID, retroidReadabilityBoost = true))
+
+        // 5. RetroidReadableLookSpec boosts font sizes and widens tight containers over stock RetroidLookSpec
+        assertTrue(RetroidReadableLookSpec.retroidReadabilityBoost)
+        assertFalse(RetroidLookSpec.retroidReadabilityBoost)
+        assertTrue(RetroidReadableLookSpec.statusBar.fontSize.value > RetroidLookSpec.statusBar.fontSize.value)
+        assertTrue(RetroidReadableLookSpec.tile.modeLabelFontSize.value > RetroidLookSpec.tile.modeLabelFontSize.value)
+        assertTrue(RetroidReadableLookSpec.tile.qsLabelFontSize.value > RetroidLookSpec.tile.qsLabelFontSize.value)
+        assertTrue(RetroidReadableLookSpec.slider.labelFontSize.value > RetroidLookSpec.slider.labelFontSize.value)
+        assertTrue(RetroidReadableLookSpec.slider.labelWidth.value > RetroidLookSpec.slider.labelWidth.value)
+        assertTrue(RetroidReadableLookSpec.settingsTab.fpsBadgeFontSize.value > RetroidLookSpec.settingsTab.fpsBadgeFontSize.value)
+        assertTrue(RetroidReadableLookSpec.settingsTab.tempFanValueScale > RetroidLookSpec.settingsTab.tempFanValueScale)
+        assertTrue(RetroidReadableLookSpec.settingsTab.ringValueScale > RetroidLookSpec.settingsTab.ringValueScale)
+        assertTrue(RetroidReadableLookSpec.dialog.optionFontSize.value > RetroidLookSpec.dialog.optionFontSize.value)
+        assertTrue(RetroidReadableLookSpec.dialog.toggleFontSize.value > RetroidLookSpec.dialog.toggleFontSize.value)
+
+        // 6. Mode card margins and vertical mode tile centering
+        assertEquals(
+            RetroidLookSpec.modeTab.cardHalfGap.value * 2f,
+            RetroidLookSpec.modeTab.middleGap.value,
+            0.01f
+        )
+        assertEquals(0f, RetroidLookSpec.modeTab.lowerRowBottomPadding.value, 0.01f)
+        assertEquals(0f, RetroidLookSpec.tile.modeLabelTopGap.value, 0.01f)
+        assertEquals(0f, RetroidReadableLookSpec.tile.modeLabelTopGap.value, 0.01f)
+
+        // 7. Viewport resolution keeps Retroid Pocket Duo (4:3) 100% unchanged while adapting narrow AYN Thor (~8:7)
+        val duoResolved = RetroidReadableLookSpec.resolveForViewport(duoMetrics)
+        assertEquals(RetroidReadableLookSpec, duoResolved)
+
+        val thorResolved = RetroidReadableLookSpec.resolveForViewport(thorMetrics)
+        assertTrue(thorResolved.tile.qsLabelFontSize.value < RetroidReadableLookSpec.tile.qsLabelFontSize.value)
+        assertTrue(thorResolved.tile.qsLabelFontSize.value > RetroidLookSpec.tile.qsLabelFontSize.value)
+        assertTrue(thorResolved.tile.modeLabelFontSize.value < RetroidReadableLookSpec.tile.modeLabelFontSize.value)
+        assertTrue(thorResolved.tile.modeLabelFontSize.value > RetroidLookSpec.tile.modeLabelFontSize.value)
+        assertTrue(thorResolved.slider.labelFontSize.value < RetroidReadableLookSpec.slider.labelFontSize.value)
+        assertTrue(thorResolved.slider.labelFontSize.value > RetroidLookSpec.slider.labelFontSize.value)
+    }
+
+    @Test
+    fun `buildOsDynamicColorOverlayEntries preserves full accent saturation without whitening and computes contrasting onShadeActive`() {
+        val darkAndMediumAccents = listOf(
+            0xFFCC0000.toInt(), // Megingiard Crimson
+            0xFF3F51B5.toInt(), // Deep Indigo (< 0.12 luminance)
+            0xFFFF760A.toInt(), // Retroid Pixel Orange (~0.249 luminance)
+            0xFF26A69A.toInt()  // Teal (~0.304 luminance)
+        )
+        val saturatedKeys = listOf(
+            "android:color/system_shade_active_dark",
+            "android:color/system_shade_active_light",
+            "android:color/system_primary_fixed",
+            "android:color/system_primary_dark",
+            "android:color/system_control_activated_dark",
+            "android:color/system_accent1_100",
+            "android:color/system_accent1_200"
+        )
+
+        for (accentArgb in darkAndMediumAccents) {
+            val palette = resolveTccPalette(
+                option = AppThemeOption.MEGINGIARD_DARK,
+                systemDark = true,
+                customAccentArgb = accentArgb
+            )
+            val (keys, values) = buildOsDynamicColorOverlayEntries(palette)
+            val map = keys.indices.associate { keys[it] to values[it] }
+            for (key in saturatedKeys) {
+                assertEquals(
+                    "Expected un-whitened saturated accent for $key (${Integer.toHexString(accentArgb)})",
+                    accentArgb,
+                    map[key]
+                )
+            }
+            assertEquals(Color.White.toArgb(), map["android:color/system_on_shade_active_dark"])
+        }
+
+        // Bright high-luminance accent still preserves 100% saturation while flipping onShadeActive to dark text
+        val brightCyanArgb = 0xFF00E5FF.toInt()
+        val cyanPalette = resolveTccPalette(
+            option = AppThemeOption.MEGINGIARD_DARK_OLED,
+            systemDark = true,
+            customAccentArgb = brightCyanArgb
+        )
+        val (cyanKeys, cyanValues) = buildOsDynamicColorOverlayEntries(cyanPalette)
+        val cyanMap = cyanKeys.indices.associate { cyanKeys[it] to cyanValues[it] }
+        for (key in saturatedKeys) {
+            assertEquals(brightCyanArgb, cyanMap[key])
+        }
+        assertEquals(Color.Black.toArgb(), cyanMap["android:color/system_on_shade_active_dark"])
     }
 }

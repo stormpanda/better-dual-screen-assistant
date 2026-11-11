@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:height="21dp"
+    android:width="21dp"
+    android:viewportWidth="21"
+    android:viewportHeight="21">
+    <!-- Pixel sun ring + all 8 cardinal & diagonal rays (high brightness) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7 4H14V7H7V4Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7 7L7 14L4 14L4 7L7 7Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17 7L17 14L14 14L14 7L17 7Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M21 12L18 12L18 9L21 9L21 12Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19 5L16 5L16 2L19 2L19 5Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5 5L2 5L2 2L5 2L5 5Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5 19L2 19L2 16L5 16L5 19Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19 19L16 19L16 16L19 16L19 19Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3 12L0 12L0 9L3 9L3 12Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12 21L9 21L9 18L12 18L12 21Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12 3L9 3L9 0L12 0L12 3Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7 14H14V17H7V14Z"/>
+</vector>

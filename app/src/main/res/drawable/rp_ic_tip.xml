@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- Stepped 40x40 pixel circle ring matching rp_ic_ban_on_use -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16,39.9844H31.824V35.9044H8.16V39.9844Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.16,4.0801H31.824V0H8.16V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,8.1602H4.08V31.8242H0V8.1602Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M35.9042,8.1602H39.9842V31.8242H35.9042V8.1602Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08,4.0801H8.16V8.1601H4.08V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.08,31.8243H8.16V35.9043H4.08V31.8243Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31.8242,4.0801H35.9042V8.1601H31.8242V4.0801Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31.8242,31.8243H35.9042V35.9043H31.8242V31.8243Z" />
+    <!-- Center pixel exclamation mark (!) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.952,10H22.032V22.24H17.952V10ZM17.952,25.92H22.032V30H17.952V25.92Z" />
+</vector>

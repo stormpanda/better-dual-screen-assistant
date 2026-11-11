@@ -10,6 +10,8 @@ Better Dual Screen Assistant is, and will always remain, completely free of char
 
 Better Dual Screen Assistant is a source-available, proprietary project. It is NOT open-source software under the Open Source Initiative (OSI) definition. By accessing, downloading, compiling, running, or otherwise using this software (in source or binary form), you agree to be bound by the terms and conditions of this license.
 
+Third-Party Open-Source Components: Notwithstanding anything to the contrary in this License, unmodified third-party open-source font files and software libraries bundled with or linked by Better Dual Screen Assistant (including Font Software licensed under the SIL Open Font License 1.1 or MIT License, and runtime libraries licensed under the Apache License 2.0) remain governed solely and exclusively by their respective upstream open-source licenses as set forth in `THIRD_PARTY_NOTICES.md` (and `assets/THIRD_PARTY_NOTICES.txt` in binary distributions). Nothing in this License restricts any rights granted to you under those third-party open-source licenses with respect to those standalone third-party components.
+
 ## 1. Grant of Rights
 Subject to the terms and conditions of this License, the Copyright Holder hereby grants you a personal, non-exclusive, non-transferable, royalty-free, limited license to:
 * View, download, and read the source code of this software.

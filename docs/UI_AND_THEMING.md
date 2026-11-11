@@ -128,9 +128,9 @@ Defined in [`TccTheme.kt`](file:///Users/maikthomalla/Development/better-dual-sc
 
 | Enum Constant | Persisted `id` | Display Name | Supports Custom Accent | Category |
 | :--- | :---: | :--- | :---: | :--- |
-| `STOCK_SYSTEM` | `1` | `Follow System (Stock)` | No | Stock AYN |
-| `STOCK_LIGHT` | `3` | `Light (Stock)` | No | Stock AYN |
-| `STOCK_DARK` | `4` | `Dark (Stock)` | No | Stock AYN |
+| `STOCK_SYSTEM` | `1` | `Follow System (Stock)` | No | Stock |
+| `STOCK_LIGHT` | `3` | `Light (Stock)` | No | Stock |
+| `STOCK_DARK` | `4` | `Dark (Stock)` | No | Stock |
 | `SYNC_MEGINGIARD` | `100` | `Sync with Megingiard` | Via Megingiard | Megingiard Sync *(only when installed)* |
 | `MEGINGIARD_DARK` | `101` | `Dark` | **Yes** | Custom Palette |
 | `MEGINGIARD_DARK_OLED` | `102` | `Dark OLED` | **Yes** | Custom Palette |

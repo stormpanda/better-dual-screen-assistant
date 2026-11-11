@@ -124,8 +124,8 @@ fun GamepadFocusCard(
     val cardRegistry = LocalDeckCardRegistry.current
     val effectiveKey = itemKey ?: cardFocusRequester
 
-    DisposableEffect(effectiveKey, cardFocusRequester) {
-        cardRegistry?.invoke(effectiveKey, cardFocusRequester)
+    DisposableEffect(effectiveKey, cardFocusRequester, enabled) {
+        cardRegistry?.invoke(effectiveKey, if (enabled) cardFocusRequester else null)
         onDispose {
             cardRegistry?.invoke(effectiveKey, null)
         }
@@ -586,7 +586,8 @@ fun GamepadToggleCard(
             trailingContent = {
                 GamepadPill(
                     text = if (checked) stringResource(R.string.gamepad_toggle_on) else stringResource(R.string.gamepad_toggle_off),
-                    isAccent = checked,
+                    isAccent = checked && enabled,
+                    enabled = enabled,
                 )
             },
         )

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="45dp"
+    android:viewportWidth="50"
+    android:viewportHeight="45">
+    <!-- Hollow 5px-stroke pixel camera with open stepped corners & hollow pixel lens -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,0H35V5H15V0ZM5,5H15V10H5V5ZM35,5H45V10H35V5ZM0,10H5V40H0V10ZM45,10H50V40H45V10ZM5,40H45V45H5V40Z" />
+    <!-- Hollow inner lens ring -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,15H30V20H20V15ZM20,30H30V35H20V30ZM15,20H20V30H15V20ZM30,20H35V30H30V20Z" />
+</vector>

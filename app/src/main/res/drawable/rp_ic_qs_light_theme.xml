@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="42dp"
+    android:height="42dp"
+    android:viewportWidth="21"
+    android:viewportHeight="21">
+    <!-- Hollow pixel sun core & 8 pixel rays matching rp_ic_brightness_2 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,4H14V7H7V4ZM7,14H14V17H7V14ZM4,7H7V14H4V7ZM14,7H17V14H14V7Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,0H12V3H9V0ZM9,18H12V21H9V18ZM0,9H3V12H0V9ZM18,9H21V12H18V9Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2,2H5V5H2V2ZM16,2H19V5H16V2ZM2,16H5V19H2V16ZM16,16H19V19H16V16Z" />
+</vector>

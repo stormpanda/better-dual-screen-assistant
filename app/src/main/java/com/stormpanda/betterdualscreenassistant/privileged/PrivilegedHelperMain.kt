@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.content.AttributionSource
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -22,8 +23,12 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 
 /**
  * Root companion process launched via PServerBinder using `app_process`.
@@ -38,11 +43,12 @@ import java.nio.charset.StandardCharsets
  *   the stock `com.odin.dualscreen.assistant` if our app is uninstalled, disabled, opted out, or
  *   trips the crash-loop circuit breaker.
  */
-@SuppressLint("PrivateApi", "DiscouragedPrivateApi")
+@SuppressLint("PrivateApi", "DiscouragedPrivateApi", "BlockedPrivateApi")
 object PrivilegedHelperMain {
     private const val TAG = "PrivilegedHelperMain"
     const val APP_PACKAGE_NAME = "com.stormpanda.betterdualscreenassistant"
-    const val STOCK_PACKAGE_NAME = "com.odin.dualscreen.assistant"
+    const val STOCK_PACKAGE_NAME = DeviceProfile.ODIN_STOCK_ASSISTANT_PACKAGE
+    const val RETROID_STOCK_PACKAGE_NAME = DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE
     const val AUTHORITY = "com.stormpanda.betterdualscreenassistant.privileged"
     const val METHOD_REGISTER_BINDER = "register_binder"
     const val EXTRA_BINDER = "binder"
@@ -73,8 +79,14 @@ object PrivilegedHelperMain {
     const val TRANSACTION_START_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 22
     const val TRANSACTION_STOP_SCREEN_RECORD = IBinder.FIRST_CALL_TRANSACTION + 23
     const val TRANSACTION_GET_SCREEN_RECORD_STATE = IBinder.FIRST_CALL_TRANSACTION + 24
+    const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
+    const val TRANSACTION_WINDOW_SESSION_TRANSACT = IBinder.FIRST_CALL_TRANSACTION + 26
+    const val TRANSACTION_CAPTURE_SCREENSHOT = IBinder.FIRST_CALL_TRANSACTION + 27
 
-    const val HELPER_PROTOCOL_VERSION = 18
+    const val HELPER_PROTOCOL_VERSION = 23
+    const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
+    internal const val SYSTEM_LIB_SEARCH_PATH =
+        "/system/lib64:/system/lib:/system_ext/lib64:/system_ext/lib:/product/lib64:/product/lib"
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -388,6 +400,17 @@ object PrivilegedHelperMain {
         @Volatile
         private var lastOverlayColorValues: IntArray = IntArray(0)
 
+        @Volatile
+        private var pendingThemeRestoreJson: String = ""
+
+        private val finishThemeJsonRestoreRunnable = Runnable {
+            val json = pendingThemeRestoreJson
+            pendingThemeRestoreJson = ""
+            if (json.isNotEmpty() && !osThemeOverlayActive && !isShuttingDown) {
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, json)
+            }
+        }
+
         private val reassertOverlayPriorityRunnable = Runnable {
             if (!osThemeOverlayActive || isShuttingDown) return@Runnable
             val names = lastOverlayResourceNames
@@ -425,8 +448,57 @@ object PrivilegedHelperMain {
         internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
+        internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
+        internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
+        internal var commitOsThemeOverlaysOverride: ((Array<String>, IntArray) -> Unit)? = null
+        internal var allowedWindowSessionCodesOverride: Set<Int>? = null
 
+        private val allowedWindowSessionCodes: Set<Int> by lazy {
+            resolveAllowedWindowSessionCodes()
+        }
+
+        @Volatile
+        private var panel0BacklightBlanked: Boolean = false
+
+        @Volatile
+        private var panel1BacklightBlanked: Boolean = false
+
+        @Volatile
+        private var cachedDeviceProfile: DeviceProfile? = null
+
+        private fun resolveActiveDeviceProfile(): DeviceProfile {
+            DeviceProfile.testOverride?.let { return it }
+            cachedDeviceProfile?.let { return it }
+            val sysDetected = DeviceProfile.detectFromSystem()
+            val resolved = if (sysDetected == DeviceProfile.RETROID_POCKET_DUO ||
+                getApplicationInfoInternal(RETROID_STOCK_PACKAGE_NAME)?.packageName == RETROID_STOCK_PACKAGE_NAME
+            ) {
+                DeviceProfile.RETROID_POCKET_DUO
+            } else {
+                sysDetected
+            }
+            cachedDeviceProfile = resolved
+            return resolved
+        }
+
+        private fun resolveStockPackageInternal(): String =
+            resolveActiveDeviceProfile().stockAssistantPackage
+
+        private fun resolveBottomDisplayIdInternal(): Int =
+            resolveActiveDeviceProfile().bottomDisplayId
+
+        private fun isStockAssistantPackage(pkg: String): Boolean =
+            pkg in DeviceProfile.allStockAssistantPackages
+
+        @Volatile
         private var screenRecorderInstance: ScreenRecorderEngine? = null
+
+        private val screenRecorderLock = Any()
+
+        private val clientLock = Any()
+
+        @Volatile
+        private var activeClientDeathRecipient: IBinder.DeathRecipient? = null
 
         private val stockFreezeLock = Any()
 
@@ -551,15 +623,31 @@ object PrivilegedHelperMain {
             latestReportedTaskFpsElapsedMs = SystemClock.elapsedRealtime()
         }
 
-        private val clientDeathRecipient = IBinder.DeathRecipient {
-            if (isShuttingDown) return@DeathRecipient
+        private fun handleClientBinderDied(deadBinder: IBinder) {
+            if (isShuttingDown) return
             Log.w(TAG, "Client app process binder died; starting lifecycle check")
-            mainHandler.post(onClientDiedRunnable)
+            mainHandler.post {
+                if (isShuttingDown) return@post
+                synchronized(clientLock) {
+                    if (clientBinder !== deadBinder) {
+                        return@post
+                    }
+                    clientBinder = null
+                    activeClientDeathRecipient = null
+                }
+                if (packageManagerProxy != null) {
+                    cachedAppUid = -1
+                }
+                onClientDiedRunnable.run()
+            }
         }
 
         private val onClientDiedRunnable = Runnable {
             if (isShuttingDown) return@Runnable
-            clientBinder = null
+            synchronized(clientLock) {
+                clientBinder = null
+                activeClientDeathRecipient = null
+            }
             val now = SystemClock.elapsedRealtime()
             deathElapsedRealtime = now
             lastRespawnAttemptElapsedMs = 0L
@@ -689,7 +777,7 @@ object PrivilegedHelperMain {
         )
 
         private fun isAuthorizedCaller(callingUid: Int): Boolean {
-            if (callingUid == 0 || callingUid == Process.SYSTEM_UID) return true
+            if (callingUid == 0) return true
             val cached = cachedAppUid
             if (cached > 0 && callingUid == cached) return true
             val resolvedUid = getApplicationInfoInternal(APP_PACKAGE_NAME)?.uid ?: -1
@@ -737,7 +825,9 @@ object PrivilegedHelperMain {
                         val displayId = data.readInt()
                         val brightness = data.readFloat()
                         val temporary = data.readInt() != 0
-                        setDisplayBrightnessInternal(displayId, brightness, temporary)
+                        if (!setDisplayBrightnessInternal(displayId, brightness, temporary)) {
+                            throw IllegalStateException("setDisplayBrightness($displayId) failed")
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -800,7 +890,14 @@ object PrivilegedHelperMain {
                             (path.startsWith("/sys/") || path == "/proc/stat")
                         ) {
                             try {
-                                File(path).readText().trim()
+                                val file = File(path)
+                                val canon = file.canonicalPath
+                                if (canon.startsWith("/sys/") || canon == "/proc/stat") {
+                                    file.readText().trim()
+                                } else {
+                                    Log.w(TAG, "Blocked symlink read escaping sysfs: $path -> $canon")
+                                    ""
+                                }
                             } catch (_: Throwable) {
                                 ""
                             }
@@ -853,6 +950,7 @@ object PrivilegedHelperMain {
                         mainHandler.removeCallbacks(watchdogCheckRunnable)
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                        mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
                         unregisterFpsListenerInternal()
                         stopScreenRecordIfActiveInternal("shutdown")
                         mainHandler.post {
@@ -977,6 +1075,71 @@ object PrivilegedHelperMain {
                         writeScreenRecordStatusToParcel(reply, status)
                         true
                     }
+                    TRANSACTION_SET_BACKLIGHT_POWER -> {
+                        val panelIndex = data.readInt()
+                        val blanked = data.readInt() != 0
+                        if (!setBacklightPowerInternal(panelIndex, blanked)) {
+                            throw IllegalStateException("setBacklightPower($panelIndex) failed")
+                        }
+                        reply?.writeNoException()
+                        true
+                    }
+                    TRANSACTION_WINDOW_SESSION_TRANSACT -> {
+                        val sessionBinder = data.readStrongBinder()
+                        val targetCode = data.readInt()
+                        val targetFlags = data.readInt()
+                        val forwardData = Parcel.obtain()
+                        val forwardReply = Parcel.obtain()
+                        try {
+                            val rem = data.dataAvail()
+                            if (rem > 0) {
+                                forwardData.appendFrom(data, data.dataPosition(), rem)
+                            }
+                            if (!isAuthorizedWindowSessionCall(sessionBinder, targetCode, forwardData)) {
+                                Log.w(
+                                    TAG,
+                                    "Rejected unauthorized TRANSACTION_WINDOW_SESSION_TRANSACT (code=$targetCode)"
+                                )
+                                reply?.writeNoException()
+                                reply?.writeInt(0)
+                                return true
+                            }
+                            val callingToken = Binder.clearCallingIdentity()
+                            val ok = try {
+                                sessionBinder != null &&
+                                    sessionBinder.transact(targetCode, forwardData, forwardReply, targetFlags)
+                            } finally {
+                                Binder.restoreCallingIdentity(callingToken)
+                            }
+                            reply?.writeNoException()
+                            reply?.writeInt(if (ok) 1 else 0)
+                            if (ok && reply != null && forwardReply.dataSize() > 0) {
+                                reply.appendFrom(forwardReply, 0, forwardReply.dataSize())
+                            }
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "TRANSACTION_WINDOW_SESSION_TRANSACT failed (code=$targetCode)", t)
+                            reply?.writeNoException()
+                            reply?.writeInt(0)
+                        } finally {
+                            forwardData.recycle()
+                            forwardReply.recycle()
+                        }
+                        true
+                    }
+                    TRANSACTION_CAPTURE_SCREENSHOT -> {
+                        val targetMode = data.readInt()
+                        val topPath = data.readString() ?: ""
+                        val bottomPath = data.readString() ?: ""
+                        val callingToken = Binder.clearCallingIdentity()
+                        val ok = try {
+                            captureScreenshotInternal(targetMode, topPath, bottomPath)
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (ok) 1 else 0)
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -993,37 +1156,59 @@ object PrivilegedHelperMain {
             topBright: Float,
             bottomBright: Float
         ) {
-            unlinkClientDeath()
-            clientPackageName = pkg
-            replaceStockPreferred = replaceStock
-            if (topBright > 0f) savedTopBrightness = topBright
-            if (bottomBright > 0f) savedBottomBrightness = bottomBright
-            registeredSourceDir = resolveInstalledApplicationInfo(pkg)?.sourceDir.orEmpty()
-            clientBinder = newClient
-            unregisteredRespawnAttempts = 0
-            lastRespawnAttemptElapsedMs = 0L
-            mainHandler.removeCallbacks(watchdogCheckRunnable)
-            mainHandler.removeCallbacks(onClientDiedRunnable)
-            mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
-            if (newClient != null) {
-                lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
-                try {
-                    newClient.linkToDeath(clientDeathRecipient, 0)
-                } catch (_: Throwable) {
-                    mainHandler.post(onClientDiedRunnable)
+            val installedSourceDir = resolveInstalledApplicationInfo(pkg)?.sourceDir.orEmpty()
+            var linkFailed = false
+            synchronized(clientLock) {
+                unlinkClientDeathLocked()
+                clientPackageName = pkg
+                replaceStockPreferred = replaceStock
+                if (topBright > 0f) savedTopBrightness = topBright
+                if (bottomBright > 0f) savedBottomBrightness = bottomBright
+                registeredSourceDir = installedSourceDir
+                clientBinder = newClient
+                unregisteredRespawnAttempts = 0
+                lastRespawnAttemptElapsedMs = 0L
+                mainHandler.removeCallbacks(watchdogCheckRunnable)
+                mainHandler.removeCallbacks(onClientDiedRunnable)
+                mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                if (newClient != null) {
+                    lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
+                    val recipient = IBinder.DeathRecipient { handleClientBinderDied(newClient) }
+                    try {
+                        newClient.linkToDeath(recipient, 0)
+                        activeClientDeathRecipient = recipient
+                    } catch (_: Throwable) {
+                        clientBinder = null
+                        activeClientDeathRecipient = null
+                        linkFailed = true
+                    }
                 }
-                mainHandler.post(fpsTrackerMaintenanceRunnable)
+            }
+            if (newClient != null) {
+                if (linkFailed) {
+                    mainHandler.post(onClientDiedRunnable)
+                } else {
+                    mainHandler.post(fpsTrackerMaintenanceRunnable)
+                }
             } else {
                 unregisterFpsListenerInternal()
             }
         }
 
         private fun unlinkClientDeath() {
+            synchronized(clientLock) {
+                unlinkClientDeathLocked()
+            }
+        }
+
+        private fun unlinkClientDeathLocked() {
             val old = clientBinder
+            val oldRecipient = activeClientDeathRecipient
             clientBinder = null
-            if (old != null) {
+            activeClientDeathRecipient = null
+            if (old != null && oldRecipient != null) {
                 try {
-                    old.unlinkToDeath(clientDeathRecipient, 0)
+                    old.unlinkToDeath(oldRecipient, 0)
                 } catch (_: Throwable) {
                 }
             }
@@ -1077,6 +1262,7 @@ object PrivilegedHelperMain {
 
         private fun swapDisplayTasksInternal(): Boolean {
             val atm = activityTaskManagerProxy ?: return false
+            val bottomDisplayId = resolveBottomDisplayIdInternal()
             return try {
                 val getTasksMethod = atm.javaClass.getMethod(
                     "getAllRootTaskInfosOnDisplay",
@@ -1088,19 +1274,19 @@ object PrivilegedHelperMain {
                     Int::class.javaPrimitiveType
                 )
                 val topTasks = getTasksMethod.invoke(atm, 0) as? List<*> ?: emptyList<Any?>()
-                val bottomTasks = getTasksMethod.invoke(atm, 4) as? List<*> ?: emptyList<Any?>()
+                val bottomTasks = getTasksMethod.invoke(atm, bottomDisplayId) as? List<*> ?: emptyList<Any?>()
 
                 val topTaskId = findTopStandardTaskId(topTasks)
                 val bottomTaskId = findTopStandardTaskId(bottomTasks)
 
                 when {
                     topTaskId > 0 && bottomTaskId > 0 -> {
-                        moveTaskMethod.invoke(atm, topTaskId, 4)
+                        moveTaskMethod.invoke(atm, topTaskId, bottomDisplayId)
                         moveTaskMethod.invoke(atm, bottomTaskId, 0)
                         true
                     }
                     topTaskId > 0 -> {
-                        moveTaskMethod.invoke(atm, topTaskId, 4)
+                        moveTaskMethod.invoke(atm, topTaskId, bottomDisplayId)
                         true
                     }
                     bottomTaskId > 0 -> {
@@ -1127,7 +1313,7 @@ object PrivilegedHelperMain {
                             ?: continue
                     val pkg = topActivity.packageName
                     if (pkg == APP_PACKAGE_NAME ||
-                        pkg == STOCK_PACKAGE_NAME ||
+                        isStockAssistantPackage(pkg) ||
                         pkg == SYSUI_PACKAGE
                     ) {
                         continue
@@ -1221,7 +1407,7 @@ object PrivilegedHelperMain {
                         }
                         val pkg = topPkg ?: basePkg ?: ""
                         if (pkg == APP_PACKAGE_NAME ||
-                            pkg == STOCK_PACKAGE_NAME ||
+                            isStockAssistantPackage(pkg) ||
                             pkg == SYSUI_PACKAGE
                         ) {
                             continue
@@ -1390,13 +1576,54 @@ object PrivilegedHelperMain {
                     reply.recycle()
                 }
             }
+            return runProcessWithTimeout(
+                args = listOf("/system/bin/sh", "-c", command),
+                timeoutMs = 5_000L,
+                captureOutput = true
+            ).second.trimEnd()
+        }
+
+        private fun runProcessWithTimeout(
+            args: List<String>,
+            timeoutMs: Long,
+            captureOutput: Boolean
+        ): Pair<Boolean, String> {
+            var proc: java.lang.Process? = null
             return try {
-                val proc = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", command))
-                val out = proc.inputStream.bufferedReader().readText().trimEnd()
-                proc.waitFor()
-                out
+                val started = ProcessBuilder(args).redirectErrorStream(true).start()
+                proc = started
+                var output = ""
+                val drainThread = Thread({
+                    try {
+                        if (captureOutput) {
+                            output = started.inputStream.bufferedReader().use { it.readText() }
+                        } else {
+                            started.inputStream.use { stream ->
+                                val buf = ByteArray(4096)
+                                while (stream.read(buf) != -1) {
+                                    // discard stdout/stderr without blocking child pipe
+                                }
+                            }
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }, "BDSA-HelperProcDrain").apply {
+                    isDaemon = true
+                    start()
+                }
+                val completed = started.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+                if (!completed) {
+                    started.destroyForcibly()
+                }
+                drainThread.join(250L)
+                val ok = completed && started.exitValue() == 0
+                ok to output
             } catch (_: Throwable) {
-                ""
+                try {
+                    proc?.destroyForcibly()
+                } catch (_: Throwable) {
+                }
+                false to ""
             }
         }
 
@@ -1406,7 +1633,7 @@ object PrivilegedHelperMain {
                 val raw = File("/proc/$pid/cmdline").readBytes()
                 val end = raw.indexOf(0.toByte()).let { if (it >= 0) it else raw.size }
                 val cmdline = String(raw, 0, end, StandardCharsets.UTF_8).trim()
-                cmdline == STOCK_PACKAGE_NAME
+                isStockAssistantPackage(cmdline)
             } catch (_: Throwable) {
                 false
             }
@@ -1418,6 +1645,7 @@ object PrivilegedHelperMain {
             if (cached > 0 && doesPidMatchStockPackage(cached)) {
                 return cached
             }
+            val stockPkg = resolveStockPackageInternal()
             val am = activityManagerProxy
             if (am != null) {
                 try {
@@ -1425,7 +1653,7 @@ object PrivilegedHelperMain {
                     val procs = am.javaClass.getMethod("getRunningAppProcesses")
                         .invoke(am) as? List<ActivityManager.RunningAppProcessInfo>
                     val match = procs?.firstOrNull {
-                        it.processName == STOCK_PACKAGE_NAME && it.pid > 0
+                        (it.processName == stockPkg || isStockAssistantPackage(it.processName)) && it.pid > 0
                     }
                     if (match != null) {
                         cachedStockPid = match.pid
@@ -1434,7 +1662,7 @@ object PrivilegedHelperMain {
                 } catch (_: Throwable) {
                 }
             }
-            val resolved = execRootCommand("pidof $STOCK_PACKAGE_NAME")
+            val resolved = execRootCommand("pidof $stockPkg")
                 .trim()
                 .split(Regex("\\s+"))
                 .firstOrNull { it.isNotEmpty() && it.all(Char::isDigit) }
@@ -1509,10 +1737,42 @@ object PrivilegedHelperMain {
             }
         }
 
+        internal fun setBacklightPowerInternal(panelIndex: Int, blanked: Boolean): Boolean {
+            if (panelIndex != 0 && panelIndex != 1) return true
+            if (panelIndex == 0) {
+                panel0BacklightBlanked = blanked
+            } else {
+                panel1BacklightBlanked = blanked
+            }
+            val hook = backlightWriteOverride
+            if (hook != null) {
+                hook(panelIndex, blanked)
+                return true
+            }
+            val path = "/sys/class/backlight/panel$panelIndex-backlight/bl_power"
+            val valStr = if (blanked) "1" else "0"
+            val file = File(path)
+            if (!file.exists()) {
+                return false
+            }
+            try {
+                file.writeText(valStr)
+                return true
+            } catch (t: Throwable) {
+                Log.w(TAG, "Direct sysfs write to $path failed, trying shell", t)
+            }
+            execRootCommand("echo $valStr > $path")
+            return try {
+                file.readText().trim() == valStr
+            } catch (_: Throwable) {
+                true
+            }
+        }
+
         /**
-         * Restores Dual-Screen mode (`0`), unblanks any display whose brightness was set to `-1.0f`,
-         * re-enables touch on both screens, and ensures the stock `com.odin.dualscreen.assistant`
-         * is enabled and running.
+         * Restores Dual-Screen mode (`0`), unblanks any display whose brightness was set to `-1.0f`
+         * or whose kernel backlight power (`bl_power`) was set to `1`, re-enables touch on both
+         * screens, and ensures the stock DualScreenAssistant is enabled and running.
          */
         private fun restoreDisplayAndStockAssistant() {
             try {
@@ -1520,22 +1780,34 @@ object PrivilegedHelperMain {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                     temporarilyUnfrozenStockPid = -1
                 }
+                val bottomDisplayId = resolveBottomDisplayIdInternal()
+                val stockPkg = resolveStockPackageInternal()
+
                 // 0. Finalize any active screen recording, remove cover windows, re-enable status bar, and unregister FPS listener
                 stopScreenRecordIfActiveInternal("restore_stock")
                 unregisterFpsListenerInternal()
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
                 setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
 
-                // 1. Restore top (0) and bottom (4) display brightness if blanked (< 0.005f)
+                // 0.5. Restore hardware backlight power on both panels if supported or previously blanked
+                if (resolveActiveDeviceProfile().blankViaBacklightSysfs ||
+                    panel0BacklightBlanked ||
+                    panel1BacklightBlanked
+                ) {
+                    setBacklightPowerInternal(0, blanked = false)
+                    setBacklightPowerInternal(1, blanked = false)
+                }
+
+                // 1. Restore top (0) and bottom (4 / 2) display brightness if blanked (< 0.005f)
                 val topCur = getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f }
                 if (topCur < 0.005f) {
                     val restoreTop = if (savedTopBrightness > 0.01f) savedTopBrightness else 0.4f
                     setDisplayBrightnessInternal(0, restoreTop, false)
                 }
-                val bottomCur = getDisplayBrightnessInternal(4).getOrElse(0) { 0.4f }
+                val bottomCur = getDisplayBrightnessInternal(bottomDisplayId).getOrElse(0) { 0.4f }
                 if (bottomCur < 0.005f) {
                     val restoreBottom = if (savedBottomBrightness > 0.01f) savedBottomBrightness else 0.4f
-                    setDisplayBrightnessInternal(4, restoreBottom, false)
+                    setDisplayBrightnessInternal(bottomDisplayId, restoreBottom, false)
                 }
 
                 // 2. Reset Dual-Screen mode (0), focus lock (0), touch disable ("0,0"), and pin screen mode (0)
@@ -1549,13 +1821,17 @@ object PrivilegedHelperMain {
                 setPinScreenModeInternal(0)
 
                 // 2.5. Restore stock OS theme overlay and night mode if injected
-                clearOsThemeOverlayInternal(savedStockNightMode, savedStockThemeJson)
+                clearOsThemeOverlayInternal(
+                    restoreNightMode = savedStockNightMode,
+                    restoreThemeJson = savedStockThemeJson,
+                    synchronous = true
+                )
 
                 // 3. Re-enable and start stock DualScreenAssistant
-                execRootCommand("pm enable $STOCK_PACKAGE_NAME")
-                execRootCommand("pm enable $STOCK_PACKAGE_NAME/.services.TccServices")
-                execRootCommand("pm enable $STOCK_PACKAGE_NAME/.receivers.BootBroadcastReceiver")
-                val pids = execRootCommand("pidof $STOCK_PACKAGE_NAME")
+                execRootCommand("pm enable $stockPkg")
+                execRootCommand("pm enable $stockPkg/.services.TccServices")
+                execRootCommand("pm enable $stockPkg/.receivers.BootBroadcastReceiver")
+                val pids = execRootCommand("pidof $stockPkg")
                     .trim()
                     .split(Regex("\\s+"))
                     .filter { it.isNotEmpty() && it.all(Char::isDigit) }
@@ -1570,7 +1846,7 @@ object PrivilegedHelperMain {
                         execRootCommand("kill -9 ${pids.joinToString(" ")}")
                     }
                 }
-                execRootCommand("am startservice -n $STOCK_PACKAGE_NAME/.services.TccServices")
+                execRootCommand("am startservice -n $stockPkg/.services.TccServices")
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed during restoreDisplayAndStockAssistant", t)
             }
@@ -1585,6 +1861,8 @@ object PrivilegedHelperMain {
             savedThemeJson: String
         ) {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
+            pendingThemeRestoreJson = ""
             if (savedNightMode == 1 || savedNightMode == 2) {
                 savedStockNightMode = savedNightMode
             }
@@ -1600,15 +1878,10 @@ object PrivilegedHelperMain {
                 false
             }
             if (resourceNames.isNotEmpty() && resourceNames.size == colorValues.size) {
-                val samePalette = osThemeOverlayActive &&
-                    lastOverlayResourceNames.contentEquals(resourceNames) &&
-                    lastOverlayColorValues.contentEquals(colorValues)
                 lastOverlayResourceNames = resourceNames
                 lastOverlayColorValues = colorValues
                 osThemeOverlayActive = true
-                if (!samePalette || nightChanged) {
-                    commitOsThemeFabricatedOverlays(resourceNames, colorValues)
-                }
+                commitOsThemeFabricatedOverlays(resourceNames, colorValues)
                 if (nightChanged) {
                     mainHandler.postDelayed(reassertOverlayPriorityRunnable, 200L)
                 }
@@ -1636,8 +1909,13 @@ object PrivilegedHelperMain {
             resourceNames: Array<String>,
             colorValues: IntArray
         ) {
+            commitOsThemeOverlaysOverride?.let {
+                it(resourceNames, colorValues)
+                return
+            }
             val om = overlayManagerProxy ?: return
             try {
+                val sysRes = android.content.res.Resources.getSystem()
                 val builderClass = Class.forName("android.content.om.FabricatedOverlay\$Builder")
                 val builderCtor = builderClass.getConstructor(
                     String::class.java,
@@ -1671,12 +1949,33 @@ object PrivilegedHelperMain {
                     "accent",
                     "android"
                 )
+                val includeDynamicOverlay = android.os.Build.VERSION.SDK_INT >= 34
+                val dynamicBuilder = if (includeDynamicOverlay) {
+                    builderCtor.newInstance(
+                        SYSUI_PACKAGE,
+                        "dynamic",
+                        "android"
+                    )
+                } else {
+                    null
+                }
                 setTargetOverlayable.invoke(shellBuilder, "")
                 setTargetOverlayable.invoke(neutralBuilder, "")
                 setTargetOverlayable.invoke(accentBuilder, "")
+                if (dynamicBuilder != null) {
+                    setTargetOverlayable.invoke(dynamicBuilder, "")
+                }
 
+                var shellCount = 0
+                var neutralCount = 0
+                var accentCount = 0
+                var dynamicCount = 0
                 for (i in resourceNames.indices) {
                     val resName = resourceNames[i]
+                    val shortName = resName.substringAfter('/')
+                    if (sysRes.getIdentifier(shortName, "color", "android") == 0) {
+                        continue
+                    }
                     val colorVal = colorValues[i]
                     setResourceValue.invoke(
                         shellBuilder,
@@ -1684,30 +1983,50 @@ object PrivilegedHelperMain {
                         TYPED_VALUE_INT_COLOR_ARGB8,
                         colorVal
                     )
-                    if (resName.contains("system_neutral")) {
+                    shellCount++
+                    if (shortName.startsWith("system_neutral")) {
                         setResourceValue.invoke(
                             neutralBuilder,
                             resName,
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
                         )
-                    } else if (resName.contains("system_accent")) {
+                        neutralCount++
+                    } else if (shortName.startsWith("system_accent")) {
                         setResourceValue.invoke(
                             accentBuilder,
                             resName,
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
                         )
+                        accentCount++
+                    } else if (dynamicBuilder != null) {
+                        setResourceValue.invoke(
+                            dynamicBuilder,
+                            resName,
+                            TYPED_VALUE_INT_COLOR_ARGB8,
+                            colorVal
+                        )
+                        dynamicCount++
                     }
                 }
+                if (shellCount == 0) {
+                    return
+                }
                 val shellOverlay = buildOverlay.invoke(shellBuilder)
-                val neutralOverlay = buildOverlay.invoke(neutralBuilder)
-                val accentOverlay = buildOverlay.invoke(accentBuilder)
+                val neutralOverlay = if (neutralCount > 0) buildOverlay.invoke(neutralBuilder) else null
+                val accentOverlay = if (accentCount > 0) buildOverlay.invoke(accentBuilder) else null
+                val dynamicOverlay = if (dynamicBuilder != null && dynamicCount > 0) {
+                    buildOverlay.invoke(dynamicBuilder)
+                } else {
+                    null
+                }
 
                 val getIdentifier = shellOverlay.javaClass.getMethod("getIdentifier")
                 val shellId = getIdentifier.invoke(shellOverlay)
-                val neutralId = getIdentifier.invoke(neutralOverlay)
-                val accentId = getIdentifier.invoke(accentOverlay)
+                val neutralId = neutralOverlay?.let { getIdentifier.invoke(it) }
+                val accentId = accentOverlay?.let { getIdentifier.invoke(it) }
+                val dynamicId = dynamicOverlay?.let { getIdentifier.invoke(it) }
 
                 val idClass = Class.forName("android.content.om.OverlayIdentifier")
                 val idCtor = idClass.getConstructor(String::class.java, String::class.java)
@@ -1734,12 +2053,26 @@ object PrivilegedHelperMain {
                 val buildTx = txBuilderClass.getMethod("build")
 
                 unregMethod.invoke(txBuilder, legacyOverlayId)
+                if (neutralOverlay != null) {
+                    regMethod.invoke(txBuilder, neutralOverlay)
+                }
+                if (accentOverlay != null) {
+                    regMethod.invoke(txBuilder, accentOverlay)
+                }
+                if (dynamicOverlay != null && dynamicId != null) {
+                    regMethod.invoke(txBuilder, dynamicOverlay)
+                    setEnabledMethod.invoke(txBuilder, dynamicId, true, 0)
+                }
+                // Register shellOverlay last so com.android.shell:os_theme always sits at the
+                // end of the overlay priority list.
                 regMethod.invoke(txBuilder, shellOverlay)
-                regMethod.invoke(txBuilder, neutralOverlay)
-                regMethod.invoke(txBuilder, accentOverlay)
+                if (neutralId != null) {
+                    setEnabledMethod.invoke(txBuilder, neutralId, true, 0)
+                }
+                if (accentId != null) {
+                    setEnabledMethod.invoke(txBuilder, accentId, true, 0)
+                }
                 setEnabledMethod.invoke(txBuilder, shellId, true, 0)
-                setEnabledMethod.invoke(txBuilder, neutralId, true, 0)
-                setEnabledMethod.invoke(txBuilder, accentId, true, 0)
                 val tx = buildTx.invoke(txBuilder)
 
                 val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
@@ -1767,8 +2100,14 @@ object PrivilegedHelperMain {
             }
         }
 
-        private fun clearOsThemeOverlayInternal(restoreNightMode: Int, restoreThemeJson: String) {
+        private fun clearOsThemeOverlayInternal(
+            restoreNightMode: Int,
+            restoreThemeJson: String,
+            synchronous: Boolean = false
+        ) {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
+            pendingThemeRestoreJson = ""
             lastOverlayResourceNames = emptyArray()
             lastOverlayColorValues = IntArray(0)
             val hadOverlay = hasRegisteredBdsaThemeOverlay()
@@ -1783,7 +2122,7 @@ object PrivilegedHelperMain {
                 savedStockThemeJson.isNotBlank() ||
                 restoreThemeJson.isNotBlank()
             ) {
-                restoreStockThemeJsonInternal(restoreThemeJson)
+                restoreStockThemeJsonInternal(restoreThemeJson, synchronous = synchronous)
             }
             savedStockThemeJson = ""
             val nightToRestore = if (restoreNightMode == 1 || restoreNightMode == 2) {
@@ -1797,14 +2136,21 @@ object PrivilegedHelperMain {
             savedStockNightMode = -1
         }
 
-        private fun restoreStockThemeJsonInternal(candidateJson: String) {
+        private fun restoreStockThemeJsonInternal(
+            candidateJson: String,
+            synchronous: Boolean = false
+        ) {
             val raw = if (candidateJson.isNotBlank() && !candidateJson.contains("\"999\"")) {
                 candidateJson
             } else {
                 savedStockThemeJson
             }
             val now = System.currentTimeMillis()
-            val fallback = """{"_applied_timestamp":$now,"android.theme.customization.color_index":"5","android.theme.customization.system_palette":"96CBFF","android.theme.customization.accent_color":"96CBFF","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"RAINBOW"}"""
+            val fallback = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                """{"_applied_timestamp":$now,"android.theme.customization.color_index":"1","android.theme.customization.color_source":"home_wallpaper","android.theme.customization.theme_style":"TONAL_SPOT","android.theme.customization.color_both":"1"}"""
+            } else {
+                """{"_applied_timestamp":$now,"android.theme.customization.color_index":"5","android.theme.customization.system_palette":"96CBFF","android.theme.customization.accent_color":"96CBFF","android.theme.customization.color_source":"preset","android.theme.customization.theme_style":"RAINBOW"}"""
+            }
             val jsonToApply = if (raw.isNotBlank() && !raw.contains("\"999\"")) {
                 try {
                     val obj = org.json.JSONObject(raw)
@@ -1816,11 +2162,34 @@ object PrivilegedHelperMain {
             } else {
                 fallback
             }
-            putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, jsonToApply)
+            var nudged = false
+            try {
+                val nudgeObj = org.json.JSONObject(jsonToApply)
+                val curStyle = nudgeObj.optString("android.theme.customization.theme_style", "TONAL_SPOT")
+                nudgeObj.put(
+                    "android.theme.customization.theme_style",
+                    if (curStyle == "EXPRESSIVE") "SPRITZ" else "EXPRESSIVE"
+                )
+                nudgeObj.put("_applied_timestamp", now - 1L)
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, nudgeObj.toString())
+                nudged = true
+                if (synchronous) {
+                    Thread.sleep(75L)
+                }
+            } catch (_: Throwable) {
+            }
+            if (nudged && !synchronous && !isShuttingDown) {
+                pendingThemeRestoreJson = jsonToApply
+                mainHandler.postDelayed(finishThemeJsonRestoreRunnable, 75L)
+            } else {
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, jsonToApply)
+            }
         }
 
         private fun unregisterOsThemeOverlayOnly() {
             mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+            mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
+            pendingThemeRestoreJson = ""
             val om = overlayManagerProxy ?: return
             try {
                 val idClass = Class.forName("android.content.om.OverlayIdentifier")
@@ -1831,13 +2200,13 @@ object PrivilegedHelperMain {
                 val txBuilderClass = Class.forName(
                     "android.content.om.OverlayManagerTransaction\$Builder"
                 )
-                val txBuilder = txBuilderClass.getConstructor().newInstance()
                 val unregMethod = txBuilderClass.getMethod(
                     "unregisterFabricatedOverlay",
                     idClass
                 )
                 val buildTx = txBuilderClass.getMethod("build")
 
+                val txBuilder = txBuilderClass.getConstructor().newInstance()
                 unregMethod.invoke(txBuilder, shellOverlayId)
                 unregMethod.invoke(txBuilder, legacyOverlayId)
                 val tx = buildTx.invoke(txBuilder)
@@ -1845,6 +2214,20 @@ object PrivilegedHelperMain {
                 val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
                 commitMethod.invoke(om, tx)
                 osThemeOverlayActive = false
+
+                // Also unregister our fabricated com.android.systemui overlays so residual palettes
+                // never linger if SystemUI's ThemeOverlayController short-circuits regeneration.
+                try {
+                    val sysUiTxBuilder = txBuilderClass.getConstructor().newInstance()
+                    unregMethod.invoke(sysUiTxBuilder, idCtor.newInstance(SYSUI_PACKAGE, "neutral"))
+                    unregMethod.invoke(sysUiTxBuilder, idCtor.newInstance(SYSUI_PACKAGE, "accent"))
+                    if (android.os.Build.VERSION.SDK_INT >= 34) {
+                        unregMethod.invoke(sysUiTxBuilder, idCtor.newInstance(SYSUI_PACKAGE, "dynamic"))
+                    }
+                    commitMethod.invoke(om, buildTx.invoke(sysUiTxBuilder))
+                } catch (t: Throwable) {
+                    Log.w(TAG, "unregisterOsThemeOverlayOnly sysui cleanup skipped", t)
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "unregisterOsThemeOverlayOnly failed", t)
             }
@@ -1872,9 +2255,13 @@ object PrivilegedHelperMain {
             return true
         }
 
-        private fun setDisplayBrightnessInternal(displayId: Int, brightness: Float, temporary: Boolean) {
-            val dm = displayManagerProxy ?: return
-            try {
+        private fun setDisplayBrightnessInternal(
+            displayId: Int,
+            brightness: Float,
+            temporary: Boolean
+        ): Boolean {
+            val dm = displayManagerProxy ?: return false
+            return try {
                 val methodName = if (temporary) "setTemporaryBrightness" else "setBrightness"
                 val method = dm.javaClass.getMethod(
                     methodName,
@@ -1882,8 +2269,10 @@ object PrivilegedHelperMain {
                     Float::class.javaPrimitiveType
                 )
                 method.invoke(dm, displayId, brightness)
+                true
             } catch (t: Throwable) {
                 Log.w(TAG, "setDisplayBrightnessInternal($displayId, $brightness) failed", t)
+                false
             }
         }
 
@@ -2020,15 +2409,7 @@ object PrivilegedHelperMain {
             }
         }
 
-        private fun registerFpsListenerForTaskInternal(taskId: Int): Boolean {
-            if (taskId <= 0) return false
-            val newListenerBinder = createFpsListenerBinder(taskId)
-            fpsListenerBinder = newListenerBinder
-            trackedFpsTaskId = taskId
-            latestReportedTaskFps = 0f
-            latestReportedTaskFpsElapsedMs = 0L
-
-            // Primary path: direct SurfaceFlinger addFpsListener(taskId, IFpsListener) transaction (57).
+        private fun tryRegisterFpsViaSurfaceFlinger(taskId: Int, listenerBinder: IBinder): Boolean {
             try {
                 val sf = getServiceMethod.invoke(null, "SurfaceFlinger") as? IBinder
                 if (sf != null) {
@@ -2037,7 +2418,7 @@ object PrivilegedHelperMain {
                     try {
                         data.writeInterfaceToken(DESCRIPTOR_SURFACE_COMPOSER)
                         data.writeInt(taskId)
-                        data.writeStrongBinder(newListenerBinder)
+                        data.writeStrongBinder(listenerBinder)
                         if (sf.transact(SF_TRANSACTION_ADD_FPS_LISTENER, data, reply, 0)) {
                             fpsRegisteredViaSurfaceFlinger = true
                             fpsRegisteredViaWindowManager = false
@@ -2052,10 +2433,12 @@ object PrivilegedHelperMain {
             } catch (t: Throwable) {
                 Log.w(TAG, "SurfaceFlinger addFpsListener($taskId) failed", t)
             }
+            return false
+        }
 
-            // Fallback path: IWindowManager.registerTaskFpsCallback(taskId, ITaskFpsCallback)
+        private fun tryRegisterFpsViaWindowManager(taskId: Int, listenerBinder: IBinder): Boolean {
             val wm = windowManagerProxy
-            val proxy = createTaskFpsCallbackProxy(newListenerBinder)
+            val proxy = createTaskFpsCallbackProxy(listenerBinder)
             if (wm != null && proxy != null) {
                 try {
                     val regMethod = wm.javaClass.methods.firstOrNull { m ->
@@ -2072,6 +2455,28 @@ object PrivilegedHelperMain {
                     Log.w(TAG, "IWindowManager.registerTaskFpsCallback($taskId) failed", t)
                 }
             }
+            return false
+        }
+
+        private fun registerFpsListenerForTaskInternal(taskId: Int): Boolean {
+            if (taskId <= 0) return false
+            val newListenerBinder = createFpsListenerBinder(taskId)
+            fpsListenerBinder = newListenerBinder
+            trackedFpsTaskId = taskId
+            latestReportedTaskFps = 0f
+            latestReportedTaskFpsElapsedMs = 0L
+
+            // On Android 14+ (SDK >= 34, including Retroid Pocket Duo Android 16), raw C++
+            // ISurfaceComposer transaction codes shift; prefer the stable AIDL IWindowManager API first.
+            val registered = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                tryRegisterFpsViaWindowManager(taskId, newListenerBinder) ||
+                    tryRegisterFpsViaSurfaceFlinger(taskId, newListenerBinder)
+            } else {
+                tryRegisterFpsViaSurfaceFlinger(taskId, newListenerBinder) ||
+                    tryRegisterFpsViaWindowManager(taskId, newListenerBinder)
+            }
+
+            if (registered) return true
 
             trackedFpsTaskId = -1
             return false
@@ -2126,16 +2531,18 @@ object PrivilegedHelperMain {
 
         private fun findTargetTaskIdForFpsInternal(): Int {
             val atm = activityTaskManagerProxy ?: return -1
+            val bottomDisplayId = resolveBottomDisplayIdInternal()
             return try {
                 val getTasksMethod = atm.javaClass.getMethod(
                     "getAllRootTaskInfosOnDisplay",
                     Int::class.javaPrimitiveType
                 )
                 val topTasks = getTasksMethod.invoke(atm, 0) as? List<*> ?: emptyList<Any?>()
-                val bottomTasks = getTasksMethod.invoke(atm, 4) as? List<*> ?: emptyList<Any?>()
+                val bottomTasks = getTasksMethod.invoke(atm, bottomDisplayId) as? List<*> ?: emptyList<Any?>()
 
-                // Screen blanking on AYN Thor sets brightness to -1.0f (< 0f); 0.0f is valid minimum slider brightness.
+                // Screen blanking sets brightness to -1.0f (< 0f) on AYN Thor or panel0BacklightBlanked on Retroid.
                 val isTopBlanked = topBootProgressBlankView != null ||
+                    panel0BacklightBlanked ||
                     getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f } < 0f
 
                 if (!isTopBlanked) {
@@ -2183,7 +2590,7 @@ object PrivilegedHelperMain {
                         task.javaClass.getField("topActivity").get(task) as? android.content.ComponentName
                     val pkg = topActivity?.packageName ?: ""
                     if (pkg == APP_PACKAGE_NAME ||
-                        pkg == STOCK_PACKAGE_NAME ||
+                        isStockAssistantPackage(pkg) ||
                         pkg == SYSUI_PACKAGE
                     ) {
                         continue
@@ -2332,16 +2739,18 @@ object PrivilegedHelperMain {
         private fun getOrCreateDisplay4Context(): Context? {
             bottomDisplayContext?.let { return it }
             val callingToken = Binder.clearCallingIdentity()
+            val bottomDisplayId = resolveBottomDisplayIdInternal()
             return try {
                 val sysCtx = resolveSystemContext() ?: return null
                 val dm = sysCtx.getSystemService(DisplayManager::class.java)
-                val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
+                val bottomDisplay = dm?.getDisplay(bottomDisplayId)
+                    ?: dm?.displays?.firstOrNull { it.displayId != 0 }
                     ?: return null
-                val ctx = sysCtx.createDisplayContext(display4)
+                val ctx = sysCtx.createDisplayContext(bottomDisplay)
                 bottomDisplayContext = ctx
                 ctx
             } catch (t: Throwable) {
-                Log.w(TAG, "Failed to obtain Display 4 context in helper", t)
+                Log.w(TAG, "Failed to obtain bottom display ($bottomDisplayId) context in helper", t)
                 null
             } finally {
                 Binder.restoreCallingIdentity(callingToken)
@@ -2349,7 +2758,7 @@ object PrivilegedHelperMain {
         }
 
         internal fun createBottomCoverLayoutParams(width: Int, height: Int): WindowManager.LayoutParams {
-            // Never set FLAG_LAYOUT_NO_LIMITS on Display 4 (prevents WMS laying out at Display 0's 1920px width).
+            // Never set FLAG_LAYOUT_NO_LIMITS on bottom display (prevents WMS laying out at Display 0's 1920px width).
             // Set fitInsetsTypes = 0 so DisplayPolicy applies zero navigation/gesture bar insets.
             return WindowManager.LayoutParams(
                 width,
@@ -2371,23 +2780,25 @@ object PrivilegedHelperMain {
         }
 
         /**
-         * Covers the bottom screen (Display 4, `1240x1080`) with a `type = 2021` (`TYPE_BOOT_PROGRESS`,
-         * Layer 27 — above `TYPE_NAVIGATION_BAR` Layer 24, matching stock `ScreenUtil.d()`) solid black
-         * cover window when [blank] and [showCoverWindow] are true so the white gesture/swipe bar is
-         * completely hidden while the bottom screen is turned off.
+         * Covers the bottom screen (Display 4 `1240x1080` on AYN Thor, Display 2 `1280x960` on Retroid)
+         * with a `type = 2021` (`TYPE_BOOT_PROGRESS`, Layer 27 — above `TYPE_NAVIGATION_BAR` Layer 24,
+         * matching stock `ScreenUtil.d()`) solid black cover window when [blank] and [showCoverWindow]
+         * are true so the white gesture/swipe bar is completely hidden while the bottom screen is turned off.
          */
         private fun setBottomScreenBlankedInternal(blank: Boolean, showCoverWindow: Boolean) {
             val ctx = getOrCreateDisplay4Context() ?: return
             val wm = ctx.getSystemService(WindowManager::class.java) ?: return
             if (blank && showCoverWindow) {
                 if (bottomBootProgressBlankView != null) return
-                val point = Point(1240, 1080)
+                val profile = resolveActiveDeviceProfile()
+                val point = Point(profile.bottomFallbackWidth, profile.bottomFallbackHeight)
                 try {
                     val dm = ctx.getSystemService(DisplayManager::class.java)
-                    val display4 = dm?.getDisplay(4) ?: dm?.displays?.firstOrNull { it.displayId != 0 }
-                    if (display4 != null) {
+                    val bottomDisplay = dm?.getDisplay(profile.bottomDisplayId)
+                        ?: dm?.displays?.firstOrNull { it.displayId != 0 }
+                    if (bottomDisplay != null) {
                         @Suppress("DEPRECATION")
-                        display4.getRealSize(point)
+                        bottomDisplay.getRealSize(point)
                     }
                 } catch (_: Throwable) {
                 }
@@ -2426,13 +2837,15 @@ object PrivilegedHelperMain {
 
         private fun getOrCreateScreenRecorder(): ScreenRecorderEngine {
             screenRecorderOverride?.let { return it }
-            val existing = screenRecorderInstance
-            if (existing != null) return existing
-            return ScreenRecorderEngine(
-                contextProvider = { systemContext ?: getOrCreateDisplay0Context() },
-                displayManagerProxy = displayManagerProxy
-            ).also {
-                screenRecorderInstance = it
+            screenRecorderInstance?.let { return it }
+            return synchronized(screenRecorderLock) {
+                screenRecorderOverride ?: screenRecorderInstance ?: ScreenRecorderEngine(
+                    contextProvider = { systemContext ?: getOrCreateDisplay0Context() },
+                    displayManagerProxy = displayManagerProxy,
+                    profileProvider = { resolveActiveDeviceProfile() }
+                ).also {
+                    screenRecorderInstance = it
+                }
             }
         }
 
@@ -2501,5 +2914,508 @@ object PrivilegedHelperMain {
             reply.writeString(status.lastCompletedPath)
             reply.writeString(status.lastStopReason)
         }
+
+        private fun captureScreenshotInternal(
+            targetMode: Int,
+            topPath: String,
+            bottomPath: String
+        ): Boolean {
+            screenshotCaptureOverride?.let { return it(targetMode, topPath, bottomPath) }
+            val wantTop = targetMode == 0 || targetMode == 2
+            val wantBottom = targetMode == 1 || targetMode == 2
+            if (!wantTop && !wantBottom) return false
+            if (wantTop && !isValidScreenshotOutputPath(topPath)) {
+                Log.w(TAG, "Rejected invalid top screenshot output path: $topPath")
+                return false
+            }
+            if (wantBottom && !isValidScreenshotOutputPath(bottomPath)) {
+                Log.w(TAG, "Rejected invalid bottom screenshot output path: $bottomPath")
+                return false
+            }
+
+            var allOk = true
+            var topOk = false
+            var bottomOk = false
+            if (wantTop) {
+                topOk = captureSingleDisplayToFileInternal(0, File(topPath))
+                if (!topOk) allOk = false
+            }
+            if (wantBottom) {
+                val bottomDisplayId = resolveBottomDisplayIdInternal()
+                bottomOk = captureSingleDisplayToFileInternal(bottomDisplayId, File(bottomPath))
+                if (!bottomOk) allOk = false
+            }
+            if (!allOk && wantTop && wantBottom) {
+                if (topOk) {
+                    try {
+                        File(topPath).delete()
+                    } catch (_: Throwable) {
+                    }
+                }
+                if (bottomOk) {
+                    try {
+                        File(bottomPath).delete()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+            return allOk
+        }
+
+        private fun captureSingleDisplayToFileInternal(
+            logicalDisplayId: Int,
+            outFile: File
+        ): Boolean {
+            try {
+                outFile.parentFile?.mkdirs()
+                if (outFile.exists()) {
+                    outFile.delete()
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed preparing screenshot output file ${outFile.absolutePath}", t)
+                return false
+            }
+
+            val physId = resolvePhysicalDisplayIdInternal(logicalDisplayId)
+
+            // Tier 1: Native /system/bin/screencap with 64-bit physical display ID
+            if (captureDisplayViaScreencap(logicalDisplayId, physId, outFile)) {
+                return true
+            }
+
+            // Tier 2: Android 14-16 IWindowManager.captureDisplay(logicalDisplayId, captureArgs, syncListener)
+            if (captureDisplayViaWindowManager(logicalDisplayId, outFile)) {
+                return true
+            }
+
+            // Tier 3: Android 13 SurfaceControl.captureDisplay(DisplayCaptureArgs)
+            if (!physId.isNullOrEmpty() && captureDisplayViaSurfaceControl(physId, outFile)) {
+                return true
+            }
+
+            deleteEmptyFileQuietly(outFile)
+            return false
+        }
+
+        private fun resolvePhysicalDisplayIdInternal(logicalDisplayId: Int): String? {
+            // 1. Query IDisplayManager.getDisplayInfo(logicalDisplayId) (uniqueId / address)
+            val dm = displayManagerProxy
+            if (dm != null) {
+                try {
+                    val getInfo = dm.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                    val info = getInfo.invoke(dm, logicalDisplayId)
+                    if (info != null) {
+                        val infoClass = info.javaClass
+                        val uniqueId = try {
+                            infoClass.getField("uniqueId").get(info) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+                        val address = try {
+                            infoClass.getField("address").get(info)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromAddress(address)?.let { return it }
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "getDisplayInfo($logicalDisplayId) failed while resolving physical display ID", t)
+                }
+            }
+
+            // 2. Query DisplayManager.getDisplay(logicalDisplayId) (VMRuntime hidden-API exemptions active in UID 0)
+            val ctx = systemContext ?: getOrCreateDisplay0Context()
+            if (ctx != null) {
+                try {
+                    val display = ctx.getSystemService(DisplayManager::class.java)?.getDisplay(logicalDisplayId)
+                    if (display != null) {
+                        val uniqueId = try {
+                            display.javaClass.getMethod("getUniqueId").invoke(display) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+                        val address = try {
+                            display.javaClass.getMethod("getAddress").invoke(display)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        extractPhysicalDisplayIdFromAddress(address)?.let { return it }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+
+            // 3. Fallback: dumpsys SurfaceFlinger --display-id (flattened to single line for pservice fgets)
+            val sfOut = runProcessWithTimeout(
+                args = listOf("/system/bin/dumpsys", "SurfaceFlinger", "--display-id"),
+                timeoutMs = 2_000L,
+                captureOutput = true
+            ).second.ifBlank {
+                execRootCommand("dumpsys SurfaceFlinger --display-id | tr '\\n' ' '")
+            }
+
+            if (sfOut.isNotBlank()) {
+                val profile = resolveActiveDeviceProfile()
+                val (topByProfile, bottomByProfile) = parseSurfaceFlingerDisplayIds(
+                    sfOut = sfOut,
+                    topPorts = setOf(profile.topSfPort),
+                    bottomPorts = setOf(profile.bottomSfPort)
+                )
+                val (topAll, bottomAll) = parseSurfaceFlingerDisplayIds(sfOut)
+                return if (logicalDisplayId == 0) {
+                    topByProfile ?: topAll
+                } else {
+                    bottomByProfile ?: bottomAll
+                }
+            }
+            return null
+        }
+
+        private fun captureDisplayViaScreencap(
+            logicalDisplayId: Int,
+            physId: String?,
+            outFile: File
+        ): Boolean {
+            if (physId.isNullOrEmpty() && logicalDisplayId != 0) {
+                return false
+            }
+            val args = if (!physId.isNullOrEmpty()) {
+                listOf("/system/bin/screencap", "-p", "-d", physId, outFile.absolutePath)
+            } else {
+                listOf("/system/bin/screencap", "-p", outFile.absolutePath)
+            }
+            val (procOk, _) = runProcessWithTimeout(
+                args = args,
+                timeoutMs = 5_000L,
+                captureOutput = false
+            )
+            if (procOk && outFile.exists() && outFile.length() > 0L) {
+                return true
+            }
+            if (outFile.exists() && outFile.length() > 0L) {
+                return true
+            }
+            deleteEmptyFileQuietly(outFile)
+
+            try {
+                val dArg = if (!physId.isNullOrEmpty()) "-d $physId" else ""
+                val quotedPath = PServerClient.shellQuote(outFile.absolutePath)
+                execRootCommand("/system/bin/screencap -p $dArg $quotedPath")
+                if (outFile.exists() && outFile.length() > 0L) {
+                    return true
+                }
+            } catch (_: Throwable) {
+            }
+            deleteEmptyFileQuietly(outFile)
+            return false
+        }
+
+        private fun captureDisplayViaWindowManager(
+            logicalDisplayId: Int,
+            outFile: File
+        ): Boolean {
+            val wm = windowManagerProxy ?: return false
+            return try {
+                val captureArgsBuilderClass = Class.forName("android.window.ScreenCapture\$CaptureArgs\$Builder")
+                val builder = captureArgsBuilderClass.getConstructor().newInstance()
+                val captureArgs = captureArgsBuilderClass.getMethod("build").invoke(builder)
+                val screenCaptureClass = Class.forName("android.window.ScreenCapture")
+                val syncListener = screenCaptureClass.getMethod("createSyncCaptureListener").invoke(null)
+                    ?: return false
+                val captureMethod = wm.javaClass.methods.firstOrNull { m ->
+                    m.name == "captureDisplay" && m.parameterTypes.size == 3
+                } ?: return false
+                captureMethod.invoke(wm, logicalDisplayId, captureArgs, syncListener)
+                val buffer = syncListener.javaClass.getMethod("getBuffer").invoke(syncListener) ?: return false
+                val bitmap = buffer.javaClass.getMethod("asBitmap").invoke(buffer) as? Bitmap ?: return false
+                writeBitmapToPngFile(bitmap, outFile)
+            } catch (t: Throwable) {
+                Log.w(TAG, "IWindowManager.captureDisplay($logicalDisplayId) fallback failed", t)
+                deleteEmptyFileQuietly(outFile)
+                false
+            }
+        }
+
+        private fun captureDisplayViaSurfaceControl(
+            physId: String,
+            outFile: File
+        ): Boolean {
+            return try {
+                val physIdLong = java.lang.Long.parseUnsignedLong(physId)
+                val scClass = Class.forName("android.view.SurfaceControl")
+                val displayToken = try {
+                    scClass.getMethod("getPhysicalDisplayToken", Long::class.javaPrimitiveType)
+                        .invoke(null, physIdLong) as? IBinder
+                } catch (_: NoSuchMethodException) {
+                    val dcClass = loadDisplayControlClassWithJni()
+                    dcClass?.getMethod("getPhysicalDisplayToken", Long::class.javaPrimitiveType)
+                        ?.invoke(null, physIdLong) as? IBinder
+                } ?: return false
+
+                val buffer = try {
+                    val screenCaptureClass = Class.forName("android.window.ScreenCapture")
+                    val builderClass = Class.forName(
+                        "android.window.ScreenCapture\$DisplayCaptureArgs\$Builder"
+                    )
+                    val builder = builderClass.getConstructor(IBinder::class.java)
+                        .newInstance(displayToken)
+                    val args = builderClass.getMethod("build").invoke(builder)
+                    val captureMethod = screenCaptureClass.methods.firstOrNull { m ->
+                        m.name == "captureDisplay" && m.parameterTypes.size == 1
+                    }
+                    captureMethod?.invoke(null, args)
+                } catch (_: Throwable) {
+                    null
+                } ?: run {
+                    val builderClass = Class.forName(
+                        "android.view.SurfaceControl\$DisplayCaptureArgs\$Builder"
+                    )
+                    val builder = builderClass.getConstructor(IBinder::class.java)
+                        .newInstance(displayToken)
+                    val args = builderClass.getMethod("build").invoke(builder)
+                    val captureMethod = scClass.methods.firstOrNull { m ->
+                        m.name == "captureDisplay" && m.parameterTypes.size == 1
+                    } ?: return false
+                    captureMethod.invoke(null, args)
+                } ?: return false
+
+                val bitmap = buffer.javaClass.getMethod("asBitmap").invoke(buffer) as? Bitmap ?: return false
+                writeBitmapToPngFile(bitmap, outFile)
+            } catch (t: Throwable) {
+                Log.w(TAG, "SurfaceControl.captureDisplay($physId) fallback failed", t)
+                deleteEmptyFileQuietly(outFile)
+                false
+            }
+        }
+
+        private fun writeBitmapToPngFile(bitmap: Bitmap, outFile: File): Boolean {
+            var swBitmap: Bitmap? = null
+            return try {
+                val targetBitmap = if (bitmap.config == Bitmap.Config.HARDWARE) {
+                    bitmap.copy(Bitmap.Config.ARGB_8888, false)?.also { swBitmap = it } ?: bitmap
+                } else {
+                    bitmap
+                }
+                FileOutputStream(outFile).use { fos ->
+                    if (!targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
+                        return false
+                    }
+                    fos.flush()
+                    try {
+                        fos.fd.sync()
+                    } catch (_: Throwable) {
+                    }
+                }
+                val ok = outFile.exists() && outFile.length() > 0L
+                if (!ok) {
+                    deleteEmptyFileQuietly(outFile)
+                }
+                ok
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed writing screenshot bitmap to ${outFile.absolutePath}", t)
+                deleteEmptyFileQuietly(outFile)
+                false
+            } finally {
+                try {
+                    swBitmap?.recycle()
+                } catch (_: Throwable) {
+                }
+                try {
+                    if (bitmap !== swBitmap) {
+                        bitmap.recycle()
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        private fun isAuthorizedWindowSessionCall(
+            sessionBinder: IBinder?,
+            targetCode: Int,
+            forwardData: Parcel
+        ): Boolean {
+            if (sessionBinder == null) return false
+            val descriptor = try {
+                sessionBinder.interfaceDescriptor
+            } catch (_: Throwable) {
+                null
+            }
+            if (descriptor != DESCRIPTOR_WINDOW_SESSION) return false
+
+            val allowedCodes = allowedWindowSessionCodesOverride ?: allowedWindowSessionCodes
+            val codeAllowed = allowedCodes.isNotEmpty() && targetCode in allowedCodes
+            if (!codeAllowed) return false
+
+            if (forwardData.dataSize() <= 0) return false
+            val savedPos = forwardData.dataPosition()
+            return try {
+                forwardData.setDataPosition(0)
+                forwardData.enforceInterface(DESCRIPTOR_WINDOW_SESSION)
+                true
+            } catch (_: Throwable) {
+                false
+            } finally {
+                forwardData.setDataPosition(savedPos)
+            }
+        }
+
+        private fun deleteEmptyFileQuietly(file: File) {
+            try {
+                if (file.exists() && file.length() == 0L) {
+                    file.delete()
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    internal fun resolveAllowedWindowSessionCodes(): Set<Int> {
+        return try {
+            val stubClass = Class.forName("android.view.IWindowSession\$Stub")
+            stubClass.declaredFields.mapNotNull { field ->
+                if (field.type == Int::class.javaPrimitiveType &&
+                    field.name.startsWith("TRANSACTION_addToDisplay")
+                ) {
+                    field.isAccessible = true
+                    field.getInt(null)
+                } else {
+                    null
+                }
+            }.toSet()
+        } catch (_: Throwable) {
+            emptySet()
+        }
+    }
+
+    internal fun loadDisplayControlClassWithJni(): Class<*>? {
+        return try {
+            val factoryClass = Class.forName("com.android.internal.os.ClassLoaderFactory")
+            val createLoader = factoryClass.getDeclaredMethod(
+                "createClassLoader",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                ClassLoader::class.java,
+                Int::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType,
+                String::class.java
+            ).apply { isAccessible = true }
+            val loader = createLoader.invoke(
+                null,
+                "/system/framework/services.jar",
+                SYSTEM_LIB_SEARCH_PATH,
+                SYSTEM_LIB_SEARCH_PATH,
+                ClassLoader.getSystemClassLoader(),
+                0,
+                true,
+                null
+            ) as? ClassLoader ?: return null
+            try {
+                val runtime = Runtime.getRuntime()
+                val loadLib0 = runtime.javaClass.getDeclaredMethod(
+                    "loadLibrary0",
+                    ClassLoader::class.java,
+                    String::class.java
+                ).apply { isAccessible = true }
+                loadLib0.invoke(runtime, loader, "android_servers")
+            } catch (_: Throwable) {
+            }
+            loader.loadClass("com.android.server.display.DisplayControl")
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    internal fun isValidScreenshotOutputPath(path: String): Boolean {
+        return isValidScopedMediaOutputPath(
+            path = path,
+            subDirs = listOf("Pictures", "Screenshots"),
+            requiredExtension = ".png"
+        )
+    }
+
+    internal fun isValidScopedMediaOutputPath(
+        path: String,
+        subDirs: List<String>,
+        requiredExtension: String
+    ): Boolean {
+        if (path.isBlank() ||
+            path.contains("..") ||
+            path.contains('\u0000') ||
+            !path.endsWith(requiredExtension)
+        ) {
+            return false
+        }
+        val storageRoot = when {
+            path.startsWith("/sdcard/") -> "/sdcard"
+            path.startsWith("/storage/emulated/0/") -> "/storage/emulated/0"
+            else -> return false
+        }
+        val expectedPrefix = "$storageRoot/${subDirs.joinToString("/")}/"
+        if (!path.startsWith(expectedPrefix)) return false
+        val leafName = path.removePrefix(expectedPrefix)
+        if (leafName.length <= requiredExtension.length ||
+            leafName.contains('/') ||
+            leafName.contains('\\') ||
+            leafName.startsWith(".")
+        ) {
+            return false
+        }
+        // Check each component below storageRoot (never storageRoot itself, since /sdcard is an OS symlink)
+        var current = storageRoot
+        for (segment in subDirs + leafName) {
+            current = "$current/$segment"
+            try {
+                if (Files.isSymbolicLink(File(current).toPath())) {
+                    return false
+                }
+            } catch (_: Throwable) {
+                return false
+            }
+        }
+        return true
+    }
+
+    internal fun extractPhysicalDisplayIdFromUniqueId(uniqueId: String?): String? {
+        val raw = uniqueId?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        val candidate = raw.removePrefix("local:").trim()
+        return candidate.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+    }
+
+    internal fun extractPhysicalDisplayIdFromAddress(address: Any?): String? {
+        if (address == null) return null
+        return try {
+            val physId = address.javaClass.getMethod("getPhysicalDisplayId").invoke(address) as? Long
+                ?: return null
+            java.lang.Long.toUnsignedString(physId).takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    internal fun parseSurfaceFlingerDisplayIds(
+        sfOut: String,
+        topPorts: Set<String> = DeviceProfile.allTopSfPorts,
+        bottomPorts: Set<String> = DeviceProfile.allBottomSfPorts
+    ): Pair<String?, String?> {
+        var topPhysId: String? = null
+        var bottomPhysId: String? = null
+        val regex = Regex("""Display\s+(\d+)\s+\([^\n\rD]*?port=(\d+)""")
+        for (match in regex.findAll(sfOut)) {
+            val physId = match.groupValues[1]
+            val port = match.groupValues[2]
+            if (port in topPorts && topPhysId.isNullOrEmpty()) {
+                topPhysId = physId
+            }
+            if (port in bottomPorts && bottomPhysId.isNullOrEmpty()) {
+                bottomPhysId = physId
+            }
+        }
+        return topPhysId to bottomPhysId
     }
 }

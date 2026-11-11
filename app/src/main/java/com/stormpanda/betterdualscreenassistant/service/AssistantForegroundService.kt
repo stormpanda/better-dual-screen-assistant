@@ -18,6 +18,7 @@ import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.DirectBootPrefs
 import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.ScreenRecordingState
@@ -95,14 +96,15 @@ class AssistantForegroundService : Service() {
      */
     private val preOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val appCtx = context ?: this@AssistantForegroundService
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                 }
                 Intent.ACTION_SCREEN_OFF,
                 Intent.ACTION_SHUTDOWN,
                 "android.intent.action.REBOOT" -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false)
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                     stopActiveRecordingOnPowerTransition(
                         if (intent.action == Intent.ACTION_SCREEN_OFF) "screen_off" else "shutdown"
                     )
@@ -117,10 +119,16 @@ class AssistantForegroundService : Service() {
      */
     private val postOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val appCtx = context ?: this@AssistantForegroundService
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_SCREEN_ON -> {
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                    if (::overlayManager.isInitialized) {
+                        overlayManager.reassertBlankedHardwareStateIfNeeded()
+                    }
+                }
                 Intent.ACTION_SCREEN_OFF -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true)
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
                 }
             }
         }
@@ -162,9 +170,9 @@ class AssistantForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        val initialPromoted = getSharedPreferences(
-            SystemSettingsRepository.PREFS_NAME,
-            Context.MODE_PRIVATE
+        val initialPromoted = DirectBootPrefs.open(
+            this,
+            SystemSettingsRepository.PREFS_NAME
         ).getBoolean(SystemSettingsRepository.PREF_PROMOTED_TO_MANAGER, false)
         startForeground(NOTIFICATION_ID, createForegroundNotification(initialPromoted))
 
@@ -323,17 +331,21 @@ class AssistantForegroundService : Service() {
         // Ensure stock process stays suppressed if it somehow woke up
         enforceStockTakeoverIfPreferred()
 
-        if (mappingServiceClient.isHomeMapped) {
-            return
-        }
-
         val currentMode = repository.dualScreenDisplayMode.value
 
         if (keyActionDown) {
             if (isLongPress) {
-                // Replicates TccServices.c(): Long-press turns off the bottom screen
+                // Replicates TccServices.c(): Long-press turns off the bottom screen on AYN Thor,
+                // and toggles the bottom screen (wake <-> blank) on Retroid Pocket Duo.
                 longPressConsumed = true
-                if (!overlayManager.isBottomScreenBlanked && currentMode != 1) {
+                val profile = com.stormpanda.betterdualscreenassistant.system.DeviceProfile.current(
+                    applicationContext
+                )
+                if (profile.longPressTogglesBottom &&
+                    (overlayManager.isBottomScreenBlanked || currentMode == 1)
+                ) {
+                    overlayManager.wakeBottomScreen()
+                } else if (!overlayManager.isBottomScreenBlanked && currentMode != 1) {
                     overlayManager.hideAssistantOverlay(immediate = true)
                     repository.setDualScreenDisplayMode(1)
                 }

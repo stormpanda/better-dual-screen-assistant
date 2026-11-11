@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="45dp"
+    android:height="45dp"
+    android:viewportWidth="45"
+    android:viewportHeight="45">
+    <!-- Hollow 5px-grid pixel crescent moon with open stepped corners -->
+    <!-- Outer crescent contour -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,0H30V5H15V0ZM10,5H15V10H10V5ZM5,10H10V35H5V10ZM10,35H15V40H10V35ZM15,40H35V45H15V40ZM35,30H40V40H35V30Z" />
+    <!-- Inner crescent contour -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M25,5H30V10H25V5ZM20,10H25V25H20V10ZM25,25H35V30H25V25Z" />
+</vector>

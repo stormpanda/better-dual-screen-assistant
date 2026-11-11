@@ -56,4 +56,36 @@ class QuickSettingTileIdTest {
         assertNull(QuickSettingTileId.fromKey("non_existent_tile"))
         assertNull(QuickSettingTileId.fromKey(""))
     }
+
+    @Test
+    fun `profile-aware filtering and labels adapt cleanly for Retroid Pocket Duo`() {
+        assertTrue(QuickSettingTileId.AMBIENT_LIGHT.isSupportedOn(DeviceProfile.AYN_THOR))
+        assertFalse(QuickSettingTileId.AMBIENT_LIGHT.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
+        assertTrue(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME.isSupportedOn(DeviceProfile.AYN_THOR))
+        assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
+
+        val retroidSupported = QuickSettingTileId.supportedEntries(DeviceProfile.RETROID_POCKET_DUO)
+        assertFalse(QuickSettingTileId.AMBIENT_LIGHT in retroidSupported)
+        assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME in retroidSupported)
+        assertEquals(QuickSettingTileId.entries.size - 2, retroidSupported.size)
+
+        assertEquals(
+            "Stock AYN Toggles",
+            QuickSettingCategory.STOCK_AYN.titleFor(DeviceProfile.AYN_THOR)
+        )
+        assertEquals(
+            "Stock Retroid Toggles",
+            QuickSettingCategory.STOCK_AYN.titleFor(DeviceProfile.RETROID_POCKET_DUO)
+        )
+        assertTrue(
+            QuickSettingTileId.CONTROLLER_STYLE
+                .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
+                .contains("Retro")
+        )
+        assertTrue(
+            QuickSettingTileId.KEY_MAPPER
+                .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
+                .contains("Retroid")
+        )
+    }
 }

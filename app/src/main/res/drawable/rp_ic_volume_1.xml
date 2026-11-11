@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:height="36dp"
+    android:width="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+    <!-- Speaker cone (0..18 x 0..36) + 1 pixel wave (21..24 x 14.4..21.6) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18 36H14.4V32.4H10.8V28.8H14.4V7.2H10.8V3.6H14.4V0H18V36ZM10.8 28.8H7.2V25.2H10.8V28.8ZM7.2 14.4H3.6V21.6H7.2V25.2H0V10.8H7.2V14.4ZM10.8 10.8H7.2V7.2H10.8V10.8ZM24 21.6H21V14.4H24V21.6Z"/>
+</vector>

@@ -16,6 +16,7 @@ import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -85,10 +86,12 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREFS_NAME = "better_dsa_prefs"
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
         const val PREF_REMEMBER_LAST_TAB = "remember_last_tab"
+        const val PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE = "remember_last_quick_toggle_page"
         const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
         const val PREF_ACCURATE_GAME_FPS = "accurate_game_fps"
+        const val PREF_CPU_FREQ_SCALING_MODE = "cpu_freq_scaling_mode"
         const val PREF_TEMP_FAHRENHEIT = "temp_fahrenheit"
         const val PREF_PROMOTED_TO_MANAGER = "promoted_to_manager"
         const val LAUNCHER_ALIAS_ASSISTANT =
@@ -96,7 +99,10 @@ class SystemSettingsRepository(private val context: Context) {
         const val LAUNCHER_ALIAS_MANAGER =
             "com.stormpanda.betterdualscreenassistant.MainActivityManagerAlias"
         const val PREF_APP_THEME_MODE = "app_theme_mode"
+        const val PREF_UI_LOOK_MODE = "ui_look_mode"
+        const val PREF_RETROID_READABILITY_BOOST = "retroid_readability_boost"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
+        const val ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT = "dual_screen_action.volume.key.event"
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
         const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
         const val PREF_SAVED_OS_THEME_JSON = "saved_os_theme_json"
@@ -144,7 +150,9 @@ class SystemSettingsRepository(private val context: Context) {
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = DirectBootPrefs.open(context, PREFS_NAME)
+    private val bottomDisplayId: Int
+        get() = DeviceProfile.current(context).bottomDisplayId
     private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "BDSA-ThemeSync").apply { isDaemon = true }
     }
@@ -164,6 +172,24 @@ class SystemSettingsRepository(private val context: Context) {
 
     @Volatile
     private var isTransitioningDisplayMode: Boolean = false
+
+    @Volatile
+    private var pendingBlankedTopLinear: Float? = null
+
+    @Volatile
+    private var pendingBlankedBottomLinear: Float? = null
+
+    internal fun consumePendingBlankedTopLinear(): Float? {
+        val v = pendingBlankedTopLinear
+        pendingBlankedTopLinear = null
+        return v
+    }
+
+    internal fun consumePendingBlankedBottomLinear(): Float? {
+        val v = pendingBlankedBottomLinear
+        pendingBlankedBottomLinear = null
+        return v
+    }
 
     private fun isInSelfBrightnessGraceWindow(): Boolean {
         if (isSelfDraggingBrightness) return true
@@ -247,6 +273,15 @@ class SystemSettingsRepository(private val context: Context) {
     private val _themeMode = MutableStateFlow(readSavedThemeMode())
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
 
+    // UI Look Mode: 0 = Auto (Device Default), 1 = AYN, 2 = Retroid Pixel
+    private val _uiLookMode = MutableStateFlow(prefs.getInt(PREF_UI_LOOK_MODE, 0).coerceIn(0, 2))
+    val uiLookMode: StateFlow<Int> = _uiLookMode.asStateFlow()
+
+    private val _retroidReadabilityBoost = MutableStateFlow(
+        prefs.getBoolean(PREF_RETROID_READABILITY_BOOST, true)
+    )
+    val retroidReadabilityBoost: StateFlow<Boolean> = _retroidReadabilityBoost.asStateFlow()
+
     private val _customAccentArgb = MutableStateFlow(
         prefs.getInt(PREF_CUSTOM_ACCENT_ARGB, DEFAULT_MEGINGIARD_ACCENT_ARGB)
     )
@@ -276,6 +311,14 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val rememberLastTab: StateFlow<Boolean> = _rememberLastTab.asStateFlow()
 
+    private val _rememberLastQuickTogglePage = MutableStateFlow(
+        prefs.getBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, true)
+    )
+    val rememberLastQuickTogglePage: StateFlow<Boolean> = _rememberLastQuickTogglePage.asStateFlow()
+
+    private val _lastQuickTogglePage = MutableStateFlow(0)
+    val lastQuickTogglePage: StateFlow<Int> = _lastQuickTogglePage.asStateFlow()
+
     private val _showLedBrightnessSlider = MutableStateFlow(
         prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
     )
@@ -295,6 +338,11 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
     )
     val accurateGameFps: StateFlow<Boolean> = _accurateGameFps.asStateFlow()
+
+    private val _cpuFreqScalingMode = MutableStateFlow(
+        prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
+    )
+    val cpuFreqScalingMode: StateFlow<Boolean> = _cpuFreqScalingMode.asStateFlow()
 
     private val _tempFahrenheit = MutableStateFlow(
         prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
@@ -342,7 +390,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val _keepScreenOn = MutableStateFlow(getInt(KEY_KEEP_SCREEN_ON, 0) == 1)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
-    private val _preventAccidentalHome = MutableStateFlow(getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1)
+    private val _preventAccidentalHome = MutableStateFlow(readPreventAccidentalHome())
     val preventAccidentalHome: StateFlow<Boolean> = _preventAccidentalHome.asStateFlow()
 
     private val _quickTileOrder = MutableStateFlow(readSavedQuickTileOrder())
@@ -383,7 +431,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val _topBrightness = MutableStateFlow(readDisplayBrightnessPercent(0))
     val topBrightness: StateFlow<Int> = _topBrightness.asStateFlow()
 
-    private val _bottomBrightness = MutableStateFlow(readDisplayBrightnessPercent(4))
+    private val _bottomBrightness = MutableStateFlow(readDisplayBrightnessPercent(bottomDisplayId))
     val bottomBrightness: StateFlow<Int> = _bottomBrightness.asStateFlow()
 
     private val _isDualBrightnessActive = MutableStateFlow(
@@ -433,7 +481,7 @@ class SystemSettingsRepository(private val context: Context) {
         override fun onDisplayAdded(displayId: Int) = Unit
         override fun onDisplayRemoved(displayId: Int) = Unit
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId != 0 && displayId != 4) return
+            if (displayId != 0 && displayId != bottomDisplayId) return
             if (isInSelfBrightnessGraceWindow()) return
             onExternalDisplayBrightnessChanged(displayId, fromDisplayListener = true)
         }
@@ -455,7 +503,20 @@ class SystemSettingsRepository(private val context: Context) {
                 if (_themeMode.value != saved) {
                     _themeMode.value = saved
                     scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
+                    if (saved == AppThemeOption.SYNC_MEGINGIARD.id) {
+                        refreshMegingiardSyncedThemeAsync(
+                            changedUri = null,
+                            debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS,
+                            forceScheduleOsSync = true
+                        )
+                    }
                 }
+            }
+            PREF_UI_LOOK_MODE -> {
+                _uiLookMode.value = prefs.getInt(PREF_UI_LOOK_MODE, 0).coerceIn(0, 2)
+            }
+            PREF_RETROID_READABILITY_BOOST -> {
+                _retroidReadabilityBoost.value = prefs.getBoolean(PREF_RETROID_READABILITY_BOOST, true)
             }
             PREF_CUSTOM_ACCENT_ARGB -> {
                 val saved = prefs.getInt(
@@ -489,6 +550,13 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_REMEMBER_LAST_TAB -> {
                 _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
             }
+            PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE -> {
+                val enabled = prefs.getBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, true)
+                _rememberLastQuickTogglePage.value = enabled
+                if (!enabled) {
+                    _lastQuickTogglePage.value = 0
+                }
+            }
             PREF_SHOW_LED_BRIGHTNESS_SLIDER -> {
                 _showLedBrightnessSlider.value =
                     prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
@@ -504,6 +572,10 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_ACCURATE_GAME_FPS -> {
                 _accurateGameFps.value =
                     prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+            }
+            PREF_CPU_FREQ_SCALING_MODE -> {
+                _cpuFreqScalingMode.value =
+                    prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
             }
             PREF_TEMP_FAHRENHEIT -> {
                 _tempFahrenheit.value =
@@ -560,6 +632,10 @@ class SystemSettingsRepository(private val context: Context) {
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                     _airplaneModeEnabled.value = readAirplaneModeEnabled()
                 }
+                Intent.ACTION_USER_UNLOCKED -> {
+                    registerMegingiardContentObservers()
+                    refreshMegingiardSyncedTheme()
+                }
             }
         }
     }
@@ -573,6 +649,49 @@ class SystemSettingsRepository(private val context: Context) {
             }
         }
     }
+
+    private val dualScreenVolumeKeyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT) return
+            val keyType = intent.getStringExtra("key_type") ?: return
+            val maxVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+            val minVol = audioManager?.getStreamMinVolume(AudioManager.STREAM_MUSIC) ?: 0
+            val curPrimary = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: -1
+            val curSecondary = getInt(KEY_SECONDARY_SCREEN_VOLUME_LEVEL, 7).coerceIn(0, 15)
+            when (keyType) {
+                "KEYCODE_VOLUME_UP" -> {
+                    if (curPrimary >= maxVol && curSecondary < 15) {
+                        val next = (curSecondary + 1).coerceIn(0, 15)
+                        PrivilegedBridge.putSystemSettingInt(
+                            this@SystemSettingsRepository.context,
+                            KEY_SECONDARY_SCREEN_VOLUME_LEVEL,
+                            next
+                        )
+                        _secondaryVolumePercent.value =
+                            ((next / 15f) * 100f).roundToInt().coerceIn(0, 100)
+                        _isDualVolumeActive.value = false
+                        prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+                    }
+                }
+                "KEYCODE_VOLUME_DOWN" -> {
+                    if (curPrimary in 0..minVol && curSecondary > 0) {
+                        val next = (curSecondary - 1).coerceIn(0, 15)
+                        PrivilegedBridge.putSystemSettingInt(
+                            this@SystemSettingsRepository.context,
+                            KEY_SECONDARY_SCREEN_VOLUME_LEVEL,
+                            next
+                        )
+                        _secondaryVolumePercent.value =
+                            ((next / 15f) * 100f).roundToInt().coerceIn(0, 100)
+                        _isDualVolumeActive.value = false
+                        prefs.edit().putBoolean(PREF_DUAL_VOLUME_ACTIVE, false).apply()
+                    }
+                }
+            }
+        }
+    }
+
+    private var isDualScreenVolumeKeyReceiverRegistered = false
 
     private var isRegistered = false
 
@@ -606,32 +725,35 @@ class SystemSettingsRepository(private val context: Context) {
     fun register() {
         if (isRegistered) return
         isRegistered = true
-        val keys = listOf(
-            KEY_DUAL_SCREEN_DISPLAY_MODE,
-            KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL,
-            KEY_SCREEN_FOCUS_LOCK,
-            KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK,
-            KEY_SECONDARY_SCREEN_VOLUME_LEVEL,
-            KEY_SECONDARY_SCREEN_VOLUME_HEADPHONES,
-            KEY_PERFORMANCE_MODE,
-            KEY_FAN_MODE,
-            KEY_FAN_SPEED,
-            KEY_TEMP_ABXY_LAYOUT_MODE,
-            KEY_CHARGING_SEPARATION,
-            KEY_VIBRATE_ON,
-            KEY_JOYSTICK_LIGHT_ENABLED,
-            KEY_FORCE_LANDSCAPE,
-            KEY_TCC_THEME_MODE,
-            KEY_PEAK_REFRESH_RATE,
-            KEY_LED_BRIGHTNESS_PERCENT,
-            KEY_TRIGGER_INPUT_MODE,
-            KEY_CHARGE_LIMIT_80,
-            KEY_GAMEPAD_MOUSE_MODE,
-            KEY_ADAPTER_ENABLE,
-            KEY_KEEP_SCREEN_ON,
-            KEY_PREVENT_ACCIDENTAL_HOME,
-            "screen_brightness"
-        )
+        val profile = DeviceProfile.current(context)
+        val keys = buildList {
+            add(KEY_DUAL_SCREEN_DISPLAY_MODE)
+            add(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL)
+            add(KEY_SCREEN_FOCUS_LOCK)
+            add(KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK)
+            add(KEY_SECONDARY_SCREEN_VOLUME_LEVEL)
+            add(KEY_SECONDARY_SCREEN_VOLUME_HEADPHONES)
+            add(KEY_PERFORMANCE_MODE)
+            add(KEY_FAN_MODE)
+            add(KEY_FAN_SPEED)
+            add(KEY_TEMP_ABXY_LAYOUT_MODE)
+            add(KEY_CHARGING_SEPARATION)
+            add(KEY_VIBRATE_ON)
+            add(KEY_JOYSTICK_LIGHT_ENABLED)
+            add(KEY_FORCE_LANDSCAPE)
+            add(KEY_TCC_THEME_MODE)
+            add(KEY_PEAK_REFRESH_RATE)
+            add(KEY_LED_BRIGHTNESS_PERCENT)
+            add(KEY_TRIGGER_INPUT_MODE)
+            add(KEY_CHARGE_LIMIT_80)
+            add(KEY_GAMEPAD_MOUSE_MODE)
+            add(KEY_ADAPTER_ENABLE)
+            add(KEY_KEEP_SCREEN_ON)
+            if (profile.supportsPreventAccidentalHome) {
+                add(KEY_PREVENT_ACCIDENTAL_HOME)
+            }
+            add("screen_brightness")
+        }
         for (key in keys) {
             contentResolver.registerContentObserver(
                 Settings.System.getUriFor(key),
@@ -660,6 +782,7 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(Intent.ACTION_USER_UNLOCKED)
         }
         context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         val pkgFilter = IntentFilter().apply {
@@ -669,10 +792,29 @@ class SystemSettingsRepository(private val context: Context) {
             addDataScheme("package")
         }
         context.registerReceiver(megingiardPackageReceiver, pkgFilter, Context.RECEIVER_NOT_EXPORTED)
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
+            try {
+                context.registerReceiver(
+                    dualScreenVolumeKeyReceiver,
+                    IntentFilter(ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT),
+                    android.Manifest.permission.DUMP,
+                    null,
+                    Context.RECEIVER_EXPORTED
+                )
+                isDualScreenVolumeKeyReceiverRegistered = true
+            } catch (_: Throwable) {
+                isDualScreenVolumeKeyReceiverRegistered = false
+            }
+        }
         registerDisplayBrightnessListener()
         refreshAll()
         dispatchOrDeferLauncherAliasSync()
         resyncFloatingIconGestureGuard()
+        if (!profile.supportsPreventAccidentalHome) {
+            themeSyncExecutor.execute {
+                resetUnsupportedPreventAccidentalHomeIfNeeded()
+            }
+        }
     }
 
     fun unregister() {
@@ -707,6 +849,13 @@ class SystemSettingsRepository(private val context: Context) {
         try {
             context.unregisterReceiver(megingiardPackageReceiver)
         } catch (_: Throwable) {
+        }
+        if (isDualScreenVolumeKeyReceiverRegistered) {
+            isDualScreenVolumeKeyReceiverRegistered = false
+            try {
+                context.unregisterReceiver(dualScreenVolumeKeyReceiver)
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -760,6 +909,8 @@ class SystemSettingsRepository(private val context: Context) {
         _ambientLightEnabled.value = readAmbientLightState()
         _forceLandscape.value = getInt(KEY_FORCE_LANDSCAPE, 1) == 1
         _themeMode.value = readSavedThemeMode()
+        _uiLookMode.value = prefs.getInt(PREF_UI_LOOK_MODE, 0).coerceIn(0, 2)
+        _retroidReadabilityBoost.value = prefs.getBoolean(PREF_RETROID_READABILITY_BOOST, true)
         _customAccentArgb.value = prefs.getInt(
             PREF_CUSTOM_ACCENT_ARGB,
             DEFAULT_MEGINGIARD_ACCENT_ARGB
@@ -767,10 +918,12 @@ class SystemSettingsRepository(private val context: Context) {
         _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
         _showCloseBottomScreenTip.value = !prefs.getBoolean(PREF_NO_MORE_CLOSE_TIP, false)
         _rememberLastTab.value = prefs.getBoolean(PREF_REMEMBER_LAST_TAB, true)
+        _rememberLastQuickTogglePage.value = prefs.getBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, true)
         _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
+        _cpuFreqScalingMode.value = prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
         _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
         _promotedToManager.value = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
@@ -783,7 +936,7 @@ class SystemSettingsRepository(private val context: Context) {
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
         _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
         _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
-        _preventAccidentalHome.value = getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
+        _preventAccidentalHome.value = readPreventAccidentalHome()
         _quickTileOrder.value = readSavedQuickTileOrder()
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         if (refreshMegingiardTheme) {
@@ -796,7 +949,7 @@ class SystemSettingsRepository(private val context: Context) {
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, 55)
         if (refreshDisplayBrightness) {
             _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
-            _bottomBrightness.value = readDisplayBrightnessPercent(4, _bottomBrightness.value)
+            _bottomBrightness.value = readDisplayBrightnessPercent(bottomDisplayId, _bottomBrightness.value)
             if (!isInSelfBrightnessGraceWindow()) {
                 syncDualBrightnessActiveState(persistToPrefs = true)
             }
@@ -809,7 +962,7 @@ class SystemSettingsRepository(private val context: Context) {
     fun refreshDisplayBrightness() {
         _dualBrightness.value = getInt(KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, _dualBrightness.value)
         _topBrightness.value = readDisplayBrightnessPercent(0, _topBrightness.value)
-        _bottomBrightness.value = readDisplayBrightnessPercent(4, _bottomBrightness.value)
+        _bottomBrightness.value = readDisplayBrightnessPercent(bottomDisplayId, _bottomBrightness.value)
         if (!isInSelfBrightnessGraceWindow()) {
             syncDualBrightnessActiveState(persistToPrefs = true)
         }
@@ -817,7 +970,7 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun isDisplayBlanked(displayId: Int): Boolean {
         val mode = _dualScreenDisplayMode.value
-        return (displayId == 0 && mode == 2) || (displayId == 4 && mode == 1)
+        return (displayId == 0 && mode == 2) || (displayId == bottomDisplayId && mode == 1)
     }
 
     private fun isDeviceInteractive(): Boolean {
@@ -862,7 +1015,7 @@ class SystemSettingsRepository(private val context: Context) {
             if (!isLiveTemporaryDrag && committed > 0f) {
                 PrivilegedBridge.updateSavedBrightness(top = committed)
             }
-        } else if (displayId == 4) {
+        } else if (displayId == bottomDisplayId) {
             if (_bottomBrightness.value != percent) {
                 _bottomBrightness.value = percent
             }
@@ -1048,6 +1201,7 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun toggleAmbientLight() {
+        if (!DeviceProfile.current(context).supportsAmbientLight) return
         val currentProp = PrivilegedBridge.getSystemProperty("sys.light.curr.is.show", "")
         val currentlyShowing = when (currentProp) {
             "true", "1" -> true
@@ -1077,14 +1231,25 @@ class SystemSettingsRepository(private val context: Context) {
             else -> 4
         }
         PrivilegedBridge.putSystemSettingInt(context, KEY_TCC_THEME_MODE, stockEquivalent)
+        scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
         if (mode == AppThemeOption.SYNC_MEGINGIARD.id) {
             refreshMegingiardSyncedThemeAsync(
                 changedUri = null,
-                debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS
+                debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS,
+                forceScheduleOsSync = true
             )
-        } else {
-            scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
         }
+    }
+
+    fun setUiLookMode(mode: Int) {
+        val normalized = mode.coerceIn(0, 2)
+        _uiLookMode.value = normalized
+        prefs.edit().putInt(PREF_UI_LOOK_MODE, normalized).apply()
+    }
+
+    fun setRetroidReadabilityBoost(enabled: Boolean) {
+        _retroidReadabilityBoost.value = enabled
+        prefs.edit().putBoolean(PREF_RETROID_READABILITY_BOOST, enabled).apply()
     }
 
     fun setCustomAccentArgb(argb: Int) {
@@ -1250,7 +1415,8 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun refreshMegingiardSyncedThemeAsync(
         changedUri: Uri?,
-        debounceOsSyncMs: Long
+        debounceOsSyncMs: Long,
+        forceScheduleOsSync: Boolean = false
     ) {
         themeSyncExecutor.execute {
             val candidates = buildMegingiardCandidateUris(changedUri)
@@ -1278,7 +1444,7 @@ class SystemSettingsRepository(private val context: Context) {
                             _syncedMegingiardAccentArgb.value = accentInt
                             _isMegingiardProviderAvailable.value = true
                             if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
-                                (changed || debounceOsSyncMs == 0L)
+                                (changed || forceScheduleOsSync || debounceOsSyncMs == 0L)
                             ) {
                                 scheduleOsThemeSync(debounceOsSyncMs)
                             }
@@ -1289,8 +1455,10 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
             _isMegingiardProviderAvailable.value = anyProviderInstalled || isAnyMegingiardInstalled()
-            if (debounceOsSyncMs == 0L) {
-                scheduleOsThemeSync(0L)
+            if (debounceOsSyncMs == 0L ||
+                (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id && forceScheduleOsSync)
+            ) {
+                scheduleOsThemeSync(debounceOsSyncMs)
             }
         }
     }
@@ -1373,8 +1541,11 @@ class SystemSettingsRepository(private val context: Context) {
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 dispatchOrDeferOsThemeSync(force = force)
             } else {
-                if (force) {
-                    synchronized(osThemeDeferLock) {
+                synchronized(osThemeDeferLock) {
+                    if (activeSettingsUiTokens.isNotEmpty()) {
+                        pendingDeferredOsThemeSync = true
+                    }
+                    if (force) {
                         pendingDeferredOsThemeForce = true
                     }
                 }
@@ -1390,8 +1561,11 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
         } else {
-            if (force) {
-                synchronized(osThemeDeferLock) {
+            synchronized(osThemeDeferLock) {
+                if (activeSettingsUiTokens.isNotEmpty()) {
+                    pendingDeferredOsThemeSync = true
+                }
+                if (force) {
                     pendingDeferredOsThemeForce = true
                 }
             }
@@ -1613,19 +1787,36 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun applyDisplayBrightnessPercent(displayId: Int, percent: Int, temporary: Boolean) {
         val p = percent.coerceIn(0, 100)
+        val profile = DeviceProfile.current(context)
+        val targetBottom = profile.bottomDisplayId
         if (displayId == 0) {
             _topBrightness.value = p
-        } else if (displayId == 4) {
+        } else if (displayId == targetBottom) {
             _bottomBrightness.value = p
         }
         val info = PrivilegedBridge.getDisplayBrightnessInfo(context, displayId)
         val min = info.getOrElse(1) { 0f }
         val max = info.getOrElse(2) { 1f }
         val linear = min + (p / 100f) * (max - min)
+        val isBlankedOled = !profile.blankViaBacklightSysfs &&
+            ((displayId == 0 && _dualScreenDisplayMode.value == 2) ||
+                (displayId == targetBottom && _dualScreenDisplayMode.value == 1))
+        if (isBlankedOled) {
+            if (linear > 0f) {
+                if (displayId == 0) {
+                    pendingBlankedTopLinear = linear
+                    if (!temporary) PrivilegedBridge.updateSavedBrightness(top = linear)
+                } else if (displayId == targetBottom) {
+                    pendingBlankedBottomLinear = linear
+                    if (!temporary) PrivilegedBridge.updateSavedBrightness(bottom = linear)
+                }
+            }
+            return
+        }
         if (!temporary && linear > 0f) {
             if (displayId == 0) {
                 PrivilegedBridge.updateSavedBrightness(top = linear)
-            } else if (displayId == 4) {
+            } else if (displayId == targetBottom) {
                 PrivilegedBridge.updateSavedBrightness(bottom = linear)
             }
         }
@@ -1641,7 +1832,7 @@ class SystemSettingsRepository(private val context: Context) {
         _topBrightness.value = p
         _bottomBrightness.value = p
         applyDisplayBrightnessPercent(0, p, temporary)
-        applyDisplayBrightnessPercent(4, p, temporary)
+        applyDisplayBrightnessPercent(bottomDisplayId, p, temporary)
         if (!temporary) {
             prefs.edit().putBoolean(PREF_DUAL_BRIGHTNESS_ACTIVE, true).apply()
             PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_BRIGHTNESS_LEVEL, p)
@@ -1702,6 +1893,22 @@ class SystemSettingsRepository(private val context: Context) {
         _rememberLastTab.value = enabled
     }
 
+    fun setRememberLastQuickTogglePage(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_REMEMBER_LAST_QUICK_TOGGLE_PAGE, enabled).apply()
+        _rememberLastQuickTogglePage.value = enabled
+        if (!enabled) {
+            _lastQuickTogglePage.value = 0
+        }
+    }
+
+    fun setLastQuickTogglePage(page: Int) {
+        _lastQuickTogglePage.value = if (_rememberLastQuickTogglePage.value) {
+            page.coerceAtLeast(0)
+        } else {
+            0
+        }
+    }
+
     fun setShowLedBrightnessSlider(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, enabled).apply()
         _showLedBrightnessSlider.value = enabled
@@ -1722,6 +1929,11 @@ class SystemSettingsRepository(private val context: Context) {
         _accurateGameFps.value = enabled
     }
 
+    fun setCpuFreqScalingMode(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_CPU_FREQ_SCALING_MODE, enabled).apply()
+        _cpuFreqScalingMode.value = enabled
+    }
+
     fun setTempFahrenheit(fahrenheit: Boolean) {
         prefs.edit().putBoolean(PREF_TEMP_FAHRENHEIT, fahrenheit).apply()
         _tempFahrenheit.value = fahrenheit
@@ -1738,6 +1950,7 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setLedBrightnessPercent(percent: Int) {
+        if (!DeviceProfile.current(context).supportsAmbientLight) return
         val p = percent.coerceIn(0, 100)
         _ledBrightnessPercent.value = p
         val linear = (p / 100f).coerceIn(0f, 1f)
@@ -1879,7 +2092,23 @@ class SystemSettingsRepository(private val context: Context) {
         _keepScreenOn.value = next
     }
 
+    private fun readPreventAccidentalHome(): Boolean {
+        if (!DeviceProfile.current(context).supportsPreventAccidentalHome) {
+            return false
+        }
+        return getInt(KEY_PREVENT_ACCIDENTAL_HOME, 1) == 1
+    }
+
+    internal fun resetUnsupportedPreventAccidentalHomeIfNeeded() {
+        if (!DeviceProfile.current(context).supportsPreventAccidentalHome &&
+            getInt(KEY_PREVENT_ACCIDENTAL_HOME, 0) != 0
+        ) {
+            PrivilegedBridge.putSystemSettingInt(context, KEY_PREVENT_ACCIDENTAL_HOME, 0)
+        }
+    }
+
     fun togglePreventAccidentalHome() {
+        if (!DeviceProfile.current(context).supportsPreventAccidentalHome) return
         val next = !_preventAccidentalHome.value
         PrivilegedBridge.putSystemSettingInt(
             context,
@@ -1899,9 +2128,13 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun moveActiveQuickTile(fromActiveIndex: Int, toActiveIndex: Int) {
+        val profile = DeviceProfile.current(context)
         val currentOrder = _quickTileOrder.value
         val disabled = _disabledQuickTiles.value
-        val activeList = currentOrder.filter { it !in disabled }.toMutableList()
+        fun isActiveOnDevice(tile: QuickSettingTileId): Boolean =
+            tile !in disabled && tile.isSupportedOn(profile)
+
+        val activeList = currentOrder.filter(::isActiveOnDevice).toMutableList()
         if (fromActiveIndex !in activeList.indices || toActiveIndex !in activeList.indices) return
         if (fromActiveIndex == toActiveIndex) return
 
@@ -1910,7 +2143,7 @@ class SystemSettingsRepository(private val context: Context) {
 
         val activeIterator = activeList.iterator()
         val rebuilt = currentOrder.map { item ->
-            if (item in disabled) item else activeIterator.next()
+            if (!isActiveOnDevice(item)) item else activeIterator.next()
         }
         setQuickTileOrder(rebuilt)
     }
@@ -1920,9 +2153,10 @@ class SystemSettingsRepository(private val context: Context) {
         if (enabled) {
             current.remove(tile)
         } else {
-            val enabledCount = QuickSettingTileId.entries.size - current.size
+            val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+            val enabledCount = supportedTiles.count { it !in current }
             if (tile !in current && enabledCount <= 1) {
-                // Keep at least 1 toggle enabled
+                // Keep at least 1 supported toggle enabled
                 return
             }
             current.add(tile)
@@ -2028,11 +2262,18 @@ class SystemSettingsRepository(private val context: Context) {
                 .apply()
         }
 
-        return if (parsed.size >= QuickSettingTileId.entries.size) {
-            parsed.drop(1).toSet()
-        } else {
-            parsed
+        val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+        if (supportedTiles.isNotEmpty() && supportedTiles.all { it in parsed }) {
+            parsed.remove(supportedTiles.first())
+            prefs.edit()
+                .putString(
+                    PREF_DISABLED_QUICK_TILES,
+                    parsed.joinToString(",") { it.key }
+                )
+                .putString(PREF_KNOWN_QUICK_TILES, allKnownKeysStr)
+                .apply()
         }
+        return parsed
     }
 
     /**
@@ -2042,10 +2283,8 @@ class SystemSettingsRepository(private val context: Context) {
     fun cleanMemory(): Pair<Int, String> {
         val am = context.getSystemService(ActivityManager::class.java)
         val homePkg = resolveHomePackage()
-        val protectedPackages = setOf(
+        val protectedPackages = DeviceProfile.allProtectedVendorPackages + setOfNotNull(
             context.packageName,
-            "com.odin.dualscreen.assistant",
-            "com.odin.gameassistant",
             "com.android.systemui",
             "com.android.launcher3",
             homePkg
@@ -2111,6 +2350,7 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     private fun readAmbientLightState(): Boolean {
+        if (!DeviceProfile.current(context).supportsAmbientLight) return false
         val raw = try {
             Settings.System.getString(contentResolver, KEY_JOYSTICK_LIGHT_ENABLED) ?: "1,1"
         } catch (_: Throwable) {

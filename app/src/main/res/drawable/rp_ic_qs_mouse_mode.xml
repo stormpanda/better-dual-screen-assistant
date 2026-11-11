@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="44dp"
+    android:height="50dp"
+    android:viewportWidth="44"
+    android:viewportHeight="50">
+    <!-- Hollow 5px-stroke pixel mouse with open stepped corners & button divider -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,0H30V5H14V0ZM9,5H14V10H9V5ZM30,5H35V10H30V5ZM4,10H9V40H4V10ZM35,10H40V40H35V10ZM9,40H14V45H9V40ZM30,40H35V45H30V40ZM14,45H30V50H14V45Z" />
+    <!-- Left/right button split & scroll wheel -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,5H24V22H20V5ZM9,22H35V27H9V22Z" />
+</vector>

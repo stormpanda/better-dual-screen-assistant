@@ -31,6 +31,7 @@ import android.os.StatFs
 import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -58,7 +59,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 @SuppressLint("PrivateApi", "DiscouragedPrivateApi", "BlockedPrivateApi", "MissingPermission")
 class ScreenRecorderEngine(
     private val contextProvider: () -> Context?,
-    private val displayManagerProxy: Any?
+    private val displayManagerProxy: Any?,
+    private val profileProvider: () -> DeviceProfile = { DeviceProfile.detectFromSystem() }
 ) {
 
     data class Config(
@@ -139,8 +141,11 @@ class ScreenRecorderEngine(
         }
 
         internal fun isValidRecordingOutputPath(path: String): Boolean {
-            if (path.isBlank() || path.contains("..") || !path.endsWith(".mp4")) return false
-            return path.startsWith("/sdcard/") || path.startsWith("/storage/emulated/0/")
+            return PrivilegedHelperMain.isValidScopedMediaOutputPath(
+                path = path,
+                subDirs = listOf("Movies", "ScreenRecordings"),
+                requiredExtension = ".mp4"
+            )
         }
 
         internal fun alignEven(value: Int): Int = (value.coerceAtLeast(2) + 1) and 1.inv()
@@ -345,10 +350,11 @@ class ScreenRecorderEngine(
     }
 
     private fun queryDisplaySpec(displayId: Int): DisplayMirrorSpec {
-        val fallbackWidth = if (displayId == 0) 1920 else 1240
-        val fallbackHeight = 1080
+        val profile = profileProvider()
+        val fallbackWidth = if (displayId == 0) 1920 else profile.bottomFallbackWidth
+        val fallbackHeight = if (displayId == 0) 1080 else profile.bottomFallbackHeight
         val fallbackLayerStack = displayId
-        val fallbackDensity = 369
+        val fallbackDensity = if (displayId == 0) 369 else profile.bottomFallbackDensityDpi
         val dm = displayManagerProxy
         if (dm != null) {
             try {
@@ -403,7 +409,7 @@ class ScreenRecorderEngine(
         fun start(): Boolean {
             return try {
                 val topSpec = queryDisplaySpec(0)
-                val bottomSpec = queryDisplaySpec(4)
+                val bottomSpec = queryDisplaySpec(profileProvider().bottomDisplayId)
 
                 val (videoWidth, videoHeight, bitRate) = when (config.targetMode) {
                     TARGET_TOP -> Triple(
@@ -1427,45 +1433,91 @@ class ScreenRecorderEngine(
                 token to { t -> destroyMethod.invoke(null, t) }
             } catch (_: NoSuchMethodException) {
                 val dcClass = loadDisplayControlClass() ?: return null
-                val createMethod = dcClass.getMethod(
-                    "createDisplay",
-                    String::class.java,
-                    Boolean::class.javaPrimitiveType
-                )
-                val destroyMethod = dcClass.getMethod("destroyDisplay", IBinder::class.java)
-                val token = createMethod.invoke(null, name, false) as? IBinder ?: return null
-                token to { t -> destroyMethod.invoke(null, t) }
+                try {
+                    // Android 15 / 16 (SDK 35+): DisplayControl.createVirtualDisplay / destroyVirtualDisplay
+                    val createVdMethod = dcClass.getMethod(
+                        "createVirtualDisplay",
+                        String::class.java,
+                        Boolean::class.javaPrimitiveType
+                    )
+                    val destroyVdMethod = dcClass.getMethod("destroyVirtualDisplay", IBinder::class.java)
+                    val token = createVdMethod.invoke(null, name, false) as? IBinder ?: return null
+                    token to { t -> destroyVdMethod.invoke(null, t) }
+                } catch (_: NoSuchMethodException) {
+                    // Android 14 (SDK 34): DisplayControl.createDisplay / destroyDisplay
+                    val createMethod = dcClass.getMethod(
+                        "createDisplay",
+                        String::class.java,
+                        Boolean::class.javaPrimitiveType
+                    )
+                    val destroyMethod = dcClass.getMethod("destroyDisplay", IBinder::class.java)
+                    val token = createMethod.invoke(null, name, false) as? IBinder ?: return null
+                    token to { t -> destroyMethod.invoke(null, t) }
+                }
             }
 
             val (displayToken, destroyFn) = tokenAndDestroy
-            val openTx = scClass.getMethod("openTransaction")
-            val closeTx = scClass.getMethod("closeTransaction")
-            val setDisplaySurface = scClass.getMethod(
-                "setDisplaySurface",
-                IBinder::class.java,
-                Surface::class.java
-            )
-            val setDisplayProjection = scClass.getMethod(
-                "setDisplayProjection",
-                IBinder::class.java,
-                Int::class.javaPrimitiveType,
-                Rect::class.java,
-                Rect::class.java
-            )
-            val setDisplayLayerStack = scClass.getMethod(
-                "setDisplayLayerStack",
-                IBinder::class.java,
-                Int::class.javaPrimitiveType
-            )
-
             val rect = Rect(0, 0, spec.width, spec.height)
-            openTx.invoke(null)
-            try {
-                setDisplaySurface.invoke(null, displayToken, outputSurface)
-                setDisplayProjection.invoke(null, displayToken, 0, rect, rect)
-                setDisplayLayerStack.invoke(null, displayToken, spec.layerStack)
-            } finally {
-                closeTx.invoke(null)
+            val configuredViaTransaction = try {
+                val txClass = Class.forName("android.view.SurfaceControl\$Transaction")
+                val tx = txClass.getConstructor().newInstance()
+                try {
+                    txClass.getMethod("setDisplaySurface", IBinder::class.java, Surface::class.java)
+                        .invoke(tx, displayToken, outputSurface)
+                    txClass.getMethod(
+                        "setDisplayProjection",
+                        IBinder::class.java,
+                        Int::class.javaPrimitiveType,
+                        Rect::class.java,
+                        Rect::class.java
+                    ).invoke(tx, displayToken, 0, rect, rect)
+                    txClass.getMethod(
+                        "setDisplayLayerStack",
+                        IBinder::class.java,
+                        Int::class.javaPrimitiveType
+                    ).invoke(tx, displayToken, spec.layerStack)
+                    txClass.getMethod("apply").invoke(tx)
+                    true
+                } finally {
+                    if (tx is AutoCloseable) {
+                        try {
+                            tx.close()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+                false
+            }
+
+            if (!configuredViaTransaction) {
+                val openTx = scClass.getMethod("openTransaction")
+                val closeTx = scClass.getMethod("closeTransaction")
+                val setDisplaySurface = scClass.getMethod(
+                    "setDisplaySurface",
+                    IBinder::class.java,
+                    Surface::class.java
+                )
+                val setDisplayProjection = scClass.getMethod(
+                    "setDisplayProjection",
+                    IBinder::class.java,
+                    Int::class.javaPrimitiveType,
+                    Rect::class.java,
+                    Rect::class.java
+                )
+                val setDisplayLayerStack = scClass.getMethod(
+                    "setDisplayLayerStack",
+                    IBinder::class.java,
+                    Int::class.javaPrimitiveType
+                )
+                openTx.invoke(null)
+                try {
+                    setDisplaySurface.invoke(null, displayToken, outputSurface)
+                    setDisplayProjection.invoke(null, displayToken, 0, rect, rect)
+                    setDisplayLayerStack.invoke(null, displayToken, spec.layerStack)
+                } finally {
+                    closeTx.invoke(null)
+                }
             }
 
             object : DisplayMirrorHandle {
@@ -1483,35 +1535,8 @@ class ScreenRecorderEngine(
         }
     }
 
-    private fun loadDisplayControlClass(): Class<*>? {
-        return try {
-            val factoryClass = Class.forName("com.android.internal.os.ClassLoaderFactory")
-            val createLoader = factoryClass.getDeclaredMethod(
-                "createClassLoader",
-                String::class.java,
-                String::class.java,
-                String::class.java,
-                ClassLoader::class.java,
-                Int::class.javaPrimitiveType,
-                Boolean::class.javaPrimitiveType,
-                String::class.java
-            )
-            createLoader.isAccessible = true
-            val loader = createLoader.invoke(
-                null,
-                "/system/framework/services.jar",
-                null,
-                null,
-                ClassLoader.getSystemClassLoader(),
-                0,
-                true,
-                null
-            ) as? ClassLoader ?: return null
-            loader.loadClass("com.android.server.display.DisplayControl")
-        } catch (_: Throwable) {
-            null
-        }
-    }
+    private fun loadDisplayControlClass(): Class<*>? =
+        PrivilegedHelperMain.loadDisplayControlClassWithJni()
 
     private fun createVirtualDisplayMirrorFallback(
         name: String,
@@ -1750,9 +1775,9 @@ class ScreenRecorderEngine(
                 topInputSurface = topSurf
                 bottomInputSurface = botSurf
 
-                val mTop = createDisplayMirror("bdsa_rec_dual_0", topSpec, topSurf) ?: return false
+                val mTop = createDisplayMirror("bdsa_rec_dual_${topSpec.displayId}", topSpec, topSurf) ?: return false
                 topMirror = mTop
-                val mBot = createDisplayMirror("bdsa_rec_dual_4", bottomSpec, botSurf) ?: return false
+                val mBot = createDisplayMirror("bdsa_rec_dual_${bottomSpec.displayId}", bottomSpec, botSurf) ?: return false
                 bottomMirror = mBot
 
                 baseNs = System.nanoTime()

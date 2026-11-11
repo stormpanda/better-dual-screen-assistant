@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- 50x50 5px-grid pixel airplane with stepped swept wings and tailplane -->
+    <!-- Fuselage -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,0H30V45H20V0Z" />
+    <!-- Stepped swept main wings -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,15H20V25H10V15ZM30,15H40V25H30V15ZM5,20H10V30H5V20ZM40,20H45V30H40V20ZM0,25H5V30H0V25ZM45,25H50V30H45V25Z" />
+    <!-- Stepped swept tailplane -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,40H35V45H15V40ZM10,45H20V50H10V45ZM30,45H40V50H30V45Z" />
+</vector>

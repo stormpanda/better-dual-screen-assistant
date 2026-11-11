@@ -22,7 +22,18 @@ enum class QuickSettingCategory(
         title = "Tools",
         description = "Dual-screen multi-tasking utilities and AYN hardware tools (off by default)",
         enabledByDefault = false
-    )
+    );
+
+    fun titleFor(profile: DeviceProfile): String = when (this) {
+        STOCK_AYN -> "Stock ${profile.vendorName} Toggles"
+        else -> title
+    }
+
+    fun descriptionFor(profile: DeviceProfile): String = when (this) {
+        STOCK_AYN -> "Built-in ${profile.vendorName} Dual Screen Assistant quick settings (on by default)"
+        TOOLS -> "Dual-screen multi-tasking utilities and ${profile.vendorName} hardware tools (off by default)"
+        else -> description
+    }
 }
 
 /**
@@ -33,7 +44,7 @@ enum class QuickSettingTileId(
     val key: String,
     val title: String,
     val description: String,
-    @DrawableRes val iconRes: Int,
+    @param:DrawableRes val iconRes: Int,
     val category: QuickSettingCategory,
     val enabledByDefault: Boolean = category.enabledByDefault
 ) {
@@ -211,17 +222,32 @@ enum class QuickSettingTileId(
         category = QuickSettingCategory.TOOLS
     );
 
-    fun descriptionFor(promotedToManager: Boolean): String =
-        if (promotedToManager && this == THEME_MODE) {
+    fun isSupportedOn(profile: DeviceProfile): Boolean = when (this) {
+        AMBIENT_LIGHT -> profile.supportsAmbientLight
+        PREVENT_ACCIDENTAL_HOME -> profile.supportsPreventAccidentalHome
+        else -> true
+    }
+
+    fun descriptionFor(
+        promotedToManager: Boolean,
+        profile: DeviceProfile = DeviceProfile.AYN_THOR
+    ): String = when {
+        promotedToManager && this == THEME_MODE ->
             "Switch manager overlay and system theme palette"
-        } else {
-            description
-        }
+        this == CONTROLLER_STYLE ->
+            "Switch between Xbox, ${profile.standardControllerLabel}, or Disabled gamepad button layout"
+        this == KEY_MAPPER ->
+            "Toggle ${profile.vendorName} screen key mapping (Key Adapter)"
+        else -> description
+    }
 
     companion object {
         val defaultOrder: List<QuickSettingTileId> = entries.toList()
         val defaultDisabled: Set<QuickSettingTileId> =
             entries.filter { !it.enabledByDefault }.toSet()
+
+        fun supportedEntries(profile: DeviceProfile): List<QuickSettingTileId> =
+            entries.filter { it.isSupportedOn(profile) }
 
         fun fromKey(key: String): QuickSettingTileId? =
             entries.firstOrNull { it.key == key }

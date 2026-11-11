@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- Hollow 5px-stroke pixel padlock shackle -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17,0H33V5H17V0ZM12,5H17V20H12V5ZM33,5H38V20H33V5Z" />
+    <!-- Hollow 5px-stroke pixel padlock body with open stepped corners -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,20H40V25H10V20ZM10,45H40V50H10V45ZM5,25H10V45H5V25ZM40,25H45V45H40V25Z" />
+    <!-- Center pixel keyhole -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M22,30H28V40H22V30Z" />
+</vector>

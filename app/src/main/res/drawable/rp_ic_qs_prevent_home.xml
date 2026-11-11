@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- Hollow 5px-stroke stepped pixel roof matching rp_ic_fan_quiet_mode -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,0H30V5H20V0ZM15,5H20V10H15V5ZM30,5H35V10H30V5ZM10,10H15V15H10V10ZM35,10H40V15H35V10ZM5,15H10V20H5V15ZM40,15H45V20H40V15ZM0,20H10V25H0V20ZM40,20H50V25H40V20Z" />
+    <!-- Hollow 5px-stroke house walls, floor & inner doorway arch -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,25H10V45H5V25ZM40,25H45V45H40V25ZM10,45H40V50H10V45ZM22,26H28V31H22V26ZM17,31H22V45H17V31ZM28,31H33V45H28V31Z" />
+</vector>

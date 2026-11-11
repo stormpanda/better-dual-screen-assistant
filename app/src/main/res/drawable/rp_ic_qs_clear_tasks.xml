@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- Back stacked pixel window card -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,0H35V5H7V0ZM2,5H7V30H2V5Z" />
+    <!-- Front hollow pixel window card with open stepped corners -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17,10H40V15H17V10ZM12,15H17V38H12V15ZM17,38H26V43H17V38ZM40,15H45V26H40V15Z" />
+    <!-- Crisp 5x5-stepped pixel X badge at bottom-right -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,30H35V35H30V30ZM43,30H48V35H43V30ZM35,35H43V43H35V35ZM30,43H35V48H30V43ZM43,43H48V48H43V43Z" />
+</vector>

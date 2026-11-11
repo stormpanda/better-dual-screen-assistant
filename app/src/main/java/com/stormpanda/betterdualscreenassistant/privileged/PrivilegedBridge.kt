@@ -7,6 +7,7 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,9 +25,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 @SuppressLint("PrivateApi")
 object PrivilegedBridge {
     private const val TAG = "PrivilegedBridge"
+    internal const val PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021
+    private const val HELPER_SPAWN_COOLDOWN_MS = 1_500L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val isSpawning = AtomicBoolean(false)
     private val clientToken = Binder()
+
+    @Volatile
+    private var lastSpawnAttemptElapsedMs: Long = 0L
 
     @Volatile
     private var helperBinder: IBinder? = null
@@ -51,6 +57,12 @@ object PrivilegedBridge {
 
     @Volatile
     private var bottomScreenShowCoverWindow: Boolean = false
+
+    @Volatile
+    private var panel0BacklightBlanked: Boolean = false
+
+    @Volatile
+    private var panel1BacklightBlanked: Boolean = false
 
     private class PendingOsThemeRequest(
         val apply: Boolean,
@@ -93,12 +105,20 @@ object PrivilegedBridge {
         }
         helperBinder = binder
         _isHelperConnected.value = true
+        installPrivilegedWindowSession()
         registerClientWithHelper(binder)
         if (topScreenBlanked) {
             dispatchTopScreenBlankedToBinder(binder, topScreenBlanked, topScreenShowCoverWindow)
         }
         if (bottomScreenBlanked) {
             dispatchBottomScreenBlankedToBinder(binder, bottomScreenBlanked, bottomScreenShowCoverWindow)
+        }
+        val syncBacklightSysfs = DeviceProfile.current(context).blankViaBacklightSysfs
+        if (panel0BacklightBlanked || syncBacklightSysfs) {
+            dispatchBacklightPowerToBinder(binder, 0, panel0BacklightBlanked)
+        }
+        if (panel1BacklightBlanked || syncBacklightSysfs) {
+            dispatchBacklightPowerToBinder(binder, 1, panel1BacklightBlanked)
         }
         pendingOsThemeRequest?.let { req ->
             scope.launch {
@@ -197,6 +217,10 @@ object PrivilegedBridge {
             syncWatchdogStateToHelper()
             return
         }
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        if (lastSpawnAttemptElapsedMs > 0L && nowElapsed - lastSpawnAttemptElapsedMs in 0L until HELPER_SPAWN_COOLDOWN_MS) {
+            return
+        }
         if (!isSpawning.compareAndSet(false, true)) return
         val appContext = context.applicationContext
         scope.launch {
@@ -208,6 +232,7 @@ object PrivilegedBridge {
                     syncWatchdogStateToHelper()
                     return@launch
                 }
+                lastSpawnAttemptElapsedMs = android.os.SystemClock.elapsedRealtime()
                 val apkPath = PServerClient.shellQuote(appContext.applicationInfo.sourceDir)
                 val cmd = "CLASSPATH=$apkPath /system/bin/app_process /system/bin " +
                     "com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain >/dev/null 2>&1 &"
@@ -437,6 +462,56 @@ object PrivilegedBridge {
         }
     }
 
+    /**
+     * Controls hardware kernel backlight power (`/sys/class/backlight/panel{0,1}-backlight/bl_power`)
+     * on devices that blank panels via sysfs backlight power ([DeviceProfile.blankViaBacklightSysfs]).
+     * `panelIndex`: `0` = Top screen (`panel0-backlight`), `1` = Bottom screen (`panel1-backlight`).
+     * `blanked`: `true` writes `"1"` (backlight off), `false` writes `"0"` (backlight on).
+     */
+    fun setBacklightPower(context: Context, panelIndex: Int, blanked: Boolean) {
+        if (panelIndex != 0 && panelIndex != 1) return
+        if (panelIndex == 0) {
+            panel0BacklightBlanked = blanked
+        } else {
+            panel1BacklightBlanked = blanked
+        }
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            if (dispatchBacklightPowerToBinder(binder, panelIndex, blanked)) {
+                return
+            }
+        }
+        val valStr = if (blanked) "1" else "0"
+        PServerClient.exec(
+            "echo $valStr > /sys/class/backlight/panel$panelIndex-backlight/bl_power",
+            wait = true
+        )
+        ensureStarted(context)
+    }
+
+    private fun dispatchBacklightPowerToBinder(
+        binder: IBinder,
+        panelIndex: Int,
+        blanked: Boolean
+    ): Boolean {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            data.writeInt(panelIndex)
+            data.writeInt(if (blanked) 1 else 0)
+            binder.transact(PrivilegedHelperMain.TRANSACTION_SET_BACKLIGHT_POWER, data, reply, 0)
+            reply.readException()
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper setBacklightPower($panelIndex, $blanked) failed", t)
+            false
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
     fun setSystemProperty(key: String, value: String) {
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
@@ -465,7 +540,7 @@ object PrivilegedBridge {
         try {
             val sysProps = Class.forName("android.os.SystemProperties")
             val get = sysProps.getMethod("get", String::class.java, String::class.java)
-            val res = get.invoke(null, key, defaultValue) as? String
+            val res = get.invoke(null, key, "") as? String
             if (!res.isNullOrEmpty()) return res
         } catch (_: Throwable) {
         }
@@ -588,10 +663,11 @@ object PrivilegedBridge {
             try {
                 data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
                 data.writeString(path)
-                binder.transact(PrivilegedHelperMain.TRANSACTION_READ_FILE, data, reply, 0)
-                reply.readException()
-                val text = reply.readString() ?: ""
-                if (text.isNotEmpty()) return text
+                val transacted = binder.transact(PrivilegedHelperMain.TRANSACTION_READ_FILE, data, reply, 0)
+                if (transacted) {
+                    reply.readException()
+                    return reply.readString() ?: ""
+                }
             } catch (_: Throwable) {
             } finally {
                 data.recycle()
@@ -774,19 +850,20 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+        val bottomId = DeviceProfile.current(context).bottomDisplayId
         val script = """
-            top_task=$(dumpsys activity activities | awk '/Display #0/{d=0} /Display #4/{d=4} /Task\{.*type=standard/{if (match($0, /#[0-9]+/)) {id=substr($0, RSTART+1, RLENGTH-1); if (d==0 && t0=="") t0=id; if (d==4 && t4=="") t4=id}} END{print t0 ":" t4}')
+            top_task=$(dumpsys activity activities | awk '/Display #0/{d=0} /Display #$bottomId/{d=$bottomId} /Task\{.*type=standard/{if (match($0, /#[0-9]+/)) {id=substr($0, RSTART+1, RLENGTH-1); if (d==0 && t0=="") t0=id; if (d==$bottomId && tb=="") tb=id}} END{print t0 ":" tb}')
             t0=${'$'}{top_task%:*}
-            t4=${'$'}{top_task#*:}
-            if [ -n "${'$'}t0" ] && [ -n "${'$'}t4" ]; then
-                am display move-stack "${'$'}t0" 4
-                am display move-stack "${'$'}t4" 0
+            tb=${'$'}{top_task#*:}
+            if [ -n "${'$'}t0" ] && [ -n "${'$'}tb" ]; then
+                am display move-stack "${'$'}t0" $bottomId
+                am display move-stack "${'$'}tb" 0
                 echo "OK"
             elif [ -n "${'$'}t0" ]; then
-                am display move-stack "${'$'}t0" 4
+                am display move-stack "${'$'}t0" $bottomId
                 echo "OK"
-            elif [ -n "${'$'}t4" ]; then
-                am display move-stack "${'$'}t4" 0
+            elif [ -n "${'$'}tb" ]; then
+                am display move-stack "${'$'}tb" 0
                 echo "OK"
             fi
         """.trimIndent()
@@ -822,9 +899,12 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+        val stockPkgsRegex = DeviceProfile.allStockAssistantPackages.joinToString("|") {
+            it.replace(".", """\.""")
+        }
         val script = """
             count=0
-            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|com\.odin\.dualscreen\.assistant|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
+            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|${stockPkgsRegex}|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
                 am stack remove "${'$'}id" >/dev/null 2>&1 && count=${'$'}((count + 1))
             done
             echo "CLEARED:${'$'}count"
@@ -836,54 +916,179 @@ object PrivilegedBridge {
         return match.groupValues[1].toIntOrNull() ?: 0
     }
 
+    internal fun resolvePhysicalDisplayId(context: Context, logicalDisplayId: Int): String? {
+        try {
+            val dm = context.getSystemService(DisplayManager::class.java)
+            val display = dm?.getDisplay(logicalDisplayId)
+            if (display != null) {
+                val uniqueId = try {
+                    display.javaClass.getMethod("getUniqueId").invoke(display) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+                val address = try {
+                    display.javaClass.getMethod("getAddress").invoke(display)
+                } catch (_: Throwable) {
+                    null
+                }
+                PrivilegedHelperMain.extractPhysicalDisplayIdFromAddress(address)?.let { return it }
+            }
+        } catch (_: Throwable) {
+        }
+
+        return try {
+            val smClass = Class.forName("android.os.ServiceManager")
+            val dmBinder = smClass.getMethod("getService", String::class.java)
+                .invoke(null, "display") as? IBinder ?: return null
+            val dmStub = Class.forName("android.hardware.display.IDisplayManager\$Stub")
+            val dmProxy = dmStub.getMethod("asInterface", IBinder::class.java).invoke(null, dmBinder)
+                ?: return null
+            val info = dmProxy.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                .invoke(dmProxy, logicalDisplayId) ?: return null
+            val infoClass = info.javaClass
+            val uniqueId = try {
+                infoClass.getField("uniqueId").get(info) as? String
+            } catch (_: Throwable) {
+                null
+            }
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromUniqueId(uniqueId)?.let { return it }
+
+            val address = try {
+                infoClass.getField("address").get(info)
+            } catch (_: Throwable) {
+                null
+            }
+            PrivilegedHelperMain.extractPhysicalDisplayIdFromAddress(address)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     /**
      * Captures a screenshot of the Top screen (`targetMode == 0`), Bottom screen (`targetMode == 1`),
      * or Both screens (`targetMode == 2`) into `/sdcard/Pictures/Screenshots/` and notifies MediaScanner.
      */
     fun captureScreenshot(context: Context, targetMode: Int): Boolean {
-        val sfOut = PServerClient.exec("dumpsys SurfaceFlinger --display-id", wait = true).getOrDefault("")
-        var topPhysId: String? = null
-        var bottomPhysId: String? = null
-        val regex = Regex("""Display\s+(\d+)\s+\([^)]*port=(\d+)""")
-        for (match in regex.findAll(sfOut)) {
-            val physId = match.groupValues[1]
-            val port = match.groupValues[2]
-            if (port == "131") topPhysId = physId
-            if (port == "132") bottomPhysId = physId
-        }
+        val wantTop = targetMode == 0 || targetMode == 2
+        val wantBottom = targetMode == 1 || targetMode == 2
+        if (!wantTop && !wantBottom) return false
 
         val dir = "/sdcard/Pictures/Screenshots"
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
             .format(java.util.Date())
-        val paths = mutableListOf<String>()
-        val cmds = mutableListOf("mkdir -p $dir")
-
-        if (targetMode == 0 || targetMode == 2) {
-            val topPath = "$dir/Screenshot_${ts}_Top.png"
-            paths.add(topPath)
-            val dArg = if (!topPhysId.isNullOrEmpty()) "-d $topPhysId" else ""
-            cmds.add("/system/bin/screencap -p $dArg $topPath")
+        val topPath = if (wantTop) "$dir/Screenshot_${ts}_Top.png" else ""
+        val bottomPath = if (wantBottom) "$dir/Screenshot_${ts}_Bottom.png" else ""
+        val paths = buildList {
+            if (wantTop) add(topPath)
+            if (wantBottom) add(bottomPath)
         }
-        if (targetMode == 1 || targetMode == 2) {
-            val bottomPath = "$dir/Screenshot_${ts}_Bottom.png"
-            paths.add(bottomPath)
-            val dArg = if (!bottomPhysId.isNullOrEmpty()) "-d $bottomPhysId" else "-d 4"
-            cmds.add("/system/bin/screencap -p $dArg $bottomPath")
+
+        // 1. Primary path: PrivilegedHelperMain (UID 0) with full hidden-API access and multi-tier fallback
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                data.writeInt(targetMode)
+                data.writeString(topPath)
+                data.writeString(bottomPath)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_CAPTURE_SCREENSHOT, data, reply, 0)
+                reply.readException()
+                if (reply.readInt() == 1) {
+                    scanScreenshotFiles(context, paths)
+                    return true
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper TRANSACTION_CAPTURE_SCREENSHOT failed; falling back", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+
+        // 2. Fallback path: resolve physical display IDs (flattening newlines for pservice single-line fgets)
+        val profile = DeviceProfile.current(context)
+        val bottomDisplayId = profile.bottomDisplayId
+        var topPhysId: String? = if (wantTop) resolvePhysicalDisplayId(context, 0) else null
+        var bottomPhysId: String? = if (wantBottom) resolvePhysicalDisplayId(context, bottomDisplayId) else null
+
+        if ((wantTop && topPhysId.isNullOrEmpty()) || (wantBottom && bottomPhysId.isNullOrEmpty())) {
+            val sfOut = PServerClient.exec(
+                "dumpsys SurfaceFlinger --display-id | tr '\\n' ' '",
+                wait = true
+            ).getOrDefault("")
+            val (parsedTop, parsedBottom) = PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(
+                sfOut = sfOut,
+                topPorts = setOf(profile.topSfPort),
+                bottomPorts = setOf(profile.bottomSfPort)
+            )
+            val (allTop, allBottom) = PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(sfOut)
+            if (topPhysId.isNullOrEmpty()) {
+                topPhysId = parsedTop ?: allTop
+            }
+            if (bottomPhysId.isNullOrEmpty()) {
+                bottomPhysId = parsedBottom ?: allBottom
+            }
+        }
+
+        if (wantBottom && bottomPhysId.isNullOrEmpty()) {
+            Log.w(TAG, "Unable to resolve physical display ID for bottom display $bottomDisplayId")
+            return false
+        }
+
+        val cmds = mutableListOf("mkdir -p ${PServerClient.shellQuote(dir)}")
+        if (wantTop) {
+            val dArg = if (!topPhysId.isNullOrEmpty()) "-d $topPhysId" else ""
+            cmds.add("/system/bin/screencap -p $dArg ${PServerClient.shellQuote(topPath)}")
+        }
+        if (wantBottom) {
+            cmds.add("/system/bin/screencap -p -d $bottomPhysId ${PServerClient.shellQuote(bottomPath)}")
         }
 
         val res = PServerClient.exec(cmds.joinToString(" && "), wait = true)
-        if (paths.isNotEmpty()) {
-            try {
-                android.media.MediaScannerConnection.scanFile(
-                    context.applicationContext,
-                    paths.toTypedArray(),
-                    arrayOf("image/png"),
-                    null
-                )
-            } catch (_: Throwable) {
+        var allNonEmpty = res.isSuccess
+        if (File("/sdcard").exists()) {
+            for (p in paths) {
+                val f = File(p)
+                if (!f.exists() || f.length() <= 0L) {
+                    allNonEmpty = false
+                    if (f.exists() && f.length() == 0L) {
+                        try {
+                            f.delete()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            }
+            if (!allNonEmpty && paths.size > 1) {
+                for (p in paths) {
+                    try {
+                        File(p).delete()
+                    } catch (_: Throwable) {
+                    }
+                }
             }
         }
-        return res.isSuccess
+        if (allNonEmpty) {
+            scanScreenshotFiles(context, paths)
+        }
+        return allNonEmpty
+    }
+
+    private fun scanScreenshotFiles(context: Context, paths: List<String>) {
+        if (paths.isEmpty()) return
+        try {
+            android.media.MediaScannerConnection.scanFile(
+                context.applicationContext,
+                paths.toTypedArray(),
+                Array(paths.size) { "image/png" },
+                null
+            )
+        } catch (_: Throwable) {
+        }
     }
 
     fun applyOsThemeOverlay(
@@ -983,9 +1188,9 @@ object PrivilegedBridge {
      * `com.odin.dualscreen.assistant` process around foreground ordered screen broadcasts so
      * `system_server`'s `BroadcastQueue` never stalls or ANR-respawns `TccServices`.
      */
-    fun setStockProcessFrozenForBroadcast(freeze: Boolean) {
+    fun setStockProcessFrozenForBroadcast(freeze: Boolean, context: Context? = null) {
         if (freeze && PServerClient.hasFallbackUnfrozenStockPid()) {
-            PServerClient.setStockProcessFrozenForBroadcastFallback(true)
+            PServerClient.setStockProcessFrozenForBroadcastFallback(true, context)
         }
         if (!replaceStockPreferred) return
         val binder = helperBinder
@@ -1010,7 +1215,7 @@ object PrivilegedBridge {
                 reply.recycle()
             }
         }
-        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze)
+        PServerClient.setStockProcessFrozenForBroadcastFallback(freeze, context)
     }
 
     data class ScreenRecordHelperStatus(
@@ -1156,5 +1361,153 @@ object PrivilegedBridge {
             data.recycle()
             reply.recycle()
         }
+    }
+
+    @Volatile
+    private var windowSessionProxyInstalled: Boolean = false
+
+    /**
+     * Wraps `WindowManagerGlobal.sWindowSession` with a dynamic proxy that routes `addToDisplay*`
+     * Binder calls through [PrivilegedHelperMain] (`UID 0`) when connected, allowing our overlay
+     * windows to use privileged window type `2021` (`TYPE_BOOT_PROGRESS`, matching stock `TccServices.u()`)
+     * so they are never hidden by `PRIVATE_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` (e.g. Files app).
+     *
+     * Returns `true` if the privileged window session proxy is installed and [PrivilegedHelperMain]
+     * is currently connected.
+     */
+    fun installPrivilegedWindowSession(): Boolean {
+        val helperAlive = helperBinder?.isBinderAlive == true
+        if (windowSessionProxyInstalled) {
+            return helperAlive
+        }
+        return try {
+            val wmGlobalClass = Class.forName("android.view.WindowManagerGlobal")
+            val iWindowSessionClass = Class.forName("android.view.IWindowSession")
+            val iWindowSessionStubClass = Class.forName("android.view.IWindowSession\$Stub")
+            val getWindowSessionMethod = wmGlobalClass.getDeclaredMethod("getWindowSession")
+            getWindowSessionMethod.isAccessible = true
+            val sWindowSessionField = wmGlobalClass.getDeclaredField("sWindowSession")
+            sWindowSessionField.isAccessible = true
+
+            synchronized(wmGlobalClass) {
+                val currentSession = getWindowSessionMethod.invoke(null) ?: return false
+                if (java.lang.reflect.Proxy.isProxyClass(currentSession.javaClass)) {
+                    windowSessionProxyInstalled = true
+                    return helperAlive
+                }
+                val asBinderMethod = currentSession.javaClass.getMethod("asBinder")
+                val realSessionBinder = asBinderMethod.invoke(currentSession) as? IBinder ?: return false
+
+                val proxyBinder = object : Binder() {
+                    override fun onTransact(
+                        code: Int,
+                        data: Parcel,
+                        reply: Parcel?,
+                        flags: Int
+                    ): Boolean {
+                        if (windowSessionTransact(realSessionBinder, code, data, reply, flags)) {
+                            return true
+                        }
+                        return realSessionBinder.transact(code, data, reply, flags)
+                    }
+                }
+
+                val asInterfaceMethod =
+                    iWindowSessionStubClass.getMethod("asInterface", IBinder::class.java)
+                val bridgedSession = asInterfaceMethod.invoke(null, proxyBinder) ?: return false
+
+                val sessionProxy = java.lang.reflect.Proxy.newProxyInstance(
+                    iWindowSessionClass.classLoader,
+                    arrayOf(iWindowSessionClass)
+                ) { _, method, args ->
+                    val lp = args?.firstOrNull { it is android.view.WindowManager.LayoutParams }
+                        as? android.view.WindowManager.LayoutParams
+                    val target = if (
+                        method.name.startsWith("addToDisplay") &&
+                        lp?.type == PRIVILEGED_OVERLAY_WINDOW_TYPE &&
+                        helperBinder?.isBinderAlive == true
+                    ) {
+                        bridgedSession
+                    } else {
+                        currentSession
+                    }
+                    try {
+                        if (args == null) {
+                            method.invoke(target)
+                        } else {
+                            method.invoke(target, *args)
+                        }
+                    } catch (e: java.lang.reflect.InvocationTargetException) {
+                        throw (e.targetException ?: e)
+                    }
+                }
+
+                sWindowSessionField.set(null, sessionProxy)
+                windowSessionProxyInstalled = true
+                Log.i(TAG, "Installed privileged IWindowSession proxy in WindowManagerGlobal")
+            }
+            helperAlive
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to install privileged IWindowSession proxy", t)
+            false
+        }
+    }
+
+    private fun windowSessionTransact(
+        realSessionBinder: IBinder,
+        code: Int,
+        data: Parcel,
+        reply: Parcel?,
+        flags: Int
+    ): Boolean {
+        val helper = helperBinder ?: return false
+        if (!helper.isBinderAlive) return false
+        val helperData = Parcel.obtain()
+        val helperReply = Parcel.obtain()
+        return try {
+            helperData.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            helperData.writeStrongBinder(realSessionBinder)
+            helperData.writeInt(code)
+            helperData.writeInt(flags)
+            val dataSize = data.dataSize()
+            if (dataSize > 0) {
+                helperData.appendFrom(data, 0, dataSize)
+            }
+            val transacted = helper.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                helperData,
+                helperReply,
+                0
+            )
+            if (!transacted) return false
+            helperReply.readException()
+            val ok = helperReply.readInt() != 0
+            if (!ok) return false
+            val rem = helperReply.dataAvail()
+            if (rem > 0 && reply != null) {
+                reply.appendFrom(helperReply, helperReply.dataPosition(), rem)
+            }
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "windowSessionTransact(code=$code) via helper failed", t)
+            false
+        } finally {
+            helperData.recycle()
+            helperReply.recycle()
+        }
+    }
+
+    internal fun resetForTesting() {
+        helperBinder = null
+        _isHelperConnected.value = false
+        lastSpawnAttemptElapsedMs = 0L
+        isSpawning.set(false)
+        topScreenBlanked = false
+        topScreenShowCoverWindow = false
+        bottomScreenBlanked = false
+        bottomScreenShowCoverWindow = false
+        panel0BacklightBlanked = false
+        panel1BacklightBlanked = false
+        pendingOsThemeRequest = null
     }
 }

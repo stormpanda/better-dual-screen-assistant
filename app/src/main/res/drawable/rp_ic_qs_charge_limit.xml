@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="42dp"
+    android:height="50dp"
+    android:viewportWidth="42"
+    android:viewportHeight="50">
+    <!-- Hollow 5px-stroke pixel battery with open stepped corners -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,0H28V5H14V0ZM9,5H33V10H9V5ZM9,45H33V50H9V45ZM4,10H9V45H4V10ZM33,10H38V45H33V10Z" />
+    <!-- Top 20% capped bar (dimmed) -->
+    <path
+        android:fillAlpha="0.32"
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,14H29V19H13V14Z" />
+    <!-- 3 active segmented pixel charge bars (80% charge limit) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,22H29V27H13V22ZM13,30H29V35H13V30ZM13,38H29V42H13V38Z" />
+</vector>
