@@ -309,6 +309,9 @@ internal fun AssistantOverlayDialogHost(
         }
 
         ActiveDialog.THEME_MODE -> {
+            LaunchedEffect(Unit) {
+                repository.refreshMegingiardSyncedTheme()
+            }
             val themeMode by repository.themeMode.collectAsState()
             val uiLookMode by repository.uiLookMode.collectAsState()
             val retroidReadabilityBoost by repository.retroidReadabilityBoost.collectAsState()

@@ -462,4 +462,55 @@ class TccThemeAndOverlayFormatTest {
         assertTrue(thorResolved.slider.labelFontSize.value < RetroidReadableLookSpec.slider.labelFontSize.value)
         assertTrue(thorResolved.slider.labelFontSize.value > RetroidLookSpec.slider.labelFontSize.value)
     }
+
+    @Test
+    fun `buildOsDynamicColorOverlayEntries preserves full accent saturation without whitening and computes contrasting onShadeActive`() {
+        val darkAndMediumAccents = listOf(
+            0xFFCC0000.toInt(), // Megingiard Crimson
+            0xFF3F51B5.toInt(), // Deep Indigo (< 0.12 luminance)
+            0xFFFF760A.toInt(), // Retroid Pixel Orange (~0.249 luminance)
+            0xFF26A69A.toInt()  // Teal (~0.304 luminance)
+        )
+        val saturatedKeys = listOf(
+            "android:color/system_shade_active_dark",
+            "android:color/system_shade_active_light",
+            "android:color/system_primary_fixed",
+            "android:color/system_primary_dark",
+            "android:color/system_control_activated_dark",
+            "android:color/system_accent1_100",
+            "android:color/system_accent1_200"
+        )
+
+        for (accentArgb in darkAndMediumAccents) {
+            val palette = resolveTccPalette(
+                option = AppThemeOption.MEGINGIARD_DARK,
+                systemDark = true,
+                customAccentArgb = accentArgb
+            )
+            val (keys, values) = buildOsDynamicColorOverlayEntries(palette)
+            val map = keys.indices.associate { keys[it] to values[it] }
+            for (key in saturatedKeys) {
+                assertEquals(
+                    "Expected un-whitened saturated accent for $key (${Integer.toHexString(accentArgb)})",
+                    accentArgb,
+                    map[key]
+                )
+            }
+            assertEquals(Color.White.toArgb(), map["android:color/system_on_shade_active_dark"])
+        }
+
+        // Bright high-luminance accent still preserves 100% saturation while flipping onShadeActive to dark text
+        val brightCyanArgb = 0xFF00E5FF.toInt()
+        val cyanPalette = resolveTccPalette(
+            option = AppThemeOption.MEGINGIARD_DARK_OLED,
+            systemDark = true,
+            customAccentArgb = brightCyanArgb
+        )
+        val (cyanKeys, cyanValues) = buildOsDynamicColorOverlayEntries(cyanPalette)
+        val cyanMap = cyanKeys.indices.associate { cyanKeys[it] to cyanValues[it] }
+        for (key in saturatedKeys) {
+            assertEquals(brightCyanArgb, cyanMap[key])
+        }
+        assertEquals(Color.Black.toArgb(), cyanMap["android:color/system_on_shade_active_dark"])
+    }
 }

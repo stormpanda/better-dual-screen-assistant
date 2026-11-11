@@ -450,6 +450,7 @@ object PrivilegedHelperMain {
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
         internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
+        internal var commitOsThemeOverlaysOverride: ((Array<String>, IntArray) -> Unit)? = null
         internal var allowedWindowSessionCodesOverride: Set<Int>? = null
 
         private val allowedWindowSessionCodes: Set<Int> by lazy {
@@ -1877,15 +1878,10 @@ object PrivilegedHelperMain {
                 false
             }
             if (resourceNames.isNotEmpty() && resourceNames.size == colorValues.size) {
-                val samePalette = osThemeOverlayActive &&
-                    lastOverlayResourceNames.contentEquals(resourceNames) &&
-                    lastOverlayColorValues.contentEquals(colorValues)
                 lastOverlayResourceNames = resourceNames
                 lastOverlayColorValues = colorValues
                 osThemeOverlayActive = true
-                if (!samePalette || nightChanged) {
-                    commitOsThemeFabricatedOverlays(resourceNames, colorValues)
-                }
+                commitOsThemeFabricatedOverlays(resourceNames, colorValues)
                 if (nightChanged) {
                     mainHandler.postDelayed(reassertOverlayPriorityRunnable, 200L)
                 }
@@ -1913,6 +1909,10 @@ object PrivilegedHelperMain {
             resourceNames: Array<String>,
             colorValues: IntArray
         ) {
+            commitOsThemeOverlaysOverride?.let {
+                it(resourceNames, colorValues)
+                return
+            }
             val om = overlayManagerProxy ?: return
             try {
                 val sysRes = android.content.res.Resources.getSystem()

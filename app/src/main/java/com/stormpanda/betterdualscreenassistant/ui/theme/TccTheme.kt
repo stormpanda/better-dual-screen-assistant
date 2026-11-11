@@ -561,16 +561,8 @@ fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<Stri
     val errorColor = palette.error.toOpaqueColor(bg)
 
     val cardSurface = lerp(panel, elevated, 0.5f)
-    val primaryAccent = if (accent.luminance() < 0.12f) {
-        lerp(accent, Color.White, 0.24f)
-    } else {
-        accent
-    }
-    val activeAccentTile = if (primaryAccent.luminance() < 0.25f) {
-        lerp(primaryAccent, Color.White, 0.22f)
-    } else {
-        primaryAccent
-    }
+    val primaryAccent = accent
+    val activeAccentTile = accent
     val secBase = lerp(textSecondary, primaryAccent, 0.45f)
     val tertBase = lerp(textPrimary, primaryAccent, 0.65f)
 
@@ -821,7 +813,7 @@ fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<Stri
     putColor("system_on_error_dark", onErrorDark)
     putColor("system_error_container_dark", errorContainerDark)
     putColor("system_on_error_container_dark", onErrorContainerDark)
-    putColor("system_control_activated_dark", a1_700)
+    putColor("system_control_activated_dark", activeAccentTile)
     putColor("system_control_normal_dark", textSecondary)
     putColor("system_control_highlight_dark", lerp(pressed, textPrimary, 0.25f))
     putColor("system_text_primary_inverse_dark", bg)

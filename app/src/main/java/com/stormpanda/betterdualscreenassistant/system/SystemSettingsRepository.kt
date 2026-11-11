@@ -503,6 +503,13 @@ class SystemSettingsRepository(private val context: Context) {
                 if (_themeMode.value != saved) {
                     _themeMode.value = saved
                     scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
+                    if (saved == AppThemeOption.SYNC_MEGINGIARD.id) {
+                        refreshMegingiardSyncedThemeAsync(
+                            changedUri = null,
+                            debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS,
+                            forceScheduleOsSync = true
+                        )
+                    }
                 }
             }
             PREF_UI_LOOK_MODE -> {
@@ -624,6 +631,10 @@ class SystemSettingsRepository(private val context: Context) {
                 }
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                     _airplaneModeEnabled.value = readAirplaneModeEnabled()
+                }
+                Intent.ACTION_USER_UNLOCKED -> {
+                    registerMegingiardContentObservers()
+                    refreshMegingiardSyncedTheme()
                 }
             }
         }
@@ -771,6 +782,7 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(Intent.ACTION_USER_UNLOCKED)
         }
         context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         val pkgFilter = IntentFilter().apply {
@@ -1219,13 +1231,13 @@ class SystemSettingsRepository(private val context: Context) {
             else -> 4
         }
         PrivilegedBridge.putSystemSettingInt(context, KEY_TCC_THEME_MODE, stockEquivalent)
+        scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
         if (mode == AppThemeOption.SYNC_MEGINGIARD.id) {
             refreshMegingiardSyncedThemeAsync(
                 changedUri = null,
-                debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS
+                debounceOsSyncMs = OS_THEME_SYNC_DEBOUNCE_MS,
+                forceScheduleOsSync = true
             )
-        } else {
-            scheduleOsThemeSync(OS_THEME_SYNC_DEBOUNCE_MS)
         }
     }
 
@@ -1403,7 +1415,8 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun refreshMegingiardSyncedThemeAsync(
         changedUri: Uri?,
-        debounceOsSyncMs: Long
+        debounceOsSyncMs: Long,
+        forceScheduleOsSync: Boolean = false
     ) {
         themeSyncExecutor.execute {
             val candidates = buildMegingiardCandidateUris(changedUri)
@@ -1431,7 +1444,7 @@ class SystemSettingsRepository(private val context: Context) {
                             _syncedMegingiardAccentArgb.value = accentInt
                             _isMegingiardProviderAvailable.value = true
                             if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
-                                (changed || debounceOsSyncMs == 0L)
+                                (changed || forceScheduleOsSync || debounceOsSyncMs == 0L)
                             ) {
                                 scheduleOsThemeSync(debounceOsSyncMs)
                             }
@@ -1442,8 +1455,10 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
             _isMegingiardProviderAvailable.value = anyProviderInstalled || isAnyMegingiardInstalled()
-            if (debounceOsSyncMs == 0L) {
-                scheduleOsThemeSync(0L)
+            if (debounceOsSyncMs == 0L ||
+                (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id && forceScheduleOsSync)
+            ) {
+                scheduleOsThemeSync(debounceOsSyncMs)
             }
         }
     }
@@ -1526,8 +1541,11 @@ class SystemSettingsRepository(private val context: Context) {
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 dispatchOrDeferOsThemeSync(force = force)
             } else {
-                if (force) {
-                    synchronized(osThemeDeferLock) {
+                synchronized(osThemeDeferLock) {
+                    if (activeSettingsUiTokens.isNotEmpty()) {
+                        pendingDeferredOsThemeSync = true
+                    }
+                    if (force) {
                         pendingDeferredOsThemeForce = true
                     }
                 }
@@ -1543,8 +1561,11 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
         } else {
-            if (force) {
-                synchronized(osThemeDeferLock) {
+            synchronized(osThemeDeferLock) {
+                if (activeSettingsUiTokens.isNotEmpty()) {
+                    pendingDeferredOsThemeSync = true
+                }
+                if (force) {
                     pendingDeferredOsThemeForce = true
                 }
             }

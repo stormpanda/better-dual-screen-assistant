@@ -1055,6 +1055,44 @@ class PrivilegedBinderProviderAndHelperTest {
         reply.recycle()
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_APPLY_OS_THEME re-commits fabricated overlays even when palette matches previous call`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val committedPalettes = mutableListOf<Pair<List<String>, List<Int>>>()
+        helperBinder.commitOsThemeOverlaysOverride = { names, colors ->
+            committedPalettes.add(names.toList() to colors.toList())
+        }
+
+        fun sendApplyOsTheme(names: Array<String>, colors: IntArray) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeStringArray(names)
+                writeIntArray(colors)
+                writeInt(2)
+                writeInt(2)
+                writeString("")
+                writeString("")
+            }
+            val reply = Parcel.obtain()
+            assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0))
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+            ShadowLooper.idleMainLooper(50L, TimeUnit.MILLISECONDS)
+        }
+
+        val sampleNames = arrayOf("android:color/system_shade_active_dark", "android:color/system_accent1_100")
+        val sampleColors = intArrayOf(0xFFCC0000.toInt(), 0xFFCC0000.toInt())
+
+        sendApplyOsTheme(sampleNames, sampleColors)
+        sendApplyOsTheme(sampleNames, sampleColors)
+
+        assertEquals(2, committedPalettes.size)
+        assertEquals(sampleColors.toList(), committedPalettes[0].second)
+        assertEquals(sampleColors.toList(), committedPalettes[1].second)
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

@@ -33,6 +33,9 @@ class SystemSettingsRepositoryTest {
     private var lastCapturedRecFps = 0
     private var lastCapturedRecInternal = false
     private var lastCapturedRecMic = false
+    private val appliedOsThemes = java.util.Collections.synchronizedList(
+        mutableListOf<Triple<List<String>, List<Int>, String>>()
+    )
 
     @Before
     fun setUp() {
@@ -59,6 +62,7 @@ class SystemSettingsRepositoryTest {
         lastCapturedRecFps = 0
         lastCapturedRecInternal = false
         lastCapturedRecMic = false
+        appliedOsThemes.clear()
 
         val helper = mockk<IBinder>(relaxed = true)
         every { helper.isBinderAlive } returns true
@@ -133,6 +137,16 @@ class SystemSettingsRepositoryTest {
                         reply.writeString(simulatedRecOutputPath)
                         reply.writeString(simulatedRecCompletedPath)
                         reply.writeString(simulatedRecStopReason)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        val names = data.createStringArray()?.toList().orEmpty()
+                        val colors = data.createIntArray()?.toList().orEmpty()
+                        data.readInt() // targetNightMode
+                        data.readInt() // savedNightMode
+                        val injectedJson = data.readString() ?: ""
+                        appliedOsThemes.add(Triple(names, colors, injectedJson))
+                        reply.writeNoException()
                     }
                     else -> {
                         reply.writeNoException()
@@ -851,6 +865,127 @@ class SystemSettingsRepositoryTest {
         org.junit.Assert.assertNotNull(pending)
         assertEquals(0.8f, pending!!, 0.01f)
         org.junit.Assert.assertNull(repo.consumePendingBlankedBottomLinear())
+        repo.unregister()
+    }
+
+    class FakeMegingiardThemeProvider : android.content.ContentProvider() {
+        companion object {
+            var syncedMode: String = "DARK_OLED"
+            var syncedAccentArgb: Int = 0xFF26A69A.toInt()
+        }
+
+        override fun onCreate(): Boolean = true
+        override fun query(
+            uri: android.net.Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?
+        ): android.database.Cursor {
+            return android.database.MatrixCursor(arrayOf("theme_mode", "accent_color")).apply {
+                addRow(arrayOf<Any?>(syncedMode, syncedAccentArgb))
+            }
+        }
+        override fun getType(uri: android.net.Uri): String? = null
+        override fun insert(uri: android.net.Uri, values: android.content.ContentValues?): android.net.Uri? = null
+        override fun delete(uri: android.net.Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+        override fun update(
+            uri: android.net.Uri,
+            values: android.content.ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?
+        ): Int = 0
+    }
+
+    @Test
+    fun `setThemeMode SYNC_MEGINGIARD injects OS theme when provider values were already cached and flushes on focus loss`() {
+        val syncedTealArgb = 0xFF26A69A.toInt()
+        FakeMegingiardThemeProvider.syncedMode = "DARK_OLED"
+        FakeMegingiardThemeProvider.syncedAccentArgb = syncedTealArgb
+        val mgAppInfo = android.content.pm.ApplicationInfo().apply {
+            packageName = "com.stormpanda.megingiard"
+        }
+        val providerInfo = android.content.pm.ProviderInfo().apply {
+            name = FakeMegingiardThemeProvider::class.java.name
+            authority = "com.stormpanda.megingiard.provider"
+            packageName = "com.stormpanda.megingiard"
+            applicationInfo = mgAppInfo
+            exported = true
+        }
+        val pkgInfo = android.content.pm.PackageInfo().apply {
+            packageName = "com.stormpanda.megingiard"
+            applicationInfo = mgAppInfo
+            providers = arrayOf(providerInfo)
+        }
+        org.robolectric.Shadows.shadowOf(context.packageManager).installPackage(pkgInfo)
+        val provider = FakeMegingiardThemeProvider().apply { attachInfo(context, providerInfo) }
+        org.robolectric.shadows.ShadowContentResolver.registerProviderInternal(
+            providerInfo.authority,
+            provider
+        )
+
+        fun awaitCondition(timeoutMs: Long = 1500L, predicate: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                org.robolectric.shadows.ShadowLooper.idleMainLooper()
+                if (predicate()) return
+                Thread.sleep(15L)
+            }
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertTrue("Timed out waiting for async condition", predicate())
+        }
+
+        val repo = SystemSettingsRepository(context)
+        repo.setThemeMode(AppThemeOption.MEGINGIARD_DARK.id)
+        repo.setCustomAccentArgb(0xFFCC0000.toInt())
+        repo.setInjectOsTheme(true)
+        repo.refreshAll()
+
+        // Wait until Megingiard provider values are cached while still on MEGINGIARD_DARK
+        awaitCondition {
+            repo.isMegingiardProviderAvailable.value &&
+                repo.syncedMegingiardOption.value == AppThemeOption.MEGINGIARD_DARK_OLED &&
+                repo.syncedMegingiardAccentArgb.value == syncedTealArgb &&
+                appliedOsThemes.isNotEmpty()
+        }
+        appliedOsThemes.clear()
+
+        // 1. Inside MainActivity (focused): switch to SYNC_MEGINGIARD while provider values are already cached.
+        //    OS injection must stay deferred while focused, then flush IMMEDIATELY (< 650ms) when focus is lost.
+        val activityToken = 777
+        repo.setSettingsUiActive(activityToken, active = true)
+        repo.setThemeMode(AppThemeOption.SYNC_MEGINGIARD.id)
+        Thread.sleep(60L)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertTrue("OS theme sync must remain deferred while MainActivity is focused", appliedOsThemes.isEmpty())
+
+        // Simulate pulling down the notification shade immediately (< 650ms debounce window)
+        repo.setSettingsUiActive(activityToken, active = false, flushIfInactive = true)
+        awaitCondition { appliedOsThemes.isNotEmpty() }
+
+        val (names1, colors1, json1) = appliedOsThemes.last()
+        val colorMap1 = names1.indices.associate { names1[it] to colors1[it] }
+        assertTrue("Expected synced Teal hex in injectedJson: $json1", json1.contains("26A69A"))
+        assertEquals(syncedTealArgb, colorMap1["android:color/system_shade_active_dark"])
+
+        // 2. Outside MainActivity (e.g. bottom-screen overlay dialog): switch to STOCK_DARK and back to
+        //    SYNC_MEGINGIARD while cached provider values remain unchanged -> must still inject after debounce!
+        repo.setThemeMode(AppThemeOption.STOCK_DARK.id)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(700L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCondition { appliedOsThemes.last().first.isEmpty() }
+        appliedOsThemes.clear()
+
+        repo.setThemeMode(AppThemeOption.SYNC_MEGINGIARD.id)
+        // Give themeSyncExecutor a moment to complete and schedule the debounced sync, then advance looper
+        Thread.sleep(80L)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(700L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCondition { appliedOsThemes.isNotEmpty() }
+
+        val (names2, colors2, json2) = appliedOsThemes.last()
+        val colorMap2 = names2.indices.associate { names2[it] to colors2[it] }
+        assertTrue(json2.contains("26A69A"))
+        assertEquals(syncedTealArgb, colorMap2["android:color/system_shade_active_dark"])
+
         repo.unregister()
     }
 }

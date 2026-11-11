@@ -303,8 +303,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        SystemSettingsRepository.getInstance(applicationContext)
-            .setSettingsUiActive(System.identityHashCode(this), active = true)
+        val repo = SystemSettingsRepository.getInstance(applicationContext)
+        repo.setSettingsUiActive(System.identityHashCode(this), active = true)
+        repo.refreshMegingiardSyncedTheme()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
