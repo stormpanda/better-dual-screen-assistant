@@ -956,7 +956,7 @@ class GamepadScaffoldTouchNavigationTest {
 
     @Test
     @Config(qualifiers = "w832dp-h468dp-369dpi")
-    fun `MainActivity renders Retroid Pocket Duo strings Quick Toggles count and Open-Source Licenses sub-page`() {
+    fun `MainActivity renders Retroid Pocket Duo strings Quick Toggles count and structured Licenses sub-pages`() {
         com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride =
             com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO
         resetSystemSettingsRepositorySingleton()
@@ -989,16 +989,61 @@ class GamepadScaffoldTouchNavigationTest {
         assertEquals(22, supportedCount)
         assertNotNull(findNodeWithTextOrNull(activity, "9 / 22 Active"))
 
-        // 3. Updates tab exposes "Open-Source Licenses" sub-page displaying bundled notices
+        // 3. Updates tab no longer shows Licenses; General tab places "Licenses & Third-Party Notices" at the very bottom
         tapClickableNodeWithText(activity, "Updates")
         idleCompose(activity, 300)
-        assertNotNull(findNodeWithTextOrNull(activity, "Open-Source Licenses"))
+        assertNull(findNodeWithTextOrNull(activity, "Licenses & Third-Party Notices"))
 
-        tapClickableNodeWithText(activity, "Open-Source Licenses")
+        tapClickableNodeWithText(activity, "General")
+        idleCompose(activity, 300)
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
+        idleCompose(activity, 100)
+        repeat(10) {
+            sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
+            idleCompose(activity, 80)
+        }
+        assertNotNull(findNodeWithTextOrNull(activity, "Licenses & Third-Party Notices"))
+
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 500)
-        assertNotNull(findNodeWithTextOrNull(activity, "Fusion Pixel"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Source-Available v1.0"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Fusion Pixel 12px Monospaced"))
         assertNotNull(findNodeWithTextOrNull(activity, "DOSIyagiBoldface"))
+        assertNotNull(findNodeWithTextOrNull(activity, "MIT (Font Only)"))
         assertNotNull(findNodeWithTextOrNull(activity, "AndroidX & Jetpack Compose"))
+        assertNull(
+            "Overview screen must not dump raw MIT license text inline",
+            findNodeWithTextOrNull(activity, "Permission is hereby granted, free of charge")
+        )
+
+        // 4. Drill into Better Dual Screen Assistant app license -> single continuous document pane
+        tapClickableNodeWithText(activity, "Source-Available v1.0")
+        idleCompose(activity, 500)
+        val appLicenseDocNode = findNodeWithText(activity, "1. Grant of Rights")
+        val fullDocRenderedText = appLicenseDocNode.config.getOrNull(SemanticsProperties.Text)
+            ?.joinToString("\n") { it.text }
+            .orEmpty()
+        assertTrue(
+            "Full app license must be rendered in a single continuous text block instead of split cards",
+            fullDocRenderedText.contains("1. Grant of Rights") &&
+                fullDocRenderedText.contains("7. Project Discontinuation and Open Source Transition")
+        )
+
+        // Scroll via D-pad Down inside the continuous document pane without leaving the sub-page
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
+        idleCompose(activity, 200)
+        assertNotNull(findNodeWithTextOrNull(activity, "Better Dual Screen Assistant Source-Available License v1.0"))
+
+        // 5. Back out to overview and drill into DOSIyagiBoldface -> explicitly scopes MIT to the font file
+        enterTouchMode(activity)
+        activity.onBackPressedDispatcher.onBackPressed()
+        idleCompose(activity, 500)
+        assertNotNull(findNodeWithTextOrNull(activity, "MIT (Font Only)"))
+
+        tapClickableNodeWithText(activity, "DOSIyagiBoldface")
+        idleCompose(activity, 500)
+        assertNotNull(findNodeWithTextOrNull(activity, "Font License Scope — DOSIyagiBoldface Only"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Permission is hereby granted, free of charge"))
     }
 
     private fun resetSystemSettingsRepositorySingleton() {

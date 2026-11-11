@@ -25,10 +25,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,8 +47,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Undo
@@ -55,6 +61,7 @@ import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FormatColorFill
+import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Hub
@@ -71,6 +78,7 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tab
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Update
@@ -93,12 +101,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -108,13 +122,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -501,11 +516,17 @@ private enum class LauncherCategory(
 }
 
 private enum class LauncherSubPage(
-    val parentCategory: LauncherCategory
+    val parentCategory: LauncherCategory,
+    val breadcrumbTitle: String
 ) {
-    CUSTOM_ACCENT(LauncherCategory.APPEARANCE),
-    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES),
-    OPEN_SOURCE_LICENSES(LauncherCategory.UPDATES)
+    CUSTOM_ACCENT(LauncherCategory.APPEARANCE, "Custom Color"),
+    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES, "Enable / Disable"),
+    LICENSES_OVERVIEW(LauncherCategory.GENERAL, "Licenses & Notices"),
+    LICENSE_APP(LauncherCategory.GENERAL, "App License"),
+    LICENSE_FUSION_PIXEL(LauncherCategory.GENERAL, "Fusion Pixel"),
+    LICENSE_DOSIYAGI(LauncherCategory.GENERAL, "DOSIyagiBoldface"),
+    LICENSE_ANDROIDX(LauncherCategory.GENERAL, "AndroidX & Compose"),
+    LICENSE_KOTLIN(LauncherCategory.GENERAL, "Kotlin & Coroutines")
 }
 
 private enum class ThemeSourceOption(
@@ -836,6 +857,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                             "Back to Assistant duty."
                                                         }
                                                     )
+                                                },
+                                                onOpenLicenses = {
+                                                    subPageStack = listOf(LauncherSubPage.LICENSES_OVERVIEW)
                                                 }
                                             )
                                         }
@@ -900,9 +924,6 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                         force = true,
                                                         currentVersion = BuildConfig.VERSION_NAME
                                                     )
-                                                },
-                                                onOpenLicenses = {
-                                                    subPageStack = listOf(LauncherSubPage.OPEN_SOURCE_LICENSES)
                                                 }
                                             )
                                         }
@@ -975,14 +996,35 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                 }
                             }
 
-                            LauncherSubPage.OPEN_SOURCE_LICENSES -> {
+                            LauncherSubPage.LICENSES_OVERVIEW -> {
                                 GamepadDeck(
                                     breadcrumbs = listOf(
-                                        LauncherCategory.UPDATES.title,
-                                        "Open-Source Licenses"
+                                        LauncherCategory.GENERAL.title,
+                                        LauncherSubPage.LICENSES_OVERVIEW.breadcrumbTitle
                                     )
                                 ) {
-                                    OpenSourceLicensesSubPageContent()
+                                    LicensesOverviewSubPageContent(
+                                        onOpenLicenseDetail = { detailSubPage ->
+                                            subPageStack = subPageStack + detailSubPage
+                                        }
+                                    )
+                                }
+                            }
+
+                            LauncherSubPage.LICENSE_APP,
+                            LauncherSubPage.LICENSE_FUSION_PIXEL,
+                            LauncherSubPage.LICENSE_DOSIYAGI,
+                            LauncherSubPage.LICENSE_ANDROIDX,
+                            LauncherSubPage.LICENSE_KOTLIN -> {
+                                GamepadDeck(
+                                    breadcrumbs = listOf(
+                                        LauncherCategory.GENERAL.title,
+                                        LauncherSubPage.LICENSES_OVERVIEW.breadcrumbTitle,
+                                        subPage.breadcrumbTitle
+                                    ),
+                                    scrollable = false
+                                ) {
+                                    LicenseDetailSubPageContent(subPage = subPage)
                                 }
                             }
                         }
@@ -1043,7 +1085,8 @@ private fun GeneralSettingsTabContent(
     onToggleAccurateGameFps: (Boolean) -> Unit,
     onSetCpuFreqScalingMode: (Boolean) -> Unit,
     onSetTempFahrenheit: (Boolean) -> Unit,
-    onTogglePromotedToManager: (Boolean) -> Unit
+    onTogglePromotedToManager: (Boolean) -> Unit,
+    onOpenLicenses: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appDisplayName = stringResource(
@@ -1163,6 +1206,15 @@ private fun GeneralSettingsTabContent(
         checked = promotedToManager,
         icon = Icons.Rounded.WorkspacePremium,
         onCheckedChange = onTogglePromotedToManager
+    )
+
+    GamepadActionCard(
+        title = "Licenses & Third-Party Notices",
+        description = "Source-Available app license and credits for bundled third-party fonts & libraries",
+        icon = Icons.Rounded.Gavel,
+        actionText = "View",
+        itemKey = "licenses_and_notices",
+        onClick = onOpenLicenses
     )
 }
 
@@ -2206,8 +2258,7 @@ private fun UpdatesSettingsTabContent(
     updateCheckError: String?,
     hasTriggeredManualCheck: Boolean,
     promotedToManager: Boolean,
-    onTriggerManualCheck: () -> Unit,
-    onOpenLicenses: () -> Unit = {}
+    onTriggerManualCheck: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -2284,83 +2335,457 @@ private fun UpdatesSettingsTabContent(
             }
         }
     )
-
-    GamepadSectionHeader(text = "LEGAL & OPEN SOURCE")
-
-    // 4. Open-Source Licenses & Font Notices (always visible in Release builds)
-    GamepadActionCard(
-        title = "Open-Source Licenses",
-        description = "View copyright notices and licenses for bundled fonts and open-source libraries",
-        icon = Icons.Rounded.Info,
-        actionText = "View",
-        itemKey = "open_source_licenses",
-        onClick = onOpenLicenses
-    )
 }
 
 @Composable
-private fun OpenSourceLicensesSubPageContent() {
+private fun LicensesOverviewSubPageContent(
+    onOpenLicenseDetail: (LauncherSubPage) -> Unit
+) {
+    GamepadSectionHeader(text = "APPLICATION LICENSE")
+
+    GamepadActionCard(
+        title = "Better Dual Screen Assistant",
+        description = "© 2026 Maik Thomalla / Stormpanda • Proprietary source-available license (free for personal, non-commercial use — not open-source)",
+        icon = Icons.Rounded.Gavel,
+        trailingContent = {
+            GamepadPill(
+                text = "Source-Available v1.0",
+                isAccent = true
+            )
+        },
+        itemKey = "license_entry_app",
+        modifier = Modifier.firstDeckItem(),
+        onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_APP) }
+    )
+
+    GamepadSectionHeader(text = "THIRD-PARTY OPEN-SOURCE FONTS")
+
+    GamepadActionCard(
+        title = "Fusion Pixel 12px Monospaced",
+        description = "© 2022 TakWolf • Bundled pixel UI label font (res/font/tcc_pixel_label.ttf)",
+        icon = Icons.Rounded.TextFields,
+        actionText = "SIL OFL 1.1",
+        itemKey = "license_entry_fusion_pixel",
+        onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_FUSION_PIXEL) }
+    )
+
+    GamepadActionCard(
+        title = "DOSIyagiBoldface",
+        description = "© 2022 Damheo Lee • Bundled pixel readout font (res/font/tcc_pixel_display.ttf)",
+        icon = Icons.Rounded.TextFields,
+        actionText = "MIT (Font Only)",
+        itemKey = "license_entry_dosiyagi",
+        onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_DOSIYAGI) }
+    )
+
+    GamepadSectionHeader(text = "THIRD-PARTY OPEN-SOURCE LIBRARIES")
+
+    GamepadActionCard(
+        title = "AndroidX & Jetpack Compose",
+        description = "© The Android Open Source Project • Android Jetpack & Compose UI runtime (androidx.*)",
+        icon = Icons.Rounded.Layers,
+        actionText = "Apache 2.0",
+        itemKey = "license_entry_androidx",
+        onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_ANDROIDX) }
+    )
+
+    GamepadActionCard(
+        title = "Kotlin Standard Library & Coroutines",
+        description = "© 2010–2025 JetBrains s.r.o. & contributors • Kotlin runtime & coroutines (org.jetbrains.*)",
+        icon = Icons.Rounded.DeveloperBoard,
+        actionText = "Apache 2.0",
+        itemKey = "license_entry_kotlin",
+        onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_KOTLIN) }
+    )
+}
+
+private data class LicenseDetailSpec(
+    val documentTitle: String,
+    val scopeBannerSummary: String,
+    val linkActionLabel: String,
+    val linkUrl: String,
+    val fullBodyText: String
+)
+
+private fun cleanLicenseDocumentText(rawText: String): String =
+    rawText
+        .lineSequence()
+        .map { line ->
+            when {
+                line.startsWith("### ") -> line.removePrefix("### ").trim()
+                line.startsWith("## ") -> line.removePrefix("## ").trim()
+                line.startsWith("# ") -> line.removePrefix("# ").trim()
+                else -> line.trimEnd()
+            }
+        }
+        .joinToString("\n")
+        .trim()
+
+private fun extractThirdPartySection(rawNotices: String, marker: String): String {
+    val afterMarker = rawNotices.substringAfter(marker, missingDelimiterValue = "")
+    if (afterMarker.isEmpty()) return ""
+    return afterMarker.substringBefore("=== SECTION:").trim()
+}
+
+@Composable
+private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
     val context = LocalContext.current
     val appColors = LocalAppColors.current
-    val noticesSections = remember(context) {
-        val raw = runCatching {
-            context.assets.open("THIRD_PARTY_NOTICES.txt").bufferedReader().use { it.readText() }
-        }.getOrDefault("Third-party license notices unavailable.")
-        raw.split("-----------------------------------------------------------")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .let { parts ->
-                buildList {
-                    var i = 0
-                    while (i < parts.size) {
-                        val current = parts[i]
-                        // Merge short section header banners with their following license body
-                        val merged = if (!current.contains('\n') && i + 1 < parts.size) {
-                            i += 2
-                            "$current\n\n${parts[i - 1]}"
-                        } else {
-                            i += 1
-                            current
-                        }
-                        // Chunk long license bodies at paragraph boundaries (~18 lines max per card)
-                        // so every line stays comfortably scrollable via D-pad on 468dp/480dp screens.
-                        val paragraphs = merged.split("\n\n")
-                        val buffer = StringBuilder()
-                        var lineCount = 0
-                        for (para in paragraphs) {
-                            val paraLines = para.count { it == '\n' } + 1
-                            if (buffer.isNotEmpty() && lineCount + paraLines + 1 > 18) {
-                                add(buffer.toString())
-                                buffer.clear()
-                                lineCount = 0
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val detailSpec = remember(context, subPage) {
+        when (subPage) {
+            LauncherSubPage.LICENSE_APP -> {
+                val appLicenseRaw = runCatching {
+                    context.assets.open("APP_LICENSE.txt").bufferedReader().use { it.readText() }
+                }.getOrDefault(
+                    "Better Dual Screen Assistant Source-Available License v1.0\n\n" +
+                        "Copyright (c) 2026 Maik Thomalla / Stormpanda\n\n" +
+                        "Free for personal, non-commercial use. See repository LICENSE for full terms."
+                )
+                LicenseDetailSpec(
+                    documentTitle = "Better Dual Screen Assistant Source-Available License v1.0",
+                    scopeBannerSummary = "Governs Better Dual Screen Assistant source code and APK builds (free for personal, non-commercial use).",
+                    linkActionLabel = "GitHub ↗",
+                    linkUrl = "https://github.com/Stormpanda/better-dual-screen-assistant/blob/main/LICENSE",
+                    fullBodyText = cleanLicenseDocumentText(appLicenseRaw)
+                )
+            }
+
+            LauncherSubPage.LICENSE_FUSION_PIXEL -> {
+                val noticesRaw = runCatching {
+                    context.assets.open("THIRD_PARTY_NOTICES.txt").bufferedReader().use { it.readText() }
+                }.getOrDefault("")
+                val oflText = extractThirdPartySection(noticesRaw, "=== SECTION: SIL_OFL_1_1 ===")
+                    .ifEmpty { "SIL Open Font License, Version 1.1" }
+                LicenseDetailSpec(
+                    documentTitle = "Fusion Pixel 12px Monospaced — SIL Open Font License 1.1",
+                    scopeBannerSummary = "Font License Scope — Fusion Pixel Only: applies solely to bundled font res/font/tcc_pixel_label.ttf by TakWolf.",
+                    linkActionLabel = "GitHub ↗",
+                    linkUrl = "https://github.com/TakWolf/fusion-pixel-font",
+                    fullBodyText = "Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name \"Fusion Pixel\"\n" +
+                        "Source: https://github.com/TakWolf/fusion-pixel-font\n\n" +
+                        cleanLicenseDocumentText(oflText)
+                )
+            }
+
+            LauncherSubPage.LICENSE_DOSIYAGI -> {
+                val noticesRaw = runCatching {
+                    context.assets.open("THIRD_PARTY_NOTICES.txt").bufferedReader().use { it.readText() }
+                }.getOrDefault("")
+                val mitText = extractThirdPartySection(noticesRaw, "=== SECTION: DOSIYAGI_MIT ===")
+                    .ifEmpty { "MIT License — Copyright (c) 2022 Damheo Lee (DOSIyagiBoldface font only)" }
+                LicenseDetailSpec(
+                    documentTitle = "DOSIyagiBoldface — MIT License (Font File Only)",
+                    scopeBannerSummary = "Font License Scope — DOSIyagiBoldface Only: applies solely to res/font/tcc_pixel_display.ttf by Damheo Lee, NOT to Better Dual Screen Assistant.",
+                    linkActionLabel = "GitHub ↗",
+                    linkUrl = "https://github.com/leedheo/DOSIyagi",
+                    fullBodyText = cleanLicenseDocumentText(mitText)
+                )
+            }
+
+            LauncherSubPage.LICENSE_ANDROIDX -> {
+                LicenseDetailSpec(
+                    documentTitle = "AndroidX & Jetpack Compose — Apache License 2.0",
+                    scopeBannerSummary = "Applies solely to unmodified Android Jetpack & Jetpack Compose runtime libraries (androidx.*).",
+                    linkActionLabel = "Apache.org ↗",
+                    linkUrl = "https://www.apache.org/licenses/LICENSE-2.0",
+                    fullBodyText = "AndroidX & Jetpack Compose Runtime Libraries\n" +
+                        "Copyright © The Android Open Source Project\n\n" +
+                        "Included packages:\n" +
+                        "• androidx.core:core-ktx\n" +
+                        "• androidx.activity:activity-compose\n" +
+                        "• androidx.lifecycle:*\n" +
+                        "• androidx.savedstate:savedstate-ktx\n" +
+                        "• androidx.compose.ui:*\n" +
+                        "• androidx.compose.foundation:foundation\n" +
+                        "• androidx.compose.material3:material3\n" +
+                        "• androidx.compose.material:material-icons-extended\n\n" +
+                        "Upstream Source: https://android.googlesource.com/platform/frameworks/support\n" +
+                        "License: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)"
+                )
+            }
+
+            LauncherSubPage.LICENSE_KOTLIN -> {
+                LicenseDetailSpec(
+                    documentTitle = "Kotlin Standard Library & Coroutines — Apache License 2.0",
+                    scopeBannerSummary = "Applies solely to unmodified Kotlin Standard Library & Kotlinx Coroutines runtime libraries (org.jetbrains.*).",
+                    linkActionLabel = "Apache.org ↗",
+                    linkUrl = "https://www.apache.org/licenses/LICENSE-2.0",
+                    fullBodyText = "Kotlin Standard Library & Kotlinx Coroutines\n" +
+                        "Copyright © 2010–2025 JetBrains s.r.o. and Kotlin Programming Language contributors\n\n" +
+                        "Included packages:\n" +
+                        "• org.jetbrains.kotlin:kotlin-stdlib\n" +
+                        "• org.jetbrains.kotlinx:kotlinx-coroutines-android\n\n" +
+                        "Upstream Sources:\n" +
+                        "• https://github.com/JetBrains/kotlin\n" +
+                        "• https://github.com/Kotlin/kotlinx.coroutines\n\n" +
+                        "License: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)"
+                )
+            }
+
+            else -> {
+                LicenseDetailSpec(
+                    documentTitle = "License Notice",
+                    scopeBannerSummary = "",
+                    linkActionLabel = "Open ↗",
+                    linkUrl = "https://github.com/Stormpanda/better-dual-screen-assistant",
+                    fullBodyText = ""
+                )
+            }
+        }
+    }
+
+    val scrollState = rememberScrollState(0)
+    val docFocusRequester = remember(subPage) { FocusRequester() }
+    val interactionSource = remember(subPage) { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val cardRegistry = LocalDeckCardRegistry.current
+    val recordLastFocused = LocalLastFocusedDeckTracker.current
+    val itemKey = remember(subPage) { "license_doc_pane_${subPage.name}" }
+
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+    var heldScrollDir by remember(subPage) { mutableIntStateOf(0) }
+    var activeScrollKeyCode by remember(subPage) { mutableIntStateOf(0) }
+    var pendingActionKeyCode by remember(subPage) { mutableIntStateOf(0) }
+
+    DisposableEffect(itemKey, docFocusRequester) {
+        cardRegistry?.invoke(itemKey, docFocusRequester)
+        onDispose {
+            cardRegistry?.invoke(itemKey, null)
+        }
+    }
+
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            recordLastFocused?.invoke(itemKey, docFocusRequester)
+        } else {
+            heldScrollDir = 0
+            activeScrollKeyCode = 0
+            pendingActionKeyCode = 0
+        }
+    }
+
+    LaunchedEffect(heldScrollDir) {
+        if (heldScrollDir != 0) {
+            kotlinx.coroutines.delay(140L)
+            var lastFrameNanos = 0L
+            val speedPxPerSec = with(density) { 440.dp.toPx() }
+            while (heldScrollDir != 0) {
+                withFrameNanos { now ->
+                    if (lastFrameNanos != 0L) {
+                        val dtSec = ((now - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                        scrollState.dispatchRawDelta(heldScrollDir * speedPxPerSec * dtSec)
+                    }
+                    lastFrameNanos = now
+                }
+            }
+        }
+    }
+
+    // Pinned scope & external-link header bar (never scrolls off screen)
+    val headerShape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(appColors.surface.copy(alpha = 0.65f), headerShape)
+            .border(1.dp, appColors.onSurfaceSecondary.copy(alpha = 0.18f), headerShape)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Info,
+            contentDescription = null,
+            tint = appColors.accent,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = detailSpec.scopeBannerSummary,
+            color = appColors.onSurfaceSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+        Box(
+            modifier = Modifier
+                .focusProperties { canFocus = false }
+                .clickable {
+                    launchUrlOnPrimaryDisplay(context, detailSpec.linkUrl)
+                }
+        ) {
+            GamepadPill(
+                text = if (isFocused) "A • ${detailSpec.linkActionLabel}" else detailSpec.linkActionLabel,
+                isHighlighted = isFocused
+            )
+        }
+    }
+
+    // Single continuous viewport-sized document reader pane (zero split boxes, zero BringIntoView jitter)
+    val docShape = RoundedCornerShape(12.dp)
+    val docBorderColor = if (isFocused) {
+        appColors.accent.copy(alpha = 0.85f)
+    } else {
+        appColors.onSurfaceSecondary.copy(alpha = 0.18f)
+    }
+    val docBorderWidth = if (isFocused) 1.5.dp else 1.dp
+    val scrollbarTrackColor = appColors.onSurfaceSecondary.copy(alpha = 0.12f)
+    val scrollbarThumbColor = if (isFocused) {
+        appColors.accent.copy(alpha = 0.75f)
+    } else {
+        appColors.onSurfaceSecondary.copy(alpha = 0.40f)
+    }
+    val stepPx = with(density) { 56.dp.toPx() }
+
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .onSizeChanged { viewportHeightPx = it.height }
+            .clip(docShape)
+            .background(appColors.surface.copy(alpha = 0.55f), docShape)
+            .border(docBorderWidth, docBorderColor, docShape)
+            .firstDeckItem()
+            .focusRequester(docFocusRequester)
+            .onPreviewKeyEvent { keyEvent ->
+                val keyCode = keyEvent.nativeKeyEvent.keyCode
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            if (activeScrollKeyCode != keyCode) {
+                                activeScrollKeyCode = keyCode
+                                heldScrollDir = -1
+                                coroutineScope.launch {
+                                    scrollState.animateScrollBy(-stepPx, tween(90))
+                                }
                             }
-                            if (buffer.isNotEmpty()) {
-                                buffer.append("\n\n")
-                                lineCount += 1
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            if (activeScrollKeyCode != keyCode) {
+                                activeScrollKeyCode = keyCode
+                                heldScrollDir = 1
+                                coroutineScope.launch {
+                                    scrollState.animateScrollBy(stepPx, tween(90))
+                                }
                             }
-                            buffer.append(para)
-                            lineCount += paraLines
+                            true
                         }
-                        if (buffer.isNotEmpty()) {
-                            add(buffer.toString())
+                        KeyEvent.KEYCODE_BUTTON_L2,
+                        KeyEvent.KEYCODE_PAGE_UP -> {
+                            if (keyEvent.nativeKeyEvent.repeatCount == 0) {
+                                val pageStep = (viewportHeightPx * 0.75f).coerceAtLeast(stepPx * 3f)
+                                coroutineScope.launch {
+                                    scrollState.animateScrollBy(-pageStep, tween(160))
+                                }
+                            }
+                            true
                         }
+                        KeyEvent.KEYCODE_BUTTON_R2,
+                        KeyEvent.KEYCODE_PAGE_DOWN -> {
+                            if (keyEvent.nativeKeyEvent.repeatCount == 0) {
+                                val pageStep = (viewportHeightPx * 0.75f).coerceAtLeast(stepPx * 3f)
+                                coroutineScope.launch {
+                                    scrollState.animateScrollBy(pageStep, tween(160))
+                                }
+                            }
+                            true
+                        }
+                        KeyEvent.KEYCODE_MOVE_HOME -> {
+                            coroutineScope.launch { scrollState.animateScrollTo(0) }
+                            true
+                        }
+                        KeyEvent.KEYCODE_MOVE_END -> {
+                            coroutineScope.launch { scrollState.animateScrollTo(scrollState.maxValue) }
+                            true
+                        }
+                        KeyEvent.KEYCODE_BUTTON_A,
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            if (keyEvent.nativeKeyEvent.repeatCount == 0) {
+                                pendingActionKeyCode = keyCode
+                            }
+                            true
+                        }
+                        else -> false
+                    }
+                } else if (keyEvent.type == KeyEventType.KeyUp) {
+                    when {
+                        keyCode == activeScrollKeyCode && keyCode != 0 -> {
+                            activeScrollKeyCode = 0
+                            heldScrollDir = 0
+                            true
+                        }
+                        keyCode == pendingActionKeyCode && keyCode != 0 -> {
+                            pendingActionKeyCode = 0
+                            PrimaryOverlayInputBridge.notifyKeyInput()
+                            launchUrlOnPrimaryDisplay(context, detailSpec.linkUrl)
+                            true
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
+                }
+            }
+            .focusable(interactionSource = interactionSource)
+            .drawWithContent {
+                drawContent()
+                val maxScroll = scrollState.maxValue
+                if (maxScroll > 0 && size.height > 0f) {
+                    val trackPadV = 8.dp.toPx()
+                    val trackHeight = (size.height - trackPadV * 2f).coerceAtLeast(0f)
+                    if (trackHeight > 16f) {
+                        val totalContent = size.height + maxScroll.toFloat()
+                        val thumbHeight = ((size.height / totalContent) * trackHeight)
+                            .coerceIn(24.dp.toPx().coerceAtMost(trackHeight), trackHeight)
+                        val fraction = (scrollState.value.toFloat() / maxScroll.toFloat()).coerceIn(0f, 1f)
+                        val thumbTop = trackPadV + fraction * (trackHeight - thumbHeight)
+                        val barWidth = 3.5.dp.toPx()
+                        val barX = size.width - barWidth - 5.dp.toPx()
+                        val corner = CornerRadius(barWidth / 2f, barWidth / 2f)
+                        drawRoundRect(
+                            color = scrollbarTrackColor,
+                            topLeft = Offset(barX, trackPadV),
+                            size = Size(barWidth, trackHeight),
+                            cornerRadius = corner
+                        )
+                        drawRoundRect(
+                            color = scrollbarThumbColor,
+                            topLeft = Offset(barX, thumbTop),
+                            size = Size(barWidth, thumbHeight),
+                            cornerRadius = corner
+                        )
                     }
                 }
             }
-    }
-
-    noticesSections.forEachIndexed { index, sectionText ->
-        GamepadFocusCard(
-            onClick = null,
-            itemKey = "license_notice_block_$index",
-            modifier = if (index == 0) Modifier.firstDeckItem() else Modifier
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(start = 16.dp, end = 20.dp, top = 14.dp, bottom = 18.dp)
         ) {
             Text(
-                text = sectionText,
+                text = detailSpec.documentTitle,
                 color = appColors.onSurface,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(appColors.divider)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = detailSpec.fullBodyText,
+                color = appColors.onSurface.copy(alpha = 0.92f),
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 19.sp,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -2463,7 +2888,7 @@ private fun DiagnosticsSettingsTabContent(
     )
 
     GamepadInfoBox(
-        text = "Open-Source Font Credits",
-        description = "Fusion Pixel © 2022 TakWolf (SIL OFL 1.1) • DOSIyagiBoldface © 2022 Damheo Lee (MIT / SIL OFL 1.1)"
+        text = "Third-Party Font Credits",
+        description = "Fusion Pixel © 2022 TakWolf (SIL OFL 1.1 — font only) • DOSIyagiBoldface © 2022 Damheo Lee (MIT License — font only)"
     )
 }

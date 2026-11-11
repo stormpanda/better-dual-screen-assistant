@@ -1,6 +1,8 @@
 # Third-Party Notices
 
-Better Dual Screen Assistant includes unmodified third-party open-source font files and runtime libraries. Their copyright notices and license terms are listed below.
+> **Application License Note:** Better Dual Screen Assistant itself is proprietary, source-available software governed by the [Better Dual Screen Assistant Source-Available License v1.0](LICENSE) — it is **not** licensed under MIT or any OSI open-source license.
+>
+> The open-source copyright notices and license terms below apply **solely** to the unmodified third-party font files and runtime libraries bundled with or linked by the application.
 
 ---
 
@@ -9,7 +11,7 @@ Better Dual Screen Assistant includes unmodified third-party open-source font fi
 - **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, `2025.07.02`)
 - **Source**: https://github.com/TakWolf/fusion-pixel-font
 - **Copyright**: `Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"`
-- **License**: SIL Open Font License, Version 1.1 (reproduced below)
+- **License**: SIL Open Font License, Version 1.1 (applies solely to `tcc_pixel_label.ttf`; reproduced below)
 
 ---
 
@@ -18,7 +20,7 @@ Better Dual Screen Assistant includes unmodified third-party open-source font fi
 - **Upstream Font**: DOSIyagiBoldface (`Version 1.00`)
 - **Source**: https://github.com/leedheo/DOSIyagi
 - **Copyright**: `Copyright (c) 2022 Damheo Lee`
-- **License**: MIT License / SIL Open Font License, Version 1.1 (reproduced below)
+- **License**: MIT License (applies solely to `tcc_pixel_display.ttf`; reproduced below)
 
 ---
 
@@ -40,7 +42,7 @@ Better Dual Screen Assistant includes unmodified third-party open-source font fi
 
 ---
 
-## SIL Open Font License, Version 1.1
+## SIL Open Font License, Version 1.1 (Fusion Pixel Font Only)
 
 ```text
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
@@ -132,7 +134,9 @@ USE OR OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ---
 
-## MIT License (DOSIyagiBoldface)
+## MIT License — Bundled Font `DOSIyagiBoldface` (`tcc_pixel_display.ttf`) Only
+
+> Applies **solely** to the unmodified `DOSIyagiBoldface` font file (`app/src/main/res/font/tcc_pixel_display.ttf`) by Damheo Lee (`leedheo`). Better Dual Screen Assistant itself is governed by [`LICENSE`](LICENSE), not MIT.
 
 ```text
 MIT License

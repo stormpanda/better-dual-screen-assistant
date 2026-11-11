@@ -1,15 +1,24 @@
 Third-Party Notices — Better Dual Screen Assistant
 =======================================================
 
+IMPORTANT — APPLICATION LICENSE SCOPE:
+Better Dual Screen Assistant itself is proprietary, source-available software
+governed by the Better Dual Screen Assistant Source-Available License v1.0
+(see LICENSE / APP_LICENSE.txt). It is NOT licensed under MIT or any OSI
+open-source license.
+
+The open-source licenses reproduced below apply SOLELY to the standalone,
+unmodified third-party font files and runtime libraries listed here:
+
 1. Fusion Pixel 12px Monospaced (zh_hans, 2025.07.02 — res/font/tcc_pixel_label.ttf)
    Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"
    Source: https://github.com/TakWolf/fusion-pixel-font
-   License: SIL Open Font License, Version 1.1
+   License: SIL Open Font License, Version 1.1 (applies solely to res/font/tcc_pixel_label.ttf)
 
 2. DOSIyagiBoldface (Version 1.00 — res/font/tcc_pixel_display.ttf)
    Copyright (c) 2022 Damheo Lee
    Source: https://github.com/leedheo/DOSIyagi
-   License: MIT License / SIL Open Font License, Version 1.1
+   License: MIT License (applies solely to res/font/tcc_pixel_display.ttf)
 
 3. AndroidX & Jetpack Compose Runtime Libraries (androidx.*)
    Copyright (c) The Android Open Source Project
@@ -21,9 +30,9 @@ Third-Party Notices — Better Dual Screen Assistant
    Source: https://github.com/JetBrains/kotlin, https://github.com/Kotlin/kotlinx.coroutines
    License: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
 
------------------------------------------------------------
+=== SECTION: SIL_OFL_1_1 ===
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
+(Applies solely to bundled font Fusion Pixel — res/font/tcc_pixel_label.ttf)
 
 PREAMBLE
 The goals of the Open Font License (OFL) are to stimulate worldwide
@@ -108,9 +117,9 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR IN CONNECTION WITH THE FONT SOFTWARE OR THE
 USE OR OTHER DEALINGS IN THE FONT SOFTWARE.
 
------------------------------------------------------------
-MIT License (DOSIyagiBoldface)
------------------------------------------------------------
+=== SECTION: DOSIYAGI_MIT ===
+MIT License — Bundled Font DOSIyagiBoldface (res/font/tcc_pixel_display.ttf) Only
+(Note: "the Software" below refers solely to the DOSIyagiBoldface font file by Damheo Lee, NOT to Better Dual Screen Assistant.)
 
 Copyright (c) 2022 Damheo Lee
 

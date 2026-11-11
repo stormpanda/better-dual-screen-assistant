@@ -1,9 +1,39 @@
+import java.io.File
 import java.util.Properties
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+abstract class SyncAppLicenseAssetTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licenseFile: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun sync() {
+        val dir = outputDir.get().asFile
+        dir.mkdirs()
+        licenseFile.get().asFile.copyTo(File(dir, "APP_LICENSE.txt"), overwrite = true)
+    }
+}
+
+val syncAppLicenseAsset = tasks.register<SyncAppLicenseAssetTask>("syncAppLicenseAsset") {
+    licenseFile.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    outputDir.set(layout.buildDirectory.dir("generated/appLicenseAssets"))
 }
 
 val localProperties = Properties().also { props ->
@@ -90,6 +120,15 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            syncAppLicenseAsset,
+            SyncAppLicenseAssetTask::outputDir
+        )
     }
 }
 
