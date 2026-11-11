@@ -535,10 +535,7 @@ private enum class ThemeSourceOption(
 ) {
     STOCK("Stock"),
     SYNC_MEGINGIARD("Sync with Megingiard"),
-    CUSTOM_PALETTE("Custom Palette");
-
-    fun displayNameFor(profile: DeviceProfile): String =
-        if (this == STOCK) "Stock ${profile.vendorName}" else displayName
+    CUSTOM_PALETTE("Custom Palette")
 }
 
 private val StockThemeOptions = listOf(
@@ -1929,7 +1926,6 @@ private fun AppearanceSettingsTabContent(
     onToggleInjectSystemTheme: (Boolean) -> Unit
 ) {
     val stockVendorName = profile.vendorName
-    val stockVendorLabel = "Stock $stockVendorName"
     val selectedUiLookPref = TccUiLookPreference.fromId(uiLookMode)
     val isRetroidLookActive = selectedUiLookPref.resolve(profile) == TccUiLook.RETROID
     val uiLookOptions = TccUiLookPreference.entries
@@ -1993,11 +1989,11 @@ private fun AppearanceSettingsTabContent(
     GamepadChoiceCard(
         title = "Theme Source",
         description = if (isMegingiardAvailable) {
-            "Choose between $stockVendorLabel themes, live Megingiard sync, or standalone custom palettes"
+            "Choose between Stock themes, live Megingiard sync, or standalone custom palettes"
         } else {
-            "Choose between $stockVendorLabel themes or standalone custom palettes"
+            "Choose between Stock themes or standalone custom palettes"
         },
-        selectedText = activeSource.displayNameFor(profile),
+        selectedText = activeSource.displayName,
         icon = Icons.Rounded.Palette,
         onPrevious = {
             applyThemeSource(availableSources.cycle(activeSource, BumperDirection.PREV))

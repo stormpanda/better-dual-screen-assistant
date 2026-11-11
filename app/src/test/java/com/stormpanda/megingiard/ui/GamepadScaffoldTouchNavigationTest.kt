@@ -374,31 +374,31 @@ class GamepadScaffoldTouchNavigationTest {
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_R1)
         idleCompose(activity, 250)
         assertNotNull("R1 should switch to Appearance tab", findNodeWithTextOrNull(activity, "Theme Source"))
-        assertNotNull("Initial Theme Source should be Stock AYN", findNodeWithTextOrNull(activity, "Stock AYN"))
+        assertNotNull("Initial Theme Source should be Stock", findNodeWithExactTextOrNull(activity, "Stock"))
 
         // 2. Focus is on "Theme Source" (firstDeckItem). Press A to enter carousel adjustment mode.
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 100)
 
-        // Press D-pad Right to change Theme Source ("Stock AYN" -> "Custom Palette", mutating LocalTccColors)
+        // Press D-pad Right to change Theme Source ("Stock" -> "Custom Palette", mutating LocalTccColors)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 200)
         assertNotNull(
-            "Theme Source should advance from Stock AYN",
+            "Theme Source should advance from Stock",
             findNodeWithTextOrNull(activity, "Custom Palette") ?: findNodeWithTextOrNull(activity, "Sync with Megingiard")
         )
 
-        // Immediately press D-pad Left -> MUST cycle Theme Source back to "Stock AYN" instead of backing out to sidebar!
+        // Immediately press D-pad Left -> MUST cycle Theme Source back to "Stock" instead of backing out to sidebar!
         sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT)
         idleCompose(activity, 200)
         assertNotNull(
-            "D-pad Left after changing carousel value must cycle back to Stock AYN instead of backing out of menu",
-            findNodeWithTextOrNull(activity, "Stock AYN")
+            "D-pad Left after changing carousel value must cycle back to Stock instead of backing out of menu",
+            findNodeWithExactTextOrNull(activity, "Stock")
         )
 
         // Verify we are STILL in adjustment mode inside the deck (NOT in the sidebar): D-pad Down would change category if we backed out to sidebar!
         // First advance to Custom Palette, exit adjustment mode with B, then D-pad Down to "Custom Palette" choice card.
-        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // wraps Stock AYN -> Custom Palette
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // wraps Stock -> Custom Palette
         idleCompose(activity, 200)
         assertNotNull("Wrapping Left on Theme Source should select Custom Palette", findNodeWithTextOrNull(activity, "Custom Palette"))
 
@@ -489,18 +489,18 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 150)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT) // Enter Appearance deck -> focuses Theme Source
         idleCompose(activity, 150)
-        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A) // Must enter adjustment mode WITHOUT cycling Custom Palette -> Stock AYN
+        sendKey(activity, KeyEvent.KEYCODE_BUTTON_A) // Must enter adjustment mode WITHOUT cycling Custom Palette -> Stock
         idleCompose(activity, 150)
         assertNotNull(
             "Button A on carousel after touch mode must enter adjustment mode without prematurely changing value",
             findNodeWithTextOrNull(activity, "Custom Palette")
         )
 
-        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT) // Custom Palette -> Stock AYN
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT) // Custom Palette -> Stock
         idleCompose(activity, 200)
-        assertNotNull(findNodeWithTextOrNull(activity, "Stock AYN"))
+        assertNotNull(findNodeWithExactTextOrNull(activity, "Stock"))
 
-        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // Stock AYN -> Custom Palette (must NOT back out to sidebar!)
+        sendKey(activity, KeyEvent.KEYCODE_DPAD_LEFT) // Stock -> Custom Palette (must NOT back out to sidebar!)
         idleCompose(activity, 200)
         assertNotNull(
             "D-pad Left after changing carousel value post-touch must cycle back to Custom Palette without backing out",
@@ -1152,6 +1152,13 @@ class GamepadScaffoldTouchNavigationTest {
         val rootForTest = findComposeHostView(activity.window.decorView) as RootForTest
         return allSemanticsNodes(rootForTest.semanticsOwner.unmergedRootSemanticsNode).firstOrNull { node ->
             node.config.getOrNull(SemanticsProperties.Text)?.any { it.text.contains(substring) } == true
+        }
+    }
+
+    private fun findNodeWithExactTextOrNull(activity: ComponentActivity, exactText: String): SemanticsNode? {
+        val rootForTest = findComposeHostView(activity.window.decorView) as RootForTest
+        return allSemanticsNodes(rootForTest.semanticsOwner.unmergedRootSemanticsNode).firstOrNull { node ->
+            node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == exactText } == true
         }
     }
 

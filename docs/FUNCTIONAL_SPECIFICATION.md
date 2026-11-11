@@ -332,7 +332,7 @@ Controls theming for both the Companion Settings App and the Bottom-Screen Overl
 
 1. **Theme Source**:
    - Cycles across two modes by default (or three when Megingiard is installed on the device):
-     - **`Stock AYN`**: Authentic stock AYN Thor visual styling (`Follow System (Stock)`, `Dark (Stock)`, `Light (Stock)`).
+     - **`Stock`**: Authentic stock visual styling (`Follow System (Stock)`, `Dark (Stock)`, `Light (Stock)`).
      - **`Sync with Megingiard`** *(Only shown when Megingiard is installed)*: Automatically mirrors the active theme mode and custom accent color from the standalone **Megingiard** app (`com.stormpanda.megingiard` or `.debug`) via its `ContentProvider` (`content://com.stormpanda.megingiard.provider/theme`).
      - **`Custom Palette`**: Lets you independently choose any of the **8 built-in custom palettes**:
        - `Dark` (Customizable accent)
