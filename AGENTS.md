@@ -63,50 +63,50 @@ Because the app is installed as a regular user app without `android:sharedUserId
      - Request `Parcel`: `data.writeStringArray(arrayOf(command, if (wait) "1" else "0"))`
      - Reply `Parcel`: `reply.createByteArray()` (UTF-8 stdout bytes)
    - Used in `PServerClient.ensurePermissionsGranted()` to self-grant `SYSTEM_ALERT_WINDOW`, `WRITE_SETTINGS`, `GET_USAGE_STATS`, `WRITE_SECURE_SETTINGS`, `PACKAGE_USAGE_STATS`, `BLUETOOTH_CONNECT`, and Doze whitelist on startup.
-2. **Hidden API Bypass (`PrivilegedBridge.kt` & `BetterDualScreenApp.kt`)**:
-   - `HiddenApiBypass.addHiddenApiExemptions("")` is called in `BetterDualScreenApp.attachBaseContext()` so the app can reflectively invoke hidden Android 13 APIs in-process (`DisplayManager.setBrightness`, `DisplayManager.setTemporaryBrightness`, `Display.getBrightnessInfo`, `ServiceManager.getService`, `WindowManagerGlobal`) with automatic fallback to `PServerClient.exec()`.
+2. **`PrivilegedHelperMain` (`UID 0`) & Hidden API Exemption (`PrivilegedBridge.kt` & `PrivilegedHelperMain.kt`)**:
+   - `PrivilegedBridge` spawns an in-memory `UID 0` `app_process` daemon (`PrivilegedHelperMain`), which invokes `VMRuntime.setHiddenApiExemptions(arrayOf("L"))` to access hidden Android 13–16 framework APIs (`IDisplayManager`, `SurfaceControl` / `DisplayControl` with `/system/lib64/libandroid_servers.so`, `IOverlayManager`, `IWindowSession`) over authenticated Binder IPC (`UID 0` or app UID only), with automatic fallback to `PServerClient.exec()`.
 3. **Vendor Binder Services (`VendorServices.kt`)**:
-   - **Fan Control**: `ServiceManager.getService("SettingsController")` (`com.ro.settings.ISettingsService`) -> `getProvider("FanProvider")` (`com.ro.settings.IFanControlProvider`).
-   - **Bottom-Screen Recents**: Binds to `android.intent.action.QUICKSTEP_SERVICE` (`com.android.systemui` `IOverviewProxy`, transaction `6` with `(displayId = 4, packageName)`).
-   - **HOME Key Interception**: Binds to `com.ro.mapping.action.MAPPING_SERVICE` (`com.ro.mapping` `IMappingService`) to dismiss the overlay when `InputId.HOME` is pressed.
+   - **Fan Control**: `ServiceManager.getService("SettingsController")` (`com.ro.settings.IExternalControlManager` on AYN Thor / `com.rp.settings.IExternalControlManager` on Retroid Pocket Duo) -> `getProvider("FanProvider")` (`IFanControlProvider`).
+   - **Bottom-Screen Recents**: Binds to `android.intent.action.QUICKSTEP_SERVICE` (`com.android.systemui` `IOverviewProxy` on Android 13 / `ILauncherProxy` on Android 16, transaction `6` with `(profile.bottomDisplayId, packageName)`).
+   - **HOME / BACK Key Interception**: Binds to `com.{ro,rp}.mapping.action.MAPPING_SERVICE` (`IServerApi`) to dismiss the overlay when `HOME` (or `BACK` on Retroid Pocket Duo) is pressed.
 
 ---
 
 ## 5. Stock `DualScreenAssistant` Ephemeral Suppression & Uninstall Recovery
 
-The built-in `com.odin.dualscreen.assistant` (`/system/app/DualScreenAssistant/DualScreenAssistant.apk`) is declared with `android:persistent="true"` and `android:sharedUserId="android.uid.system"`.
+The built-in stock assistant (`profile.stockAssistantPackage`: `com.odin.dualscreen.assistant` on AYN Thor / `com.retroidpocket.dualscreen.assistant` on Retroid Pocket Duo) is declared with `android:persistent="true"` and `android:sharedUserId="android.uid.system"`.
 
-- **Pitfall 1**: `am force-stop com.odin.dualscreen.assistant` is **ignored** by `ActivityManagerService` for persistent system apps.
+- **Pitfall 1**: `am force-stop <pkg>` is **ignored** by `ActivityManagerService` for persistent system apps.
 - **Pitfall 2**: Sending `kill -STOP` (`SIGSTOP`) while its `TccServices` overlay window is attached freezes the stock overlay window on the screen permanently because `WindowManagerService` does not remove windows belonging to stopped processes.
-- **Pitfall 3**: Leaving `com.odin.dualscreen.assistant` or `.services.TccServices` permanently `pm disable`d on disk leaves the stock assistant broken if `BetterDualScreenAssistant` is uninstalled.
+- **Pitfall 3**: Leaving `<pkg>` or `.services.TccServices` permanently `pm disable`d on disk leaves the stock assistant broken if `BetterDualScreenAssistant` is uninstalled.
 - **Required Ephemeral Suppression Sequence (`PServerClient.setStockAssistantEnabled(false)`)**:
-  1. Stop and **transiently** disable `TccServices` (`am stopservice -n com.odin.dualscreen.assistant/.services.TccServices`, `pm disable com.odin.dualscreen.assistant/.services.TccServices`) while ensuring the package itself is enabled (`pm enable com.odin.dualscreen.assistant`).
+  1. Stop and **transiently** disable `TccServices` (`am stopservice -n <pkg>/.services.TccServices`, `pm disable <pkg>/.services.TccServices`) while ensuring the package itself is enabled (`pm enable <pkg>`).
   2. Kill (`kill -9`) the running PID so `WindowManagerService` immediately destroys any open stock overlay window and unbinds `TccServices`.
   3. Sleep ~350ms for `ActivityManagerService` to respawn the persistent process (whose `ThisApplication.onCreate()` only attempts `bindService(TccServices)` once at startup and fails while `TccServices` is transiently disabled), then send `kill -STOP` to the new windowless PID so its `Application` receivers remain frozen in RAM.
-  4. **Immediately re-enable `TccServices` (`pm enable com.odin.dualscreen.assistant/.services.TccServices`)** while the process is frozen so the stock package and service are **never left disabled on disk** in `PackageManager`.
+  4. **Immediately re-enable `TccServices` (`pm enable <pkg>/.services.TccServices`)** while the process is frozen so the stock package and service are **never left disabled on disk** in `PackageManager`.
 - **Persistent Supervisor & Automatic Uninstall Recovery (`PrivilegedHelperMain.kt`)**:
   - `MainActivity` sets `android:excludeFromRecents="true"` and calls `finishAndRemoveTask()` on root Back or `onStop()` (when interactive and not changing configurations), keeping the Settings UI out of Recents and freeing UI memory when closed.
   - `PrivilegedBridge` registers a client `IBinder` token with `PrivilegedHelperMain` (`UID 0`).
   - When our app process dies (`IBinder.DeathRecipient.binderDied()`), `PrivilegedHelperMain` acts as a true `persistent="true"` supervisor: while our package remains installed & enabled and `replaceStockPreferred == true`, it clears `ApplicationInfo.FLAG_STOPPED` (surviving Recents swipe, Recents "Clear All", RAM cleaners, and `force-stop`) and immediately respawns `AssistantForegroundService`, guarded by a rapid-crash circuit breaker (`MAX_RAPID_CRASHES = 8`, `MAX_UNREGISTERED_RESPAWN_ATTEMPTS = 6`).
-  - On uninstall (`!isPackageInstalled`), package disable (`!appInfo.enabled`), opt-out (`replaceStockPreferred == false`), or circuit-breaker trip, `PrivilegedHelperMain` automatically resets `dual_screen_display_mode = 0`, restores any blanked screen's brightness and touch (`sys.temp.disabled.touch = "0,0"`), removes OS theme overlays, kills the frozen stock PID (`kill -9`), starts `com.odin.dualscreen.assistant/.services.TccServices`, and exits.
+  - On uninstall (`!isPackageInstalled`), package disable (`!appInfo.enabled`), opt-out (`replaceStockPreferred == false`), or circuit-breaker trip, `PrivilegedHelperMain` automatically resets `dual_screen_display_mode = 0`, restores any blanked screen's brightness, `bl_power` (on Retroid Pocket Duo), and touch (`sys.temp.disabled.touch = "0,0"`), removes OS theme overlays, kills the frozen stock PID (`kill -9`), starts `<pkg>/.services.TccServices`, and exits.
 - **Health Check (`PServerClient.isStockAssistantEnabled`)**: Checks `/proc/<pid>/stat` for state `) T ` (stopped) in addition to `PackageManager` enabled state.
 
 ---
 
-## 6. Physical AYN / TCC Button State Machine
+## 6. Physical AYN / Dual Screen (`TCC`) Button State Machine
 
-The AYN Thor framework broadcasts `"action.tcc.button.key.event"` when the physical AYN button is pressed, held, and released.
+Both firmwares broadcast `"action.tcc.button.key.event"` when the physical AYN / Dual Screen button is pressed, held, and released.
 
 - **Broadcast Extras** (exact names):
   - `"key_action_down"` (`Boolean`): `true` on initial press and long-press trigger; `false` on release.
   - `"key_isLongPress"` (`Boolean`): `true` when held past the long-press threshold while `key_action_down == true`.
-- **Required 3-State Handling (`AssistantForegroundService.kt`)**:
-  1. **Initial Key Down (`key_action_down == true && !key_isLongPress`)**: Must be a **no-op** (`onTccKeyDown()`). Never toggle the overlay on key-down, or the subsequent key-up will immediately close it.
-  2. **Long Press (`key_action_down == true && key_isLongPress`)**: Set `longPressConsumed = true`, hide the overlay if open, and set `dual_screen_display_mode = 1` to shut off (blank) the bottom screen (`onTccKeyLongPress()`).
+- **Required 3-State Handling (`AssistantForegroundService.handleTccButtonEvent`)**:
+  1. **Initial Key Down (`key_action_down == true && !key_isLongPress`)**: Must be a **no-op**. Never toggle the overlay on key-down, or the subsequent key-up will immediately close it.
+  2. **Long Press (`key_action_down == true && key_isLongPress`)**: Set `longPressConsumed = true`, hide the overlay if open, and if `profile.longPressTogglesBottom && (dual_screen_display_mode == 1 || isBottomScreenBlanked)`, wake the bottom screen (`setDualScreenDisplayMode(0)`); otherwise set `dual_screen_display_mode = 1` to shut off (blank) the bottom screen.
   3. **Key Up (`key_action_down == false`)**:
      - If `longPressConsumed == true`: reset `longPressConsumed = false` and return immediately (do not wake the screen or toggle the overlay).
      - Else if `dual_screen_display_mode == 1` or the bottom screen is blanked: wake the bottom screen (`setDualScreenDisplayMode(0)`).
-     - Else: toggle the assistant overlay with a `200ms` debounce (`onTccKeyShortPressUp()`).
+     - Else: toggle the assistant overlay with a `200ms` debounce.
 - **Single Receiver Rule**: `TccKeyReceiver` (manifest receiver) must delegate directly to `AssistantForegroundService.instance` when the service is running; do not process `"action.tcc.button.key.event"` in both a manifest receiver and a dynamic service receiver simultaneously.
 
 ---
@@ -120,9 +120,9 @@ The AYN Thor framework broadcasts `"action.tcc.button.key.event"` when the physi
   - **Retroid Pocket Duo (`displayId = 2`, `port=147`)**: `1280×960` landscape (`320 dpi`).
 
 ### Overlay Window Rules (`ScreenOverlayManager.kt`)
-- **Display Context & Sizing**: Always obtain the `WindowManager` from `context.createDisplayContext(bottomDisplay)` (`profile.bottomDisplayId`) and pass explicit pixel dimensions (`display.getRealSize()`) with `Gravity.CENTER` and `TYPE_APPLICATION_OVERLAY` (bridged via `PrivilegedBridge.installPrivilegedWindowSession()` on Android 16 secondary displays).
+- **Display Context & Sizing**: Always obtain the `WindowManager` from `context.createDisplayContext(bottomDisplay)` (`profile.bottomDisplayId`) and pass explicit pixel dimensions (`display.getRealSize()`) with `Gravity.CENTER` and `PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021` (`TYPE_BOOT_PROGRESS`, routed strictly for `lp.type == 2021` via `PrivilegedBridge.installPrivilegedWindowSession()`, with automatic fallback to `TYPE_APPLICATION_OVERLAY` `2038` on the standard app window session).
 - **Never Use `FLAG_LAYOUT_NO_LIMITS` on Secondary Display**: Including `FLAG_LAYOUT_NO_LIMITS` causes `WindowManagerService` to lay out the surface at the primary display's width (`1920px`), clipping the right edge of the UI off the bottom screen.
-- **Enter / Exit Animations**: `WindowManagerService` ignores custom app-resource `windowAnimations` (`R.style.tcc_anim`) on `TYPE_APPLICATION_OVERLAY` windows for non-system apps. Always animate `composeView` directly via `ViewPropertyAnimator` (`200ms`, `translationY` between `height * 0.90f` and `0f`, `alpha` between `0f` and `1f`) and only call `removeViewImmediate` in the exit animation's end action.
+- **Enter / Exit Animations**: `WindowManagerService` ignores custom app-resource `windowAnimations` (`R.style.tcc_anim`) on overlay windows for non-system apps. Always animate `composeView` directly via `ViewPropertyAnimator` (`200ms`, `translationY` between `height * 0.90f` and `0f`, `alpha` between `0f` and `1f`) and only call `removeViewImmediate` in the exit animation's end action.
 
 ### How Screen "Off" (Blanking) Works
 Turning off the Top or Bottom screen via `dual_screen_display_mode` (`0` = Dual, `1` = Only Top, `2` = Only Bottom):
@@ -131,5 +131,5 @@ Turning off the Top or Bottom screen via `dual_screen_display_mode` (`0` = Dual,
 3. On **AYN Thor** (`blankViaBacklightSysfs = false`), fades in a full-screen solid black overlay view (`200ms` alpha animation) on the blanked display and sets its display brightness to `-1.0f` (`setBrightness(displayId, -1.0f)`), restoring saved brightness prior to device sleep or unblanking. On **Retroid Pocket Duo** (`blankViaBacklightSysfs = true`), toggles `/sys/class/backlight/panel{0,1}-backlight/bl_power` (`"1"` = blanked, `"0"` = unblanked) via `PrivilegedHelperMain` (`TRANSACTION_SET_BACKLIGHT_POWER`) with automatic reset on daemon exit/uninstall.
 
 ### UI & Layout Parity (`OverlayViewport`, `TccLookSpec.kt`, `AssistantOverlayScreen.kt`, `TccWidgets.kt`)
-- `OverlayViewport` (`TccTheme.kt`) normalizes the bottom display onto a canonical `720dp` vertical coordinate space (`heightPx / 720f` density override) so both `1240×1080` and `1280×960` panels render without vertical clipping.
-- Visual geometry, typography, and iconography are driven by `LocalTccLookSpec` (`TccLookSpec.AynMinimal` vs `TccLookSpec.RetroidPixel` + optional `retroidReadabilityBoost`) with custom canvas widgets in `TccWidgets.kt` rather than standard Material 3 sliders or cards.
+- `OverlayViewport` (`TccTheme.kt`) normalizes the bottom display onto a canonical `720dp` short-edge coordinate space (`min(widthPx, heightPx) / 720f` density override) so both `1240×1080` and `1280×960` panels render without vertical clipping.
+- Visual geometry, typography, and iconography are driven by `LocalTccLookSpec` (`AynLookSpec` vs `RetroidLookSpec` / `RetroidReadableLookSpec` controlled by `retroidReadabilityBoost`) with custom canvas widgets in `TccWidgets.kt` rather than standard Material 3 sliders or cards.

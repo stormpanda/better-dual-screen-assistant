@@ -176,7 +176,6 @@ class OverviewProxyClient(private val context: Context) {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             overviewBinder = null
-            isBound = false
         }
     }
 
@@ -197,10 +196,19 @@ class OverviewProxyClient(private val context: Context) {
     }
 
     fun bind() {
+        if (overviewBinder != null || isBound) return
         try {
             val pkg = resolveQuickstepPackage()
             val intent = Intent("android.intent.action.QUICKSTEP_SERVICE").setPackage(pkg)
-            isBound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            val bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            if (bound) {
+                isBound = true
+            } else {
+                try {
+                    context.unbindService(connection)
+                } catch (_: Throwable) {
+                }
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to bind QUICKSTEP_SERVICE", t)
         }
@@ -253,10 +261,6 @@ class MappingServiceClient(
     private val context: Context,
     private val onHomePressed: () -> Boolean = { false }
 ) {
-    @Volatile
-    var isHomeMapped: Boolean = false
-        private set
-
     companion object {
         private const val TAG = "MappingServiceClient"
         private const val ACTION_MAPPING_SERVICE = "com.ro.mapping.action.MAPPING_SERVICE"
@@ -314,7 +318,6 @@ class MappingServiceClient(
 
         override fun onServiceDisconnected(name: ComponentName?) {
             mappingBinder = null
-            isBound = false
         }
     }
 
@@ -346,7 +349,15 @@ class MappingServiceClient(
             } else {
                 Intent(ACTION_MAPPING_SERVICE).setPackage(resolveFallbackMappingPackage())
             }
-            isBound = context.bindService(bindIntent, connection, Context.BIND_AUTO_CREATE)
+            val bound = context.bindService(bindIntent, connection, Context.BIND_AUTO_CREATE)
+            if (bound) {
+                isBound = true
+            } else {
+                try {
+                    context.unbindService(connection)
+                } catch (_: Throwable) {
+                }
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to bind MAPPING_SERVICE", t)
         }

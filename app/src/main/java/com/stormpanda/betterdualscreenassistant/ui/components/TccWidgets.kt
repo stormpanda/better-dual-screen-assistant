@@ -42,10 +42,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -396,6 +399,7 @@ fun HorizontalSlidingBar(
     var isFocused by remember { mutableStateOf(false) }
     var dragProgress by remember(progress) { mutableFloatStateOf(progress.toFloat()) }
     var isDragging by remember { mutableStateOf(false) }
+    val currentOnProgressChange by rememberUpdatedState(onProgressChange)
 
     val displayProgress = if (isDragging) dragProgress.roundToInt() else progress
     val effectiveFillDimmed = isFillDimmed && !isDragging
@@ -432,12 +436,12 @@ fun HorizontalSlidingBar(
                     when (event.nativeKeyEvent.keyCode) {
                         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BUTTON_L1 -> {
                             val next = (displayProgress - 10).coerceIn(0, 100)
-                            onProgressChange(next, false)
+                            currentOnProgressChange(next, false)
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_R1 -> {
                             val next = (displayProgress + 10).coerceIn(0, 100)
-                            onProgressChange(next, false)
+                            currentOnProgressChange(next, false)
                             true
                         }
                         else -> false
@@ -487,33 +491,36 @@ fun HorizontalSlidingBar(
                     .background(trackBackground)
                     .pointerInput(Unit) {
                         detectTapGestures { offset ->
+                            if (size.width <= 0) return@detectTapGestures
                             val ratio = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
                             val pct = (ratio * 100f).roundToInt()
                             dragProgress = pct.toFloat()
-                            onProgressChange(pct, false)
+                            currentOnProgressChange(pct, false)
                         }
                     }
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
                             onDragStart = { offset ->
+                                if (size.width <= 0) return@detectHorizontalDragGestures
                                 isDragging = true
                                 val ratio = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
                                 dragProgress = ratio * 100f
-                                onProgressChange(dragProgress.roundToInt(), true)
+                                currentOnProgressChange(dragProgress.roundToInt(), true)
                             },
                             onHorizontalDrag = { change, _ ->
+                                if (size.width <= 0) return@detectHorizontalDragGestures
                                 change.consume()
                                 val ratio = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
                                 dragProgress = ratio * 100f
-                                onProgressChange(dragProgress.roundToInt(), true)
+                                currentOnProgressChange(dragProgress.roundToInt(), true)
                             },
                             onDragEnd = {
                                 isDragging = false
-                                onProgressChange(dragProgress.roundToInt(), false)
+                                currentOnProgressChange(dragProgress.roundToInt(), false)
                             },
                             onDragCancel = {
                                 isDragging = false
-                                onProgressChange(dragProgress.roundToInt(), false)
+                                currentOnProgressChange(dragProgress.roundToInt(), false)
                             }
                         )
                     }
@@ -710,12 +717,25 @@ fun HardwareRingGauge(
     val labelStyle = tccTextStyle()
     val displayStyle = tccDisplayTextStyle()
     val clampedTarget = value.coerceIn(minValue, maxValue)
+    val targetFraction = if (!bidirectional) {
+        val denom = (maxValue - minValue).coerceAtLeast(0.001f)
+        ((clampedTarget - minValue) / denom).coerceIn(0f, 1f)
+    } else {
+        val median = 0f
+        if (clampedTarget > median) {
+            ((clampedTarget - median) / (maxValue - median).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+        } else if (clampedTarget < median) {
+            -((median - clampedTarget) / (median - minValue).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    }
     val animatedRingProgress = remember { Animatable(0f) }
 
-    LaunchedEffect(clampedTarget) {
-        if (animatedRingProgress.value != clampedTarget) {
+    LaunchedEffect(targetFraction) {
+        if (animatedRingProgress.value != targetFraction) {
             animatedRingProgress.animateTo(
-                targetValue = clampedTarget,
+                targetValue = targetFraction,
                 animationSpec = tween(
                     durationMillis = 300,
                     easing = RingDecelerateEasing
@@ -755,20 +775,8 @@ fun HardwareRingGauge(
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
 
-                val ringProgress = animatedRingProgress.value.coerceIn(minValue, maxValue)
-                val sweepAngle = if (!bidirectional) {
-                    val denom = (maxValue - minValue).coerceAtLeast(0.001f)
-                    ((ringProgress - minValue) / denom).coerceIn(0f, 1f) * 360f
-                } else {
-                    val median = 0f
-                    if (ringProgress > median) {
-                        ((ringProgress - median) / (maxValue - median).coerceAtLeast(0.001f)).coerceIn(0f, 1f) * 360f
-                    } else if (ringProgress < median) {
-                        -((median - ringProgress) / (median - minValue).coerceAtLeast(0.001f)).coerceIn(0f, 1f) * 360f
-                    } else {
-                        0f
-                    }
-                }
+                val minFraction = if (bidirectional) -1f else 0f
+                val sweepAngle = animatedRingProgress.value.coerceIn(minFraction, 1f) * 360f
 
                 if (sweepAngle != 0f) {
                     drawArc(
@@ -788,7 +796,7 @@ fun HardwareRingGauge(
                     )
                 }
 
-                val dotColor = if (colors.isMegingiardStyle) colors.primary else Color.White
+                val dotColor = if (colors.isDark && !colors.isMegingiardStyle) Color.White else colors.primary
                 drawCircle(
                     color = dotColor,
                     radius = (strokeWidth * 0.85f) * 0.5f,
@@ -872,7 +880,14 @@ fun TccRadioCheckIndicator(
         Box(
             modifier = modifier
                 .clip(boxShape)
-                .background(if (selected) colors.accent else uncheckedBg),
+                .background(if (selected) colors.accent else uncheckedBg)
+                .then(
+                    if (!selected && !colors.isDark) {
+                        Modifier.border(1.dp, colors.tertiary, boxShape)
+                    } else {
+                        Modifier
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             if (selected) {
@@ -950,6 +965,14 @@ fun TccOptionDialog(
     val dialogSpec = lookSpec.dialog
     val viewport = LocalOverlayViewport.current
     val labelStyle = tccTextStyle()
+    val optionFocusRequesters = remember(options.size) {
+        List(options.size) { FocusRequester() }
+    }
+
+    LaunchedEffect(options.size) {
+        val initialIdx = options.indexOfFirst { it.id == selectedId }.takeIf { it >= 0 } ?: 0
+        runCatching { optionFocusRequesters.getOrNull(initialIdx)?.requestFocus() }
+    }
 
     val preferredWidth = lerpDp(
         start = dialogSpec.narrowPreferredWidth,
@@ -1009,7 +1032,8 @@ fun TccOptionDialog(
                         text = title,
                         color = colors.primary,
                         fontSize = dialogSpec.titleFontSize,
-                        fontWeight = FontWeight.Bold
+                        style = labelStyle,
+                        fontWeight = FontWeight.Normal
                     )
                 }
                 Box(
@@ -1033,6 +1057,7 @@ fun TccOptionDialog(
                     text = title,
                     color = colors.primary,
                     fontSize = dialogSpec.titleFontSize,
+                    style = labelStyle,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
                 )
@@ -1051,10 +1076,24 @@ fun TccOptionDialog(
             ) {
                 options.forEachIndexed { index, option ->
                     val isSelected = option.id == selectedId
+                    var isRowFocused by remember { mutableStateOf(false) }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(dialogSpec.rowHeight)
+                            .background(if (isRowFocused) colors.panelBackgroundSelected else Color.Transparent)
+                            .focusRequester(optionFocusRequesters[index])
+                            .onFocusChanged { isRowFocused = it.isFocused }
+                            .onKeyEvent { event ->
+                                if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                                ) {
+                                    onSelectOption(option.id)
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
                             .clickable { onSelectOption(option.id) }
                             .padding(horizontal = rowHorizontalPad),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1092,7 +1131,7 @@ fun TccOptionDialog(
                                 Image(
                                     painter = painterResource(id = resolvedIcon),
                                     contentDescription = option.label,
-                                    colorFilter = if (option.preserveIconColors && !isRetroid) {
+                                    colorFilter = if (option.preserveIconColors && !isRetroid && colors.isDark) {
                                         null
                                     } else {
                                         ColorFilter.tint(colors.primary)
@@ -1157,22 +1196,34 @@ fun TccOptionDialog(
                     accentPresets.forEach { preset ->
                         val isSelectedSwatch = selectedAccentArgb != null &&
                             Color(selectedAccentArgb) == preset
+                        var isSwatchFocused by remember { mutableStateOf(false) }
                         Box(
                             modifier = Modifier
                                 .size(accentSwatchSize)
                                 .clip(dialogSpec.swatchShape)
                                 .background(preset)
                                 .then(
-                                    if (isSelectedSwatch) {
+                                    if (isSelectedSwatch || isSwatchFocused) {
                                         Modifier.border(
                                             accentBorderW,
-                                            colors.primary,
+                                            if (isSwatchFocused) colors.accent else colors.primary,
                                             dialogSpec.swatchShape
                                         )
                                     } else {
                                         Modifier
                                     }
                                 )
+                                .onFocusChanged { isSwatchFocused = it.isFocused }
+                                .onKeyEvent { event ->
+                                    if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                                    ) {
+                                        onSelectAccentColor(preset)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
                                 .clickable { onSelectAccentColor(preset) }
                         )
                     }
@@ -1252,11 +1303,24 @@ fun TccDialogToggleRow(
     val isRetroid = lookSpec.isRetroid
     val dialogSpec = lookSpec.dialog
     val labelStyle = tccTextStyle()
+    var isFocused by remember { mutableStateOf(false) }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(dialogSpec.toggleRowHeight)
+            .background(if (isFocused) colors.panelBackgroundSelected else Color.Transparent)
+            .onFocusChanged { isFocused = it.isFocused }
+            .onKeyEvent { event ->
+                if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                ) {
+                    onCheckedChange(!checked)
+                    true
+                } else {
+                    false
+                }
+            }
             .clickable { onCheckedChange(!checked) }
             .padding(horizontal = dialogSpec.toggleRowHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -1324,14 +1388,28 @@ fun TccDialogCheckboxRow(
     val labelStyle = tccTextStyle()
     val contentAlpha = if (enabled) 1f else 0.42f
     val indicatorSize = if (isRetroid) 26.dp else dialogSpec.checkIndicatorSize
+    var isFocused by remember { mutableStateOf(false) }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(dialogSpec.toggleRowHeight)
+            .background(if (enabled && isFocused) colors.panelBackgroundSelected else Color.Transparent)
             .then(
                 if (enabled) {
-                    Modifier.clickable { onCheckedChange(!checked) }
+                    Modifier
+                        .onFocusChanged { isFocused = it.isFocused }
+                        .onKeyEvent { event ->
+                            if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                            ) {
+                                onCheckedChange(!checked)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .clickable { onCheckedChange(!checked) }
                 } else {
                     Modifier
                 }
@@ -1400,7 +1478,12 @@ fun TccDialogSegmentedRow(
         ) {
             segments.forEach { (id, segLabel) ->
                 val isSelected = selectedId == id
-                val pillBg = if (isSelected) colors.accent else Color.Transparent
+                var isSegFocused by remember { mutableStateOf(false) }
+                val pillBg = when {
+                    isSelected -> colors.accent
+                    isSegFocused -> colors.panelBackgroundSelected
+                    else -> Color.Transparent
+                }
                 val pillFg = if (isSelected) {
                     when {
                         isRetroid -> colors.retroidContentOnAccent()
@@ -1414,6 +1497,24 @@ fun TccDialogSegmentedRow(
                     modifier = Modifier
                         .clip(dialogSpec.segmentedInnerShape)
                         .background(pillBg)
+                        .then(
+                            if (isSegFocused) {
+                                Modifier.border(1.dp, colors.accent, dialogSpec.segmentedInnerShape)
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .onFocusChanged { isSegFocused = it.isFocused }
+                        .onKeyEvent { event ->
+                            if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                            ) {
+                                onSelectId(id)
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .clickable { onSelectId(id) }
                         .padding(horizontal = pillHorizPad, vertical = pillVertPad),
                     contentAlignment = Alignment.Center

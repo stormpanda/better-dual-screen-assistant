@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -201,7 +202,11 @@ fun AssistantOverlayScreen(
                     Modifier.fillMaxSize()
                 }
 
-                Column(modifier = contentWidthModifier) {
+                Column(
+                    modifier = contentWidthModifier.focusProperties {
+                        canFocus = activeDialog == ActiveDialog.NONE
+                    }
+                ) {
                     StatusBarRow(
                         onTimeClick = onCleanMemoryRequest,
                         isRecording = screenRecordingState.isRecording,
@@ -758,6 +763,8 @@ private fun SystemSettingsTab(
     val refreshRate by repository.refreshRate.collectAsState()
     val tempFahrenheit by repository.tempFahrenheit.collectAsState()
     val rememberLastQuickTogglePage by repository.rememberLastQuickTogglePage.collectAsState()
+    val lastQuickTogglePage by repository.lastQuickTogglePage.collectAsState()
+    val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
     val settingsSpec = lookSpec.settingsTab
@@ -779,7 +786,7 @@ private fun SystemSettingsTab(
     val pages = remember(tiles) { tiles.chunked(8) }
     val pageCount = pages.size.coerceAtLeast(1)
     val initialPage = if (rememberLastQuickTogglePage) {
-        repository.lastQuickTogglePage.value.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+        lastQuickTogglePage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     } else {
         0
     }
@@ -790,7 +797,11 @@ private fun SystemSettingsTab(
 
     LaunchedEffect(pagerState.currentPage, rememberLastQuickTogglePage) {
         if (rememberLastQuickTogglePage) {
-            repository.setLastQuickTogglePage(pagerState.currentPage)
+            val isTemporarilyClampedBySingleScreen =
+                dualScreenMode != 0 && lastQuickTogglePage >= pageCount
+            if (!isTemporarilyClampedBySingleScreen) {
+                repository.setLastQuickTogglePage(pagerState.currentPage)
+            }
         } else {
             repository.setLastQuickTogglePage(0)
         }
@@ -799,6 +810,13 @@ private fun SystemSettingsTab(
     LaunchedEffect(pageCount) {
         if (pagerState.currentPage >= pageCount) {
             pagerState.scrollToPage((pageCount - 1).coerceAtLeast(0))
+        } else if (
+            rememberLastQuickTogglePage &&
+            dualScreenMode == 0 &&
+            lastQuickTogglePage in 0 until pageCount &&
+            pagerState.currentPage != lastQuickTogglePage
+        ) {
+            pagerState.scrollToPage(lastQuickTogglePage)
         }
     }
 
@@ -1160,7 +1178,13 @@ private fun FrameRatePanelCard(
                     false
                 }
             }
-            .focusable(),
+            .focusable()
+            .focusProperties { canFocus = false }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onToggleRefreshRate
+            ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BoxWithConstraints(
@@ -1204,11 +1228,6 @@ private fun FrameRatePanelCard(
                                 .background(if (colors.isDark) Color(0xFF272727) else Color(0xFFD5D5D5))
                                 .background(pillGradient)
                         }
-                    )
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onToggleRefreshRate
                     )
                     .padding(
                         horizontal = settingsSpec.fpsBadgeHorizontalPadding,
@@ -1271,14 +1290,24 @@ private fun FrameRatePanelCard(
             val unitStr = "FPS"
             val boost = lookSpec.retroidReadabilityBoost
 
-            numberPaint.textSize = h * (if (isRetroid) (if (boost) 0.94f else 0.76f) else 0.75f)
+            val rawNumberSize = h * (if (isRetroid) (if (boost) 0.94f else 0.76f) else 0.75f)
+            val rawUnitSize = h * (if (isRetroid) (if (boost) 0.27f else 0.18f) else 0.20f)
+            numberPaint.textSize = rawNumberSize
+            unitPaint.textSize = rawUnitSize
+            val rawTotalWidth = numberPaint.measureText(numberStr) + padPx * 2f + unitPaint.measureText(unitStr)
+            val maxAvailableWidth = (size.width - padPx * 2f).coerceAtLeast(1f)
+            if (rawTotalWidth > maxAvailableWidth) {
+                val fitScale = (maxAvailableWidth / rawTotalWidth).coerceIn(0.5f, 1f)
+                numberPaint.textSize = rawNumberSize * fitScale
+                unitPaint.textSize = rawUnitSize * fitScale
+            }
+
             numberPaint.color = primaryArgb
             val fm = numberPaint.fontMetrics
             val baselineY = (h * 0.5f) + ((abs(fm.ascent) - fm.descent) * 0.5f) +
                 (if (!isRetroid) padPx else 0f)
             val numberWidth = numberPaint.measureText(numberStr)
 
-            unitPaint.textSize = h * (if (isRetroid) (if (boost) 0.27f else 0.18f) else 0.20f)
             unitPaint.color = primaryArgb
             val unitWidth = unitPaint.measureText(unitStr)
             val totalWidth = numberWidth + padPx * 2f + unitWidth

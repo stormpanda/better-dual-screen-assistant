@@ -65,7 +65,7 @@
 | :--- | :--- | :--- |
 | **System RAM** | `ActivityManager.getMemoryInfo()` | `<shipped RAM capacities, e.g. 8 GB / 12 GB / 16 GB LPDDR5x>` |
 | **Battery Current** | `/sys/class/power_supply/battery/current_now` | `µA` (sign convention when discharging vs. charging) |
-| **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | `µV` (`Watts = -(A * V)`, mapped to `-20W..+25W` bidirectional ring) |
+| **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | `µV` (`Watts = A * V`, mapped to `-20W..+25W` bidirectional ring) |
 | **Bypass Charging** | `Settings.System["is_charging_separation"]` | `<Supported / Unsupported>` (`0` = Off, `1` = On) |
 | **80% Charge Limit** | `Settings.System["percent_80_charge_limit"]` | `<Supported / Unsupported>` (`0` = Off, `1` = On) |
 
@@ -84,7 +84,7 @@
 | **Logical Landscape Resolution** | `<W × H>` (`<aspect>`) | `<W × H>` (`<aspect>`) |
 | **Firmware `densityDpi`** | `<dpi>` (`<density>x`) | `<dpi>` (`<density>x`) |
 | **Native Android `dp` Bounds** | `<sw*dp w*dp h*dp>` | `<sw*dp w*dp h*dp>` |
-| **BDSA `720dp` `OverlayViewport`** | — | `normalizedDensity = <H / 720>`, `<W_cdp> × 720.0dp` (`aspectFraction = <0.0..1.0>`) |
+| **BDSA `720dp` `OverlayViewport`** | — | `normalizedDensity = min(W, H) / 720`, `<W_cdp> × 720.0dp` (`aspectFraction = <0.0..1.0>`) |
 | **Layer Stack** | `0` | `<e.g. 4 or 2>` |
 | **Refresh Rate Modes** | `<e.g. 60 Hz / 120 Hz>` | `<e.g. 60 Hz / 120 Hz>` |
 | **Panel TE VSYNC Clock Ratio** | `<e.g. 118.412f / 120f or 1.0f>` | `<1.0f>` |
@@ -93,7 +93,7 @@
 ### 3.2 WindowManager & Multi-Display Recording Invariants
 
 - **Overlay Window Sizing & Flags** ([`ScreenOverlayManager.kt`](../../app/src/main/java/com/stormpanda/betterdualscreenassistant/overlay/ScreenOverlayManager.kt)):
-  - Context: `context.createDisplayContext(bottomDisplay)` with explicit `getRealSize()` pixel dimensions and `Gravity.CENTER`.
+  - Context: `context.createDisplayContext(bottomDisplay)` with explicit `getRealSize()` pixel dimensions, `PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021` (`TYPE_APPLICATION_OVERLAY` `2038` fallback), and `Gravity.CENTER`.
   - `FLAG_LAYOUT_NO_LIMITS`: **Never set on the secondary display** (prevents `WindowManagerService` primary-display width clipping).
   - `lp.fitInsetsTypes`: `<0 requirement & reason>`.
   - `FLAG_LOCAL_FOCUS_MODE`: `<true / false & reason>`.
@@ -201,7 +201,7 @@
 | **Performance Modes (`0/1/2`)** | `<Yes/No>` | `performance_mode` | |
 | **Active Fan Control (`0/1/4/5/6`)** | `<Yes/No>` | `fan_mode`, `fan_speed`, `IFanControlProvider` | |
 | **Joystick RGB Ambient Light & Slider** | `<Yes/No>` | `joystick_light_enabled`, `led_light_brightness_percent` | Gated by `profile.supportsAmbientLight` |
-| **Double-Tap HOME (Prevent Accidental Home)** | `<Yes/No>` | `prevent_accidental_touch_home` | Gated by `profile.supportsPreventAccidentalHome` |
+| **Double-Tap HOME (Prevent Accidental Home)** | `<Yes/No>` | `prevent_press_home_accidentally` | Gated by `profile.supportsPreventAccidentalHome` |
 | **Bypass Charging & 80% Limit** | `<Yes/No>` | `is_charging_separation`, `percent_80_charge_limit` | |
 | **OS Monet Theme Injection** | `<Yes/No>` | `FabricatedOverlay("com.android.shell", "os_theme")` | |
 | **Default Native `TccUiLook`** | — | `TccUiLook.<AYN \| RETROID>` | Both looks selectable via `ui_look_mode` |

@@ -18,6 +18,7 @@ import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.DirectBootPrefs
 import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.ScreenRecordingState
@@ -120,7 +121,12 @@ class AssistantForegroundService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val appCtx = context ?: this@AssistantForegroundService
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_SCREEN_ON -> {
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                    if (::overlayManager.isInitialized) {
+                        overlayManager.reassertBlankedHardwareStateIfNeeded()
+                    }
+                }
                 Intent.ACTION_SCREEN_OFF -> {
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
                 }
@@ -164,9 +170,9 @@ class AssistantForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        val initialPromoted = getSharedPreferences(
-            SystemSettingsRepository.PREFS_NAME,
-            Context.MODE_PRIVATE
+        val initialPromoted = DirectBootPrefs.open(
+            this,
+            SystemSettingsRepository.PREFS_NAME
         ).getBoolean(SystemSettingsRepository.PREF_PROMOTED_TO_MANAGER, false)
         startForeground(NOTIFICATION_ID, createForegroundNotification(initialPromoted))
 
@@ -324,10 +330,6 @@ class AssistantForegroundService : Service() {
 
         // Ensure stock process stays suppressed if it somehow woke up
         enforceStockTakeoverIfPreferred()
-
-        if (mappingServiceClient.isHomeMapped) {
-            return
-        }
 
         val currentMode = repository.dualScreenDisplayMode.value
 

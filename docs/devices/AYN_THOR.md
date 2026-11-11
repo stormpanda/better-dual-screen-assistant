@@ -62,7 +62,7 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 | Subsystem | Sysfs / API Source | Raw Unit & Notes |
 | :--- | :--- | :--- |
 | **System RAM** | `ActivityManager.getMemoryInfo()` | `8 GB` / `12 GB` / `16 GB` LPDDR5x SKU configurations |
-| **Battery Current** | `/sys/class/power_supply/battery/current_now` | `µA` (negative while charging, positive while discharging; negated to `-(A * V)` in `TelemetryMonitor`) |
+| **Battery Current** | `/sys/class/power_supply/battery/current_now` | `µA` (negative while charging, positive while discharging; computed as `(currentNowUa / 1_000_000f) * (voltageNowUv / 1_000_000f)` in `TelemetryMonitor`) |
 | **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | `µV` (`Watts` mapped onto bidirectional `-20W..+25W` ring gauge) |
 | **Bypass Charging** | `Settings.System["is_charging_separation"]` | **Supported** (`0` = Disabled, `1` = Enabled) |
 | **80% Charge Limit** | `Settings.System["percent_80_charge_limit"]` | **Supported** (`0` = Disabled, `1` = Enabled) |
@@ -82,7 +82,7 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 | **Logical Landscape Resolution** | **`1920 × 1080`** (`16:9`, `1.778 : 1`) | **`1240 × 1080`** (~`8:7` / `31:27`, `1.148 : 1`) |
 | **Firmware `densityDpi`** | `369 dpi` (`2.30625x`) | `369 dpi` (`2.30625x`) |
 | **Native Android `dp` Bounds** | `sw468dp w833dp h444dp` (`mBounds=[0,0][1920,1080]`, `mAppBounds=[0,0][1920,1025]`) | `sw468dp w538dp h444dp` (`mBounds=[0,0][1240,1080]`, `mAppBounds=[0,0][1240,1025]`) |
-| **BDSA `720dp` `OverlayViewport`** | — | `normalizedDensity = 1.500x` (`1080 / 720`), **`826.7dp × 720.0dp`** (`aspectFraction = 0.0f`) |
+| **BDSA `720dp` `OverlayViewport`** | — | `normalizedDensity = min(widthPx, heightPx) / 720f` (`1080 / 720 = 1.500x`), **`826.7dp × 720.0dp`** (`aspectFraction = 0.0f`) |
 | **Layer Stack** | `0` | `4` |
 | **Refresh Rate Modes** | `60 Hz` / `120 Hz` | `60 Hz` / `120 Hz` (panel hardware runs `60 Hz` / `120 Hz` nominal) |
 | **Panel TE VSYNC Clock Ratio** | **`118.412f / 120f`** (on-panel DDIC TE oscillator runs at `~8.4451 ms` = `118.412 Hz` in 120 Hz mode and `~16.890 ms` = `59.206 Hz` in 60 Hz mode) | `1.0f` |
@@ -91,7 +91,7 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 ### 3.2 WindowManager & Multi-Display Recording Invariants
 
 - **Overlay Window Sizing & Flags** ([`ScreenOverlayManager.kt`](../../app/src/main/java/com/stormpanda/betterdualscreenassistant/overlay/ScreenOverlayManager.kt)):
-  - Context: Obtained via `context.createDisplayContext(display4)` with explicit `1240 × 1080` `getRealSize()` pixel dimensions, `TYPE_APPLICATION_OVERLAY`, and `Gravity.CENTER`.
+  - Context: Obtained via `context.createDisplayContext(display4)` with explicit `1240 × 1080` `getRealSize()` pixel dimensions, `PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021` (`TYPE_BOOT_PROGRESS` via `PrivilegedBridge.installPrivilegedWindowSession()`, with automatic fallback to `TYPE_APPLICATION_OVERLAY` `2038`), and `Gravity.CENTER`.
   - `FLAG_LAYOUT_NO_LIMITS`: **Never set on Display `4`**. Setting `FLAG_LAYOUT_NO_LIMITS` causes Android 13 `WindowManagerService` to lay out the surface at Display `0`'s `1920px` width, clipping the right ~`680px` of the UI off-screen.
   - `lp.fitInsetsTypes`: Set to `0` so decor insets never shrink the fullscreen overlay.
   - `FLAG_LOCAL_FOCUS_MODE`: **Enabled (`useLocalFocusMode = true`)** so Display `4` overlay windows manage independent focus cleanly without stealing Display `0` game focus.
@@ -139,8 +139,8 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 - **Joystick / Ambient RGB Hardware**: **Supported (`supportsAmbientLight = true`)** — dual RGB LED rings around the left and right Hall-effect thumbsticks plus side ambient accents.
 - **Control Mechanism**:
   - Live state property: `sys.light.curr.is.show` (`"1"` / `"true"` = On, `"0"` / `"false"` = Off).
-  - Persistent settings: `Settings.System["joystick_light_enabled"]` (`0`/`1`) and `Settings.System["led_light_brightness_percent"]` (`0..100`).
-  - Broadcast IPC: `"com.ro.external.request.light.adj.action"` (`isShow: Boolean` to package `"com.android.settings"`, `light_brightness: Int` `0..255`).
+  - Persistent settings: `Settings.System["joystick_light_enabled"]` (`0`/`1`) and `Settings.System["led_light_brightness_percent"]` (`Float` `0.0f..1.0f`).
+  - Broadcast IPC: `"com.ro.external.request.light.adj.action"` (`isShow: Boolean` to package `"com.android.settings"`) and `"com.oz.action.UPDATE_AMBIENT_LIGHT"` (`light_brightness: Int` `0..255`).
 
 ---
 
@@ -159,7 +159,7 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 
 - **Broadcast Action**: `"action.tcc.button.key.event"`
 - **Extras**: `key_action_down: Boolean`, `key_isLongPress: Boolean`
-- **Initial Key Down (`key_action_down == true && !key_isLongPress`)**: No-op (`onTccKeyDown()`).
+- **Initial Key Down (`key_action_down == true && !key_isLongPress`)**: No-op in `handleTccButtonEvent()` (`onTccKeyDown()`).
 - **Long Press (`key_action_down == true && key_isLongPress`)**: **Always blanks the bottom screen** (`longPressTogglesBottom = false`): hides the overlay if open, sets `longPressConsumed = true`, and sets `dual_screen_display_mode = 1`.
 - **Short Press Release (`key_action_down == false`)**: If `dual_screen_display_mode == 1` or the bottom screen is blanked, wakes the bottom screen (`setDualScreenDisplayMode(0)`); otherwise toggles the Assistant Overlay (`200ms` debounce).
 
@@ -202,7 +202,7 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 | **Performance Modes (`0/1/2`)** | **Yes** | `performance_mode` | Standard / Performance / High Performance |
 | **Active Fan Control (`0/1/4/5/6`)** | **Yes** | `fan_mode`, `fan_speed`, `IFanControlProvider` | Off / Quiet / Smart / Sport / Custom (`35%–100%`) |
 | **Joystick RGB Ambient Light & Slider** | **Yes** | `joystick_light_enabled`, `led_light_brightness_percent`, `sys.light.curr.is.show` | Enables **Ambient Light** quick tile & 4th **Stick LED** slider |
-| **Double-Tap HOME (Prevent Accidental Home)** | **Yes** | `prevent_accidental_touch_home` | Requires double-tapping HOME when enabled |
+| **Double-Tap HOME (Prevent Accidental Home)** | **Yes** | `prevent_press_home_accidentally` | Requires double-tapping HOME when enabled |
 | **Bypass Charging & 80% Limit** | **Yes** | `is_charging_separation`, `percent_80_charge_limit` | Both supported in hardware |
 | **OS Monet Theme Injection** | **Yes** | `FabricatedOverlay("com.android.shell", "os_theme")` | Dynamic 221-color Material 3 Monet resource table |
 | **Default Native `TccUiLook`** | — | **`TccUiLook.AYN`** (`AYN Smooth`) | Can also switch live to `TccUiLook.RETROID` (`Retroid Pixel`) |
@@ -230,7 +230,7 @@ Exact `AYN_THOR` enum entry in [`DeviceProfile.kt`](../../app/src/main/java/com/
 | `supportsAmbientLight` | `true` |
 | `supportsPreventAccidentalHome` | `true` |
 | `standardControllerLabel` / `controllerStyleOptionLabel` | `"Odin"` / `"Standard Style"` |
-| `closeBottomTipText` | `"Press the AYN key to turn on the bottom screen again"` |
+| `closeBottomTipText` | `"When the secondary screen is turned off, you can press the AYN key to wake up the screen."` |
 | `topPanelTeClockRatio` | `118.412f / 120f` (`0.9867667f`) |
 | `longPressTogglesBottom` | `false` |
 | `dismissOverlayOnBackMapping` | `false` |

@@ -103,7 +103,11 @@ enum class DeviceProfile(
     );
 
     val closeBottomTipText: String
-        get() = "When the secondary screen is turned off, you can press the $wakeKeyName to wake up the screen."
+        get() = if (longPressTogglesBottom) {
+            "When the secondary screen is turned off, you can long press or press the $wakeKeyName to wake up the screen."
+        } else {
+            "When the secondary screen is turned off, you can press the $wakeKeyName to wake up the screen."
+        }
 
     companion object {
         const val ODIN_STOCK_ASSISTANT_PACKAGE = "com.odin.dualscreen.assistant"
@@ -136,13 +140,39 @@ enum class DeviceProfile(
             return trimmed.startsWith("Retroid Pocket Duo", ignoreCase = true)
         }
 
+        private fun isAynThorSystemIdentifier(
+            model: String? = Build.MODEL,
+            board: String? = Build.BOARD,
+            device: String? = Build.DEVICE
+        ): Boolean {
+            val trimmedModel = model?.trim().orEmpty()
+            return trimmedModel.contains("Thor", ignoreCase = true) ||
+                board?.trim().equals("kalama", ignoreCase = true) ||
+                device?.trim().equals("kalama", ignoreCase = true)
+        }
+
+        private fun isRetroidPocketDuoHardware(
+            device: String? = Build.DEVICE,
+            socModel: String? = Build.SOC_MODEL
+        ): Boolean {
+            return device?.trim().equals("sun", ignoreCase = true) ||
+                socModel?.trim().equals("CQ7790S", ignoreCase = true)
+        }
+
         /**
          * Context-free detection suitable for `UID 0` `app_process` (`PrivilegedHelperMain`).
          */
         fun detectFromSystem(model: String? = Build.MODEL): DeviceProfile {
             testOverride?.let { return it }
-            cachedProfile?.let { return it }
-            return if (isRetroidPocketDuoModel(model)) {
+            if (model == Build.MODEL) {
+                cachedProfile?.let { return it }
+            }
+            return if (
+                isRetroidPocketDuoModel(model) ||
+                (model == Build.MODEL &&
+                    !isAynThorSystemIdentifier(model) &&
+                    isRetroidPocketDuoHardware())
+            ) {
                 RETROID_POCKET_DUO
             } else {
                 AYN_THOR
@@ -150,15 +180,21 @@ enum class DeviceProfile(
         }
 
         /**
-         * Resolves the active [DeviceProfile] using `Build.MODEL` first and falling back to
-         * checking whether `com.retroidpocket.dualscreen.assistant` is installed on the system.
+         * Resolves the active [DeviceProfile] using hardware/model identifiers first and falling
+         * back to checking whether `com.retroidpocket.dualscreen.assistant` is installed.
          */
         fun current(context: Context? = null): DeviceProfile {
             testOverride?.let { return it }
             cachedProfile?.let { return it }
 
-            if (isRetroidPocketDuoModel(Build.MODEL)) {
+            if (isRetroidPocketDuoModel(Build.MODEL) ||
+                (!isAynThorSystemIdentifier() && isRetroidPocketDuoHardware())
+            ) {
                 return RETROID_POCKET_DUO.also { cachedProfile = it }
+            }
+
+            if (isAynThorSystemIdentifier()) {
+                return AYN_THOR.also { cachedProfile = it }
             }
 
             if (context != null) {

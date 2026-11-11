@@ -63,7 +63,7 @@ The **Retroid Pocket Duo** (`sun` / `CQ7790S`) is a clamshell dual-screen Androi
 | :--- | :--- | :--- |
 | **System RAM** | `ActivityManager.getMemoryInfo()` | `8 GB` / `12 GB` LPDDR5 SKU configurations |
 | **Battery Current** | `/sys/class/power_supply/battery/current_now` | `µA` (also exposes USB-PD `usb` and `ucsi-source-psy-*` power supplies) |
-| **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | `µV` (`Watts = -(A * V)` mapped onto bidirectional `-20W..+25W` ring gauge) |
+| **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | `µV` (`Watts = A * V` mapped onto bidirectional `-20W..+25W` ring gauge) |
 | **Bypass Charging** | `Settings.System["is_charging_separation"]` | **Supported** (`0` = Disabled, `1` = Enabled) |
 | **80% Charge Limit** | `Settings.System["percent_80_charge_limit"]` | **Supported** (`0` = Disabled, `1` = Enabled) |
 
@@ -91,7 +91,7 @@ The **Retroid Pocket Duo** (`sun` / `CQ7790S`) is a clamshell dual-screen Androi
 ### 3.2 WindowManager & Multi-Display Recording Invariants
 
 - **Overlay Window Sizing & Flags** ([`ScreenOverlayManager.kt`](../../app/src/main/java/com/stormpanda/betterdualscreenassistant/overlay/ScreenOverlayManager.kt)):
-  - Context: Obtained via `context.createDisplayContext(display2)` with explicit `1280 × 960` `getRealSize()` pixel dimensions, `TYPE_APPLICATION_OVERLAY`, and `Gravity.CENTER`.
+  - Context: Obtained via `context.createDisplayContext(display2)` with explicit `1280 × 960` `getRealSize()` pixel dimensions, `PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021` (`TYPE_BOOT_PROGRESS` via `PrivilegedBridge.installPrivilegedWindowSession()`, with automatic fallback to `TYPE_APPLICATION_OVERLAY` `2038`), and `Gravity.CENTER`.
   - `FLAG_LAYOUT_NO_LIMITS`: **Never set on Display `2`** (prevents primary-display surface width overflow).
   - `lp.fitInsetsTypes`: **Must be explicitly set to `0`**. On Android 16 (`SDK 36`), `WindowManager.LayoutParams` defaults `fitInsetsTypes` to `WindowInsets.Type.systemBars()`, which otherwise shrinks Display `2` overlay windows from `1280 × 960` down to `1280 × 912` above `NavigationBar2`.
   - `FLAG_LOCAL_FOCUS_MODE`: **Omitted (`useLocalFocusMode = false`)**, matching stock Retroid `ProductRuntimeProvider` (`flags = 0x80020600`) so Android 16 dual-display `FocusLock` routing works cleanly.
@@ -113,7 +113,7 @@ The **Retroid Pocket Duo** (`sun` / `CQ7790S`) is a clamshell dual-screen Androi
 | **Touch Disable Property** | `sys.temp.disabled.touch = "1,0"` | `sys.temp.disabled.touch = "0,1"` (`"0,0"` = both active) |
 
 - **Sleep / Wake & Lid Sensor Behavior**: Kernel suspend/resume and the native `mlid` Hall-sensor daemon (`init.svc.mlid = running`, `persist.lid.close.to.forbid.power`) reset `bl_power` to `0` on wake; `ScreenOverlayManager.onDeviceScreenInteractiveChanged(true)` re-asserts `panel0` / `panel1` `bl_power = 1` for the active `dual_screen_display_mode` on `Intent.ACTION_SCREEN_ON`.
-- **Watchdog Recovery Requirement** ([`PrivilegedHelperMain.kt`](../../app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedHelperMain.kt)): **Critical hardware invariant** — if the app crashes or is uninstalled while `bl_power == 1`, `DisplayManager.setBrightness` alone will **not** turn the backlight back on. `PrivilegedHelperMain.restoreDisplayAndStockAssistant()` unconditionally writes `"0"` to both `/sys/class/backlight/panel0-backlight/bl_power` and `/sys/class/backlight/panel1-backlight/bl_power`, resets `dual_screen_display_mode = 0`, and writes `sys.temp.disabled.touch = "0,0"`.
+- **Watchdog Recovery Requirement** ([`PrivilegedHelperMain.kt`](../../app/src/main/java/com/stormpanda/betterdualscreenassistant/privileged/PrivilegedHelperMain.kt)): **Critical hardware invariant** — if the app crashes or is uninstalled while `bl_power == 1`, `DisplayManager.setBrightness` alone will **not** turn the backlight back on. On Retroid Pocket Duo (`blankViaBacklightSysfs = true`, or whenever either backlight was blanked via `TRANSACTION_SET_BACKLIGHT_POWER`), `PrivilegedHelperMain.restoreDisplayAndStockAssistant()` writes `"0"` to both `/sys/class/backlight/panel0-backlight/bl_power` and `/sys/class/backlight/panel1-backlight/bl_power`, resets `dual_screen_display_mode = 0`, and writes `sys.temp.disabled.touch = "0,0"`.
 
 ---
 
@@ -159,7 +159,7 @@ The **Retroid Pocket Duo** (`sun` / `CQ7790S`) is a clamshell dual-screen Androi
 
 - **Broadcast Action**: `"action.tcc.button.key.event"`
 - **Extras**: `key_action_down: Boolean`, `key_isLongPress: Boolean`
-- **Initial Key Down (`key_action_down == true && !key_isLongPress`)**: No-op (`onTccKeyDown()`).
+- **Initial Key Down (`key_action_down == true && !key_isLongPress`)**: No-op in `handleTccButtonEvent()` (`onTccKeyDown()`).
 - **Long Press (`key_action_down == true && key_isLongPress`)**: **Toggles bottom screen power (`longPressTogglesBottom = true`)** matching stock `TccLongPressBehavior.TOGGLE_SECONDARY`: if `dual_screen_display_mode == 1` or the bottom screen is blanked, wakes the bottom screen (`setDualScreenDisplayMode(0)`); otherwise hides any open overlay and blanks the bottom screen (`setDualScreenDisplayMode(1)`).
 - **Short Press Release (`key_action_down == false`)**: If `dual_screen_display_mode == 1` or bottom screen is blanked, wakes the bottom screen (`setDualScreenDisplayMode(0)`); otherwise toggles the Assistant Overlay (`200ms` debounce).
 
@@ -230,7 +230,7 @@ Exact `RETROID_POCKET_DUO` enum entry in [`DeviceProfile.kt`](../../app/src/main
 | `supportsAmbientLight` | `false` |
 | `supportsPreventAccidentalHome` | `false` |
 | `standardControllerLabel` / `controllerStyleOptionLabel` | `"Retro"` / `"Retro"` |
-| `closeBottomTipText` | `"Long press or press Dual Screen key to wake up the screen again"` |
+| `closeBottomTipText` | `"When the secondary screen is turned off, you can long press or press the Dual Screen key to wake up the screen."` |
 | `topPanelTeClockRatio` | `1.0f` |
 | `longPressTogglesBottom` | `true` |
 | `dismissOverlayOnBackMapping` | `true` |

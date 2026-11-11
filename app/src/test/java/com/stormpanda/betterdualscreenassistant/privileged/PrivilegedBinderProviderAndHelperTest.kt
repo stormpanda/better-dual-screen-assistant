@@ -8,14 +8,20 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
+import android.os.Process
 import android.os.SystemClock
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkAll
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -24,6 +30,21 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class PrivilegedBinderProviderAndHelperTest {
+
+    @Before
+    fun setUp() {
+        PrivilegedBridge.resetForTesting()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
+    }
+
+    @After
+    fun tearDown() {
+        PrivilegedBridge.resetForTesting()
+        DeviceProfile.testOverride = null
+        DeviceProfile.resetCacheForTesting()
+        unmockkAll()
+    }
 
     @Test
     fun `PrivilegedBinderProvider handles standard ContentProvider methods and METHOD_REGISTER_BINDER`() {
@@ -47,6 +68,35 @@ class PrivilegedBinderProviderAndHelperTest {
         val result = provider.call(PrivilegedHelperMain.METHOD_REGISTER_BINDER, null, extras)
         assertNotNull(result)
         assertTrue(PrivilegedBridge.ping())
+    }
+
+    @Test
+    fun `PrivilegedBinderProvider and HelperBinder reject Process SYSTEM_UID 1000 callers`() {
+        // 1. PrivilegedBinderProvider rejects Binder.getCallingUid() == Process.SYSTEM_UID (1000)
+        PrivilegedBridge.resetForTesting()
+        val provider = PrivilegedBinderProvider()
+        val helperBinder = createAuthorizedHelperBinder()
+        val extras = Bundle().apply {
+            putBinder(PrivilegedHelperMain.EXTRA_BINDER, helperBinder)
+        }
+        mockkStatic(Binder::class)
+        every { Binder.getCallingUid() } returns Process.SYSTEM_UID
+        provider.call(PrivilegedHelperMain.METHOD_REGISTER_BINDER, null, extras)
+        unmockkAll()
+        assertFalse(PrivilegedBridge.ping())
+
+        // 2. HelperBinder.isAuthorizedCaller rejects Process.SYSTEM_UID (1000), accepts root (0) and app UID
+        val isAuthorizedMethod = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredMethod("isAuthorizedCaller", Int::class.javaPrimitiveType).apply {
+                isAccessible = true
+            }
+        val uidField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("cachedAppUid").apply { isAccessible = true }
+        uidField.setInt(helperBinder, 10234)
+
+        assertFalse(isAuthorizedMethod.invoke(helperBinder, Process.SYSTEM_UID) as Boolean)
+        assertTrue(isAuthorizedMethod.invoke(helperBinder, 0) as Boolean)
+        assertTrue(isAuthorizedMethod.invoke(helperBinder, 10234) as Boolean)
     }
 
     @Test
@@ -849,6 +899,36 @@ class PrivilegedBinderProviderAndHelperTest {
         assertEquals(1, transactCount)
         badCodeData.recycle()
         badCodeReply.recycle()
+
+        // 4. Empty allowlisted codes -> fails closed (never permits arbitrary code forwarding)
+        helperBinder.allowedWindowSessionCodesOverride = emptySet()
+        val emptyCodesPayload = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR_WINDOW_SESSION)
+            writeInt(2038)
+        }
+        val emptyCodesData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeStrongBinder(mockSessionBinder)
+            writeInt(42)
+            writeInt(0)
+            appendFrom(emptyCodesPayload, 0, emptyCodesPayload.dataSize())
+        }
+        emptyCodesPayload.recycle()
+        val emptyCodesReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_WINDOW_SESSION_TRANSACT,
+                emptyCodesData,
+                emptyCodesReply,
+                0
+            )
+        )
+        emptyCodesReply.setDataPosition(0)
+        emptyCodesReply.readException()
+        assertEquals(0, emptyCodesReply.readInt())
+        assertEquals(1, transactCount)
+        emptyCodesData.recycle()
+        emptyCodesReply.recycle()
     }
 
     @Test
@@ -888,10 +968,20 @@ class PrivilegedBinderProviderAndHelperTest {
             PrivilegedHelperMain.parseSurfaceFlingerDisplayIds(duoSfFlattened)
         )
 
-        // 3. Verify screenshot output path validation
+        // 3. Verify scoped screenshot and screen recording output path validation
         assertTrue(
             PrivilegedHelperMain.isValidScreenshotOutputPath(
                 "/sdcard/Pictures/Screenshots/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertTrue(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/storage/emulated/0/Pictures/Screenshots/Screenshot_20261110_120000_Top.png"
+            )
+        )
+        assertFalse(
+            PrivilegedHelperMain.isValidScreenshotOutputPath(
+                "/sdcard/Screenshot_20261110_120000_Bottom.png"
             )
         )
         assertFalse(
@@ -902,6 +992,26 @@ class PrivilegedBinderProviderAndHelperTest {
         assertFalse(
             PrivilegedHelperMain.isValidScreenshotOutputPath(
                 "/data/local/tmp/Screenshot_20261110_120000_Bottom.png"
+            )
+        )
+        assertTrue(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/sdcard/Movies/ScreenRecordings/ScreenRecord_20261110_120000_Both.mp4"
+            )
+        )
+        assertTrue(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/storage/emulated/0/Movies/ScreenRecordings/ScreenRecord_20261110_120000_Top.mp4"
+            )
+        )
+        assertFalse(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/tmp/test_both.mp4"
+            )
+        )
+        assertFalse(
+            ScreenRecorderEngine.isValidRecordingOutputPath(
+                "/sdcard/Movies/../ScreenRecord_20261110_120000_Both.mp4"
             )
         )
 

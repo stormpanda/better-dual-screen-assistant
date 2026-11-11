@@ -1,5 +1,6 @@
 package com.stormpanda.betterdualscreenassistant
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
@@ -110,11 +111,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -366,6 +370,7 @@ class MainActivity : ComponentActivity() {
         return if (handled) true else super.dispatchGenericMotionEvent(ev)
     }
 
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             PrimaryOverlayInputBridge.notifyKeyInput()
@@ -478,6 +483,7 @@ private fun resolveMegingiardAppColors(
         accent = tccColors.accent,
         onAccent = tccColors.onAccent,
         divider = tccColors.primary.copy(alpha = 0.10f),
+        error = if (tccColors.isDark) tccColors.error else Color(0xFFD32F2F),
         sectionHeaderColor = tccColors.accent,
         settingsSeparator = tccColors.primary.copy(alpha = 0.12f)
     )
@@ -498,7 +504,8 @@ private enum class LauncherSubPage(
     val parentCategory: LauncherCategory
 ) {
     CUSTOM_ACCENT(LauncherCategory.APPEARANCE),
-    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES)
+    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES),
+    OPEN_SOURCE_LICENSES(LauncherCategory.UPDATES)
 }
 
 private enum class ThemeSourceOption(
@@ -893,6 +900,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                         force = true,
                                                         currentVersion = BuildConfig.VERSION_NAME
                                                     )
+                                                },
+                                                onOpenLicenses = {
+                                                    subPageStack = listOf(LauncherSubPage.OPEN_SOURCE_LICENSES)
                                                 }
                                             )
                                         }
@@ -962,6 +972,17 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                             repo.setQuickTileEnabled(tile, enabled)
                                         }
                                     )
+                                }
+                            }
+
+                            LauncherSubPage.OPEN_SOURCE_LICENSES -> {
+                                GamepadDeck(
+                                    breadcrumbs = listOf(
+                                        LauncherCategory.UPDATES.title,
+                                        "Open-Source Licenses"
+                                    )
+                                ) {
+                                    OpenSourceLicensesSubPageContent()
                                 }
                             }
                         }
@@ -1271,7 +1292,7 @@ private fun QuickTogglesVisualReorderCard(
         }
     }
 
-    LaunchedEffect(isGridActive, pageCount) {
+    LaunchedEffect(isGridActive, pageCount, activeTiles.size) {
         if (isGridActive) {
             PrimaryOverlayInputBridge.bumperEvents.collect { direction ->
                 when (direction) {
@@ -1330,7 +1351,7 @@ private fun QuickTogglesVisualReorderCard(
 
     val currentTile = activeTiles.getOrNull(cursorIndex)
     val subtitle = when {
-        !isGridActive -> "Press A to reorder with D-pad, or tap two tiles to swap"
+        !isGridActive -> "Press A to reorder with D-pad, or tap a tile then tap a target slot to move"
         isGrabbed && currentTile != null -> "Moving \"${currentTile.title}\" — D-pad to reposition, A or B to drop"
         currentTile != null -> "Selected #${cursorIndex + 1} \"${currentTile.title}\" — A to grab & move, B to exit"
         else -> "Use D-pad to select a toggle, A to grab & move, or B to exit"
@@ -1480,12 +1501,23 @@ private fun QuickTogglesVisualReorderCard(
 
             // Compact QuickSettingsPanel replica (2x4 paged grid + bottom page indicator)
             val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+            val lookSpec = LocalTccLookSpec.current
+            val boost = isRetroidLook && lookSpec.retroidReadabilityBoost
+            val previewHeight = if (boost) {
+                if (pageCount > 1) 196.dp else 182.dp
+            } else {
+                if (pageCount > 1) 174.dp else 160.dp
+            }
             val previewShape: Shape = RoundedCornerShape(16.dp)
+            val baseDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(baseDensity.density, fontScale = 1f)
+            ) {
             Column(
                 modifier = Modifier
                     .widthIn(max = 420.dp)
                     .fillMaxWidth()
-                    .height(if (pageCount > 1) 174.dp else 160.dp)
+                    .height(previewHeight)
                     .clip(previewShape)
                     .background(tccColors.panelBackground)
                     .border(
@@ -1602,6 +1634,7 @@ private fun QuickTogglesVisualReorderCard(
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -1797,7 +1830,7 @@ private fun EnableDisableTogglesSubPageContent(
         categoryTiles.forEach { tile ->
             val isEnabled = tile !in disabledQuickTiles
             val canToggle = !isEnabled || enabledCount > 1
-            val itemModifier = if (isFirstItem) {
+            val itemModifier = if (isFirstItem && canToggle) {
                 isFirstItem = false
                 Modifier.firstDeckItem()
             } else {
@@ -2173,7 +2206,8 @@ private fun UpdatesSettingsTabContent(
     updateCheckError: String?,
     hasTriggeredManualCheck: Boolean,
     promotedToManager: Boolean,
-    onTriggerManualCheck: () -> Unit
+    onTriggerManualCheck: () -> Unit,
+    onOpenLicenses: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -2250,6 +2284,87 @@ private fun UpdatesSettingsTabContent(
             }
         }
     )
+
+    GamepadSectionHeader(text = "LEGAL & OPEN SOURCE")
+
+    // 4. Open-Source Licenses & Font Notices (always visible in Release builds)
+    GamepadActionCard(
+        title = "Open-Source Licenses",
+        description = "View copyright notices and licenses for bundled fonts and open-source libraries",
+        icon = Icons.Rounded.Info,
+        actionText = "View",
+        itemKey = "open_source_licenses",
+        onClick = onOpenLicenses
+    )
+}
+
+@Composable
+private fun OpenSourceLicensesSubPageContent() {
+    val context = LocalContext.current
+    val appColors = LocalAppColors.current
+    val noticesSections = remember(context) {
+        val raw = runCatching {
+            context.assets.open("THIRD_PARTY_NOTICES.txt").bufferedReader().use { it.readText() }
+        }.getOrDefault("Third-party license notices unavailable.")
+        raw.split("-----------------------------------------------------------")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .let { parts ->
+                buildList {
+                    var i = 0
+                    while (i < parts.size) {
+                        val current = parts[i]
+                        // Merge short section header banners with their following license body
+                        val merged = if (!current.contains('\n') && i + 1 < parts.size) {
+                            i += 2
+                            "$current\n\n${parts[i - 1]}"
+                        } else {
+                            i += 1
+                            current
+                        }
+                        // Chunk long license bodies at paragraph boundaries (~18 lines max per card)
+                        // so every line stays comfortably scrollable via D-pad on 468dp/480dp screens.
+                        val paragraphs = merged.split("\n\n")
+                        val buffer = StringBuilder()
+                        var lineCount = 0
+                        for (para in paragraphs) {
+                            val paraLines = para.count { it == '\n' } + 1
+                            if (buffer.isNotEmpty() && lineCount + paraLines + 1 > 18) {
+                                add(buffer.toString())
+                                buffer.clear()
+                                lineCount = 0
+                            }
+                            if (buffer.isNotEmpty()) {
+                                buffer.append("\n\n")
+                                lineCount += 1
+                            }
+                            buffer.append(para)
+                            lineCount += paraLines
+                        }
+                        if (buffer.isNotEmpty()) {
+                            add(buffer.toString())
+                        }
+                    }
+                }
+            }
+    }
+
+    noticesSections.forEachIndexed { index, sectionText ->
+        GamepadFocusCard(
+            onClick = null,
+            itemKey = "license_notice_block_$index",
+            modifier = if (index == 0) Modifier.firstDeckItem() else Modifier
+        ) {
+            Text(
+                text = sectionText,
+                color = appColors.onSurface,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
 }
 
 @Composable

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,11 +28,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.res.painterResource
+import android.view.KeyEvent
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,6 +67,7 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.resolveResponsiveDialog
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -99,10 +107,21 @@ internal fun AssistantOverlayDialogHost(
     onCaptureScreenshotRequest: (Int) -> Unit,
     onStartScreenRecordingRequest: (Int) -> Unit
 ) {
+    var pendingDismissJob by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(activeDialog) {
+        pendingDismissJob?.cancel()
+        pendingDismissJob = null
+        onDispose {
+            pendingDismissJob?.cancel()
+            pendingDismissJob = null
+        }
+    }
+
     if (activeDialog == ActiveDialog.NONE) return
 
     fun dismissAfterSelection() {
-        coroutineScope.launch {
+        pendingDismissJob?.cancel()
+        pendingDismissJob = coroutineScope.launch {
             delay(300L)
             onDismiss()
         }
@@ -500,6 +519,14 @@ fun CloseScreenTipOverlay(
     )
     val sectionGap = if (isRetroid) 18.dp else aynDp(14f)
     val buttonFontSize = if (isRetroid) (if (boost) 25.sp else 18.sp) else aynSp(15f)
+    val confirmFocusRequester = remember { FocusRequester() }
+    var isCheckboxFocused by remember { mutableStateOf(false) }
+    var isCancelFocused by remember { mutableStateOf(false) }
+    var isConfirmFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        runCatching { confirmFocusRequester.requestFocus() }
+    }
 
     Box(
         modifier = Modifier
@@ -540,7 +567,8 @@ fun CloseScreenTipOverlay(
                     text = stringResource(R.string.tip_title_text),
                     color = colors.primary,
                     fontSize = if (isRetroid) (if (boost) 30.sp else 22.sp) else aynSp(17f),
-                    fontWeight = FontWeight.Bold
+                    style = labelStyle,
+                    fontWeight = if (isRetroid) FontWeight.Normal else FontWeight.Bold
                 )
             }
 
@@ -560,6 +588,18 @@ fun CloseScreenTipOverlay(
 
             Row(
                 modifier = Modifier
+                    .background(if (isCheckboxFocused) colors.panelBackgroundSelected else Color.Transparent)
+                    .onFocusChanged { isCheckboxFocused = it.isFocused }
+                    .onKeyEvent { event ->
+                        if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                            event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                        ) {
+                            noMoreTip = !noMoreTip
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     .clickable { noMoreTip = !noMoreTip }
                     .padding(
                         horizontal = if (isRetroid) 16.dp else aynDp(16f),
@@ -613,6 +653,18 @@ fun CloseScreenTipOverlay(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .background(if (isCancelFocused) colors.panelBackgroundSelected else Color.Transparent)
+                        .onFocusChanged { isCancelFocused = it.isFocused }
+                        .onKeyEvent { event ->
+                            if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                            ) {
+                                onCancel()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .clickable(onClick = onCancel),
                     contentAlignment = Alignment.Center
                 ) {
@@ -650,6 +702,19 @@ fun CloseScreenTipOverlay(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .background(if (isConfirmFocused) colors.panelBackgroundSelected else Color.Transparent)
+                        .focusRequester(confirmFocusRequester)
+                        .onFocusChanged { isConfirmFocused = it.isFocused }
+                        .onKeyEvent { event ->
+                            if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A
+                            ) {
+                                onConfirm(noMoreTip)
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .clickable { onConfirm(noMoreTip) },
                     contentAlignment = Alignment.Center
                 ) {

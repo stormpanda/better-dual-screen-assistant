@@ -150,7 +150,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = DirectBootPrefs.open(context, PREFS_NAME)
     private val bottomDisplayId: Int
         get() = DeviceProfile.current(context).bottomDisplayId
     private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -172,6 +172,24 @@ class SystemSettingsRepository(private val context: Context) {
 
     @Volatile
     private var isTransitioningDisplayMode: Boolean = false
+
+    @Volatile
+    private var pendingBlankedTopLinear: Float? = null
+
+    @Volatile
+    private var pendingBlankedBottomLinear: Float? = null
+
+    internal fun consumePendingBlankedTopLinear(): Float? {
+        val v = pendingBlankedTopLinear
+        pendingBlankedTopLinear = null
+        return v
+    }
+
+    internal fun consumePendingBlankedBottomLinear(): Float? {
+        val v = pendingBlankedBottomLinear
+        pendingBlankedBottomLinear = null
+        return v
+    }
 
     private fun isInSelfBrightnessGraceWindow(): Boolean {
         if (isSelfDraggingBrightness) return true
@@ -767,6 +785,8 @@ class SystemSettingsRepository(private val context: Context) {
                 context.registerReceiver(
                     dualScreenVolumeKeyReceiver,
                     IntentFilter(ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT),
+                    android.Manifest.permission.DUMP,
+                    null,
                     Context.RECEIVER_EXPORTED
                 )
                 isDualScreenVolumeKeyReceiverRegistered = true
@@ -1746,7 +1766,8 @@ class SystemSettingsRepository(private val context: Context) {
 
     private fun applyDisplayBrightnessPercent(displayId: Int, percent: Int, temporary: Boolean) {
         val p = percent.coerceIn(0, 100)
-        val targetBottom = bottomDisplayId
+        val profile = DeviceProfile.current(context)
+        val targetBottom = profile.bottomDisplayId
         if (displayId == 0) {
             _topBrightness.value = p
         } else if (displayId == targetBottom) {
@@ -1756,6 +1777,21 @@ class SystemSettingsRepository(private val context: Context) {
         val min = info.getOrElse(1) { 0f }
         val max = info.getOrElse(2) { 1f }
         val linear = min + (p / 100f) * (max - min)
+        val isBlankedOled = !profile.blankViaBacklightSysfs &&
+            ((displayId == 0 && _dualScreenDisplayMode.value == 2) ||
+                (displayId == targetBottom && _dualScreenDisplayMode.value == 1))
+        if (isBlankedOled) {
+            if (linear > 0f) {
+                if (displayId == 0) {
+                    pendingBlankedTopLinear = linear
+                    if (!temporary) PrivilegedBridge.updateSavedBrightness(top = linear)
+                } else if (displayId == targetBottom) {
+                    pendingBlankedBottomLinear = linear
+                    if (!temporary) PrivilegedBridge.updateSavedBrightness(bottom = linear)
+                }
+            }
+            return
+        }
         if (!temporary && linear > 0f) {
             if (displayId == 0) {
                 PrivilegedBridge.updateSavedBrightness(top = linear)
@@ -2205,11 +2241,18 @@ class SystemSettingsRepository(private val context: Context) {
                 .apply()
         }
 
-        return if (parsed.size >= QuickSettingTileId.entries.size) {
-            parsed.drop(1).toSet()
-        } else {
-            parsed
+        val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+        if (supportedTiles.isNotEmpty() && supportedTiles.all { it in parsed }) {
+            parsed.remove(supportedTiles.first())
+            prefs.edit()
+                .putString(
+                    PREF_DISABLED_QUICK_TILES,
+                    parsed.joinToString(",") { it.key }
+                )
+                .putString(PREF_KNOWN_QUICK_TILES, allKnownKeysStr)
+                .apply()
         }
+        return parsed
     }
 
     /**

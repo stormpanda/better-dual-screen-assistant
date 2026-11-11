@@ -80,7 +80,6 @@ class AssistantForegroundServiceTest {
         mockMappingClient = mockk(relaxed = true)
 
         every { mockRepository.dualScreenDisplayMode } returns displayModeFlow
-        every { mockMappingClient.isHomeMapped } returns false
         every { mockOverlayManager.isBottomScreenBlanked } returns false
 
         setServiceField("overlayManager", mockOverlayManager)
@@ -174,11 +173,50 @@ class AssistantForegroundServiceTest {
     }
 
     @Test
-    fun `handleTccButtonEvent ignores key events when HOME is mapped in MappingServiceClient`() {
-        every { mockMappingClient.isHomeMapped } returns true
+    fun `MappingServiceClient dismisses overlay on HOME for both devices and on BACK only for Retroid Pocket Duo`() {
+        var dismissCalls = 0
+        val client = MappingServiceClient(context) {
+            dismissCalls++
+            true
+        }
+        val listenerField = MappingServiceClient::class.java.getDeclaredField("keyListenerBinder").apply {
+            isAccessible = true
+        }
+        val listenerBinder = listenerField.get(client) as android.os.IBinder
 
-        service.handleTccButtonEvent(keyActionDown = false, isLongPress = false)
-        verify(exactly = 0) { mockOverlayManager.toggleAssistantOverlay() }
+        fun sendMappedInputEvent(inputId: String, pressed: Boolean): Boolean {
+            val data = android.os.Parcel.obtain().apply {
+                writeInterfaceToken(MappingServiceClient.LISTENER_DESCRIPTOR)
+                writeInt(1) // hasEvent
+                writeString(inputId)
+                writeInt(if (pressed) 1 else 0) // value1
+                writeInt(0) // value2
+                writeInt(0) // fd
+                writeInt(0) // type
+                writeInt(0) // code
+                writeInt(0) // value
+            }
+            val reply = android.os.Parcel.obtain()
+            assertTrue(listenerBinder.transact(android.os.IBinder.FIRST_CALL_TRANSACTION, data, reply, 0))
+            reply.setDataPosition(0)
+            reply.readException()
+            val consumed = reply.readInt() != 0
+            data.recycle()
+            reply.recycle()
+            return consumed
+        }
+
+        // AYN Thor: HOME dismisses, BACK does not
+        DeviceProfile.testOverride = DeviceProfile.AYN_THOR
+        assertTrue(sendMappedInputEvent("HOME", pressed = true))
+        assertEquals(1, dismissCalls)
+        assertFalse(sendMappedInputEvent("BACK", pressed = true))
+        assertEquals(1, dismissCalls)
+
+        // Retroid Pocket Duo: both HOME and BACK dismiss
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        assertTrue(sendMappedInputEvent("BACK", pressed = true))
+        assertEquals(2, dismissCalls)
     }
 
     @Test

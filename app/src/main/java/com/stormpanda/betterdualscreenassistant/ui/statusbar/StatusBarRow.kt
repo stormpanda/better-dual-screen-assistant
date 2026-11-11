@@ -1,5 +1,6 @@
 package com.stormpanda.betterdualscreenassistant.ui.statusbar
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -535,6 +536,7 @@ private fun checkNetworkConnected(context: Context): Boolean {
     }
 }
 
+@SuppressLint("MissingPermission")
 private fun checkBluetoothConnected(context: Context): Boolean {
     return try {
         val bm = context.getSystemService(BluetoothManager::class.java) ?: return false

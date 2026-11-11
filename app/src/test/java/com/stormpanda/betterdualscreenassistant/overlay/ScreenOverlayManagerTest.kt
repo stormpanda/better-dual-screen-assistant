@@ -38,10 +38,13 @@ class ScreenOverlayManagerTest {
 
     @Before
     fun setUp() {
+        PrivilegedBridge.resetForTesting()
         DeviceProfile.testOverride = null
         DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
         mockRepository = mockk(relaxed = true)
+        every { mockRepository.consumePendingBlankedTopLinear() } returns null
+        every { mockRepository.consumePendingBlankedBottomLinear() } returns null
         mockTelemetryMonitor = mockk(relaxed = true)
         mockOverviewProxyClient = mockk(relaxed = true)
         mockkObject(PrivilegedBridge)
@@ -56,9 +59,10 @@ class ScreenOverlayManagerTest {
 
     @After
     fun tearDown() {
+        unmockkAll()
+        PrivilegedBridge.resetForTesting()
         DeviceProfile.testOverride = null
         DeviceProfile.resetCacheForTesting()
-        unmockkAll()
     }
 
     @Test
@@ -287,5 +291,80 @@ class ScreenOverlayManagerTest {
         ShadowLooper.idleMainLooper()
         verify { mockRepository.reapplyTouchDisableForCurrentMode() }
         verify(atLeast = 2) { PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = true) }
+    }
+
+    @Test
+    fun `addOverlayViewWithPrivilegeFallback uses 2021 when session installed and falls back to 2038 on error`() {
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+        val attachMethod = ScreenOverlayManager::class.java.getDeclaredMethod(
+            "addOverlayViewWithPrivilegeFallback",
+            WindowManager::class.java,
+            android.view.View::class.java,
+            WindowManager.LayoutParams::class.java
+        ).apply { isAccessible = true }
+
+        val dummyView = android.view.View(context)
+        val lp = WindowManager.LayoutParams()
+        val observedTypes = mutableListOf<Int>()
+        var failOnPrivilegedType = false
+        val mockWm = mockk<WindowManager>()
+        every { mockWm.addView(any(), any()) } answers {
+            val params = secondArg<WindowManager.LayoutParams>()
+            observedTypes.add(params.type)
+            if (failOnPrivilegedType && params.type == ScreenOverlayManager.PRIVILEGED_OVERLAY_WINDOW_TYPE) {
+                throw SecurityException("Simulated privileged type rejection")
+            }
+        }
+
+        // 1. Privileged window session installed -> attaches directly as 2021 (TYPE_BOOT_PROGRESS)
+        every { PrivilegedBridge.installPrivilegedWindowSession() } returns true
+        attachMethod.invoke(manager, mockWm, dummyView, lp)
+        assertEquals(listOf(ScreenOverlayManager.PRIVILEGED_OVERLAY_WINDOW_TYPE), observedTypes)
+        assertEquals(ScreenOverlayManager.PRIVILEGED_OVERLAY_WINDOW_TYPE, lp.type)
+
+        // 2. Privileged window type throws -> falls back cleanly to TYPE_APPLICATION_OVERLAY (2038)
+        observedTypes.clear()
+        failOnPrivilegedType = true
+        attachMethod.invoke(manager, mockWm, dummyView, lp)
+        assertEquals(
+            listOf(
+                ScreenOverlayManager.PRIVILEGED_OVERLAY_WINDOW_TYPE,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            ),
+            observedTypes
+        )
+        assertEquals(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, lp.type)
+    }
+
+    @Test
+    fun `useLocalFocusMode and cold-start Retroid backlight sync follow DeviceProfile invariants`() {
+        val lpMethod = ScreenOverlayManager::class.java.getDeclaredMethod(
+            "createBlankOverlayLayoutParams",
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+
+        // AYN Thor sets FLAG_LOCAL_FOCUS_MODE
+        DeviceProfile.testOverride = DeviceProfile.AYN_THOR
+        val aynManager = ScreenOverlayManager(context, mockRepository, mockTelemetryMonitor, mockOverviewProxyClient)
+        val aynLp = lpMethod.invoke(aynManager, 4, 1240, 1080) as WindowManager.LayoutParams
+        assertTrue((aynLp.flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE) != 0)
+
+        // Retroid Pocket Duo omits FLAG_LOCAL_FOCUS_MODE and syncs both panel backlights on cold-start Mode 0
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val duoManager = ScreenOverlayManager(context, mockRepository, mockTelemetryMonitor, mockOverviewProxyClient)
+        val duoLp = lpMethod.invoke(duoManager, 2, 1280, 960) as WindowManager.LayoutParams
+        assertEquals(0, duoLp.flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE)
+
+        duoManager.applyDisplayModeOverlays(0)
+        ShadowLooper.idleMainLooper()
+        verify(exactly = 1) { PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = false) }
+        verify(exactly = 1) { PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = false) }
     }
 }

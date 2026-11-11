@@ -27,6 +27,7 @@ import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 /**
@@ -84,6 +85,8 @@ object PrivilegedHelperMain {
 
     const val HELPER_PROTOCOL_VERSION = 23
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
+    internal const val SYSTEM_LIB_SEARCH_PATH =
+        "/system/lib64:/system/lib:/system_ext/lib64:/system_ext/lib:/product/lib64:/product/lib"
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
     const val OS_THEME_OVERLAY_NAME = "os_theme"
     const val SYSUI_PACKAGE = "com.android.systemui"
@@ -486,7 +489,15 @@ object PrivilegedHelperMain {
         private fun isStockAssistantPackage(pkg: String): Boolean =
             pkg in DeviceProfile.allStockAssistantPackages
 
+        @Volatile
         private var screenRecorderInstance: ScreenRecorderEngine? = null
+
+        private val screenRecorderLock = Any()
+
+        private val clientLock = Any()
+
+        @Volatile
+        private var activeClientDeathRecipient: IBinder.DeathRecipient? = null
 
         private val stockFreezeLock = Any()
 
@@ -611,15 +622,31 @@ object PrivilegedHelperMain {
             latestReportedTaskFpsElapsedMs = SystemClock.elapsedRealtime()
         }
 
-        private val clientDeathRecipient = IBinder.DeathRecipient {
-            if (isShuttingDown) return@DeathRecipient
+        private fun handleClientBinderDied(deadBinder: IBinder) {
+            if (isShuttingDown) return
             Log.w(TAG, "Client app process binder died; starting lifecycle check")
-            mainHandler.post(onClientDiedRunnable)
+            mainHandler.post {
+                if (isShuttingDown) return@post
+                synchronized(clientLock) {
+                    if (clientBinder !== deadBinder) {
+                        return@post
+                    }
+                    clientBinder = null
+                    activeClientDeathRecipient = null
+                }
+                if (packageManagerProxy != null) {
+                    cachedAppUid = -1
+                }
+                onClientDiedRunnable.run()
+            }
         }
 
         private val onClientDiedRunnable = Runnable {
             if (isShuttingDown) return@Runnable
-            clientBinder = null
+            synchronized(clientLock) {
+                clientBinder = null
+                activeClientDeathRecipient = null
+            }
             val now = SystemClock.elapsedRealtime()
             deathElapsedRealtime = now
             lastRespawnAttemptElapsedMs = 0L
@@ -749,7 +776,7 @@ object PrivilegedHelperMain {
         )
 
         private fun isAuthorizedCaller(callingUid: Int): Boolean {
-            if (callingUid == 0 || callingUid == Process.SYSTEM_UID) return true
+            if (callingUid == 0) return true
             val cached = cachedAppUid
             if (cached > 0 && callingUid == cached) return true
             val resolvedUid = getApplicationInfoInternal(APP_PACKAGE_NAME)?.uid ?: -1
@@ -797,7 +824,9 @@ object PrivilegedHelperMain {
                         val displayId = data.readInt()
                         val brightness = data.readFloat()
                         val temporary = data.readInt() != 0
-                        setDisplayBrightnessInternal(displayId, brightness, temporary)
+                        if (!setDisplayBrightnessInternal(displayId, brightness, temporary)) {
+                            throw IllegalStateException("setDisplayBrightness($displayId) failed")
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -860,7 +889,14 @@ object PrivilegedHelperMain {
                             (path.startsWith("/sys/") || path == "/proc/stat")
                         ) {
                             try {
-                                File(path).readText().trim()
+                                val file = File(path)
+                                val canon = file.canonicalPath
+                                if (canon.startsWith("/sys/") || canon == "/proc/stat") {
+                                    file.readText().trim()
+                                } else {
+                                    Log.w(TAG, "Blocked symlink read escaping sysfs: $path -> $canon")
+                                    ""
+                                }
                             } catch (_: Throwable) {
                                 ""
                             }
@@ -1041,7 +1077,9 @@ object PrivilegedHelperMain {
                     TRANSACTION_SET_BACKLIGHT_POWER -> {
                         val panelIndex = data.readInt()
                         val blanked = data.readInt() != 0
-                        setBacklightPowerInternal(panelIndex, blanked)
+                        if (!setBacklightPowerInternal(panelIndex, blanked)) {
+                            throw IllegalStateException("setBacklightPower($panelIndex) failed")
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -1117,37 +1155,59 @@ object PrivilegedHelperMain {
             topBright: Float,
             bottomBright: Float
         ) {
-            unlinkClientDeath()
-            clientPackageName = pkg
-            replaceStockPreferred = replaceStock
-            if (topBright > 0f) savedTopBrightness = topBright
-            if (bottomBright > 0f) savedBottomBrightness = bottomBright
-            registeredSourceDir = resolveInstalledApplicationInfo(pkg)?.sourceDir.orEmpty()
-            clientBinder = newClient
-            unregisteredRespawnAttempts = 0
-            lastRespawnAttemptElapsedMs = 0L
-            mainHandler.removeCallbacks(watchdogCheckRunnable)
-            mainHandler.removeCallbacks(onClientDiedRunnable)
-            mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
-            if (newClient != null) {
-                lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
-                try {
-                    newClient.linkToDeath(clientDeathRecipient, 0)
-                } catch (_: Throwable) {
-                    mainHandler.post(onClientDiedRunnable)
+            val installedSourceDir = resolveInstalledApplicationInfo(pkg)?.sourceDir.orEmpty()
+            var linkFailed = false
+            synchronized(clientLock) {
+                unlinkClientDeathLocked()
+                clientPackageName = pkg
+                replaceStockPreferred = replaceStock
+                if (topBright > 0f) savedTopBrightness = topBright
+                if (bottomBright > 0f) savedBottomBrightness = bottomBright
+                registeredSourceDir = installedSourceDir
+                clientBinder = newClient
+                unregisteredRespawnAttempts = 0
+                lastRespawnAttemptElapsedMs = 0L
+                mainHandler.removeCallbacks(watchdogCheckRunnable)
+                mainHandler.removeCallbacks(onClientDiedRunnable)
+                mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                if (newClient != null) {
+                    lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
+                    val recipient = IBinder.DeathRecipient { handleClientBinderDied(newClient) }
+                    try {
+                        newClient.linkToDeath(recipient, 0)
+                        activeClientDeathRecipient = recipient
+                    } catch (_: Throwable) {
+                        clientBinder = null
+                        activeClientDeathRecipient = null
+                        linkFailed = true
+                    }
                 }
-                mainHandler.post(fpsTrackerMaintenanceRunnable)
+            }
+            if (newClient != null) {
+                if (linkFailed) {
+                    mainHandler.post(onClientDiedRunnable)
+                } else {
+                    mainHandler.post(fpsTrackerMaintenanceRunnable)
+                }
             } else {
                 unregisterFpsListenerInternal()
             }
         }
 
         private fun unlinkClientDeath() {
+            synchronized(clientLock) {
+                unlinkClientDeathLocked()
+            }
+        }
+
+        private fun unlinkClientDeathLocked() {
             val old = clientBinder
+            val oldRecipient = activeClientDeathRecipient
             clientBinder = null
-            if (old != null) {
+            activeClientDeathRecipient = null
+            if (old != null && oldRecipient != null) {
                 try {
-                    old.unlinkToDeath(clientDeathRecipient, 0)
+                    old.unlinkToDeath(oldRecipient, 0)
                 } catch (_: Throwable) {
                 }
             }
@@ -1515,13 +1575,54 @@ object PrivilegedHelperMain {
                     reply.recycle()
                 }
             }
+            return runProcessWithTimeout(
+                args = listOf("/system/bin/sh", "-c", command),
+                timeoutMs = 5_000L,
+                captureOutput = true
+            ).second.trimEnd()
+        }
+
+        private fun runProcessWithTimeout(
+            args: List<String>,
+            timeoutMs: Long,
+            captureOutput: Boolean
+        ): Pair<Boolean, String> {
+            var proc: java.lang.Process? = null
             return try {
-                val proc = Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", command))
-                val out = proc.inputStream.bufferedReader().readText().trimEnd()
-                proc.waitFor()
-                out
+                val started = ProcessBuilder(args).redirectErrorStream(true).start()
+                proc = started
+                var output = ""
+                val drainThread = Thread({
+                    try {
+                        if (captureOutput) {
+                            output = started.inputStream.bufferedReader().use { it.readText() }
+                        } else {
+                            started.inputStream.use { stream ->
+                                val buf = ByteArray(4096)
+                                while (stream.read(buf) != -1) {
+                                    // discard stdout/stderr without blocking child pipe
+                                }
+                            }
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }, "BDSA-HelperProcDrain").apply {
+                    isDaemon = true
+                    start()
+                }
+                val completed = started.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+                if (!completed) {
+                    started.destroyForcibly()
+                }
+                drainThread.join(250L)
+                val ok = completed && started.exitValue() == 0
+                ok to output
             } catch (_: Throwable) {
-                ""
+                try {
+                    proc?.destroyForcibly()
+                } catch (_: Throwable) {
+                }
+                false to ""
             }
         }
 
@@ -1635,8 +1736,8 @@ object PrivilegedHelperMain {
             }
         }
 
-        internal fun setBacklightPowerInternal(panelIndex: Int, blanked: Boolean) {
-            if (panelIndex != 0 && panelIndex != 1) return
+        internal fun setBacklightPowerInternal(panelIndex: Int, blanked: Boolean): Boolean {
+            if (panelIndex != 0 && panelIndex != 1) return true
             if (panelIndex == 0) {
                 panel0BacklightBlanked = blanked
             } else {
@@ -1645,21 +1746,25 @@ object PrivilegedHelperMain {
             val hook = backlightWriteOverride
             if (hook != null) {
                 hook(panelIndex, blanked)
-                return
+                return true
             }
             val path = "/sys/class/backlight/panel$panelIndex-backlight/bl_power"
             val valStr = if (blanked) "1" else "0"
+            val file = File(path)
+            if (!file.exists()) {
+                return false
+            }
             try {
-                val file = File(path)
-                if (file.exists()) {
-                    file.writeText(valStr)
-                    return
-                }
+                file.writeText(valStr)
+                return true
             } catch (t: Throwable) {
                 Log.w(TAG, "Direct sysfs write to $path failed, trying shell", t)
             }
-            if (File(path).exists()) {
-                execRootCommand("echo $valStr > $path")
+            execRootCommand("echo $valStr > $path")
+            return try {
+                file.readText().trim() == valStr
+            } catch (_: Throwable) {
+                true
             }
         }
 
@@ -1683,9 +1788,14 @@ object PrivilegedHelperMain {
                 setTopScreenBlankedInternal(blank = false, showCoverWindow = false)
                 setBottomScreenBlankedInternal(blank = false, showCoverWindow = false)
 
-                // 0.5. Restore hardware backlight power on both panels if supported (Retroid Pocket Duo safety)
-                setBacklightPowerInternal(0, blanked = false)
-                setBacklightPowerInternal(1, blanked = false)
+                // 0.5. Restore hardware backlight power on both panels if supported or previously blanked
+                if (resolveActiveDeviceProfile().blankViaBacklightSysfs ||
+                    panel0BacklightBlanked ||
+                    panel1BacklightBlanked
+                ) {
+                    setBacklightPowerInternal(0, blanked = false)
+                    setBacklightPowerInternal(1, blanked = false)
+                }
 
                 // 1. Restore top (0) and bottom (4 / 2) display brightness if blanked (< 0.005f)
                 val topCur = getDisplayBrightnessInternal(0).getOrElse(0) { 0.4f }
@@ -1856,6 +1966,10 @@ object PrivilegedHelperMain {
                     setTargetOverlayable.invoke(dynamicBuilder, "")
                 }
 
+                var shellCount = 0
+                var neutralCount = 0
+                var accentCount = 0
+                var dynamicCount = 0
                 for (i in resourceNames.indices) {
                     val resName = resourceNames[i]
                     val shortName = resName.substringAfter('/')
@@ -1869,6 +1983,7 @@ object PrivilegedHelperMain {
                         TYPED_VALUE_INT_COLOR_ARGB8,
                         colorVal
                     )
+                    shellCount++
                     if (shortName.startsWith("system_neutral")) {
                         setResourceValue.invoke(
                             neutralBuilder,
@@ -1876,6 +1991,7 @@ object PrivilegedHelperMain {
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
                         )
+                        neutralCount++
                     } else if (shortName.startsWith("system_accent")) {
                         setResourceValue.invoke(
                             accentBuilder,
@@ -1883,6 +1999,7 @@ object PrivilegedHelperMain {
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
                         )
+                        accentCount++
                     } else if (dynamicBuilder != null) {
                         setResourceValue.invoke(
                             dynamicBuilder,
@@ -1890,17 +2007,25 @@ object PrivilegedHelperMain {
                             TYPED_VALUE_INT_COLOR_ARGB8,
                             colorVal
                         )
+                        dynamicCount++
                     }
                 }
+                if (shellCount == 0) {
+                    return
+                }
                 val shellOverlay = buildOverlay.invoke(shellBuilder)
-                val neutralOverlay = buildOverlay.invoke(neutralBuilder)
-                val accentOverlay = buildOverlay.invoke(accentBuilder)
-                val dynamicOverlay = dynamicBuilder?.let { buildOverlay.invoke(it) }
+                val neutralOverlay = if (neutralCount > 0) buildOverlay.invoke(neutralBuilder) else null
+                val accentOverlay = if (accentCount > 0) buildOverlay.invoke(accentBuilder) else null
+                val dynamicOverlay = if (dynamicBuilder != null && dynamicCount > 0) {
+                    buildOverlay.invoke(dynamicBuilder)
+                } else {
+                    null
+                }
 
                 val getIdentifier = shellOverlay.javaClass.getMethod("getIdentifier")
                 val shellId = getIdentifier.invoke(shellOverlay)
-                val neutralId = getIdentifier.invoke(neutralOverlay)
-                val accentId = getIdentifier.invoke(accentOverlay)
+                val neutralId = neutralOverlay?.let { getIdentifier.invoke(it) }
+                val accentId = accentOverlay?.let { getIdentifier.invoke(it) }
                 val dynamicId = dynamicOverlay?.let { getIdentifier.invoke(it) }
 
                 val idClass = Class.forName("android.content.om.OverlayIdentifier")
@@ -1928,8 +2053,12 @@ object PrivilegedHelperMain {
                 val buildTx = txBuilderClass.getMethod("build")
 
                 unregMethod.invoke(txBuilder, legacyOverlayId)
-                regMethod.invoke(txBuilder, neutralOverlay)
-                regMethod.invoke(txBuilder, accentOverlay)
+                if (neutralOverlay != null) {
+                    regMethod.invoke(txBuilder, neutralOverlay)
+                }
+                if (accentOverlay != null) {
+                    regMethod.invoke(txBuilder, accentOverlay)
+                }
                 if (dynamicOverlay != null && dynamicId != null) {
                     regMethod.invoke(txBuilder, dynamicOverlay)
                     setEnabledMethod.invoke(txBuilder, dynamicId, true, 0)
@@ -1937,8 +2066,12 @@ object PrivilegedHelperMain {
                 // Register shellOverlay last so com.android.shell:os_theme always sits at the
                 // end of the overlay priority list.
                 regMethod.invoke(txBuilder, shellOverlay)
-                setEnabledMethod.invoke(txBuilder, neutralId, true, 0)
-                setEnabledMethod.invoke(txBuilder, accentId, true, 0)
+                if (neutralId != null) {
+                    setEnabledMethod.invoke(txBuilder, neutralId, true, 0)
+                }
+                if (accentId != null) {
+                    setEnabledMethod.invoke(txBuilder, accentId, true, 0)
+                }
                 setEnabledMethod.invoke(txBuilder, shellId, true, 0)
                 val tx = buildTx.invoke(txBuilder)
 
@@ -2122,9 +2255,13 @@ object PrivilegedHelperMain {
             return true
         }
 
-        private fun setDisplayBrightnessInternal(displayId: Int, brightness: Float, temporary: Boolean) {
-            val dm = displayManagerProxy ?: return
-            try {
+        private fun setDisplayBrightnessInternal(
+            displayId: Int,
+            brightness: Float,
+            temporary: Boolean
+        ): Boolean {
+            val dm = displayManagerProxy ?: return false
+            return try {
                 val methodName = if (temporary) "setTemporaryBrightness" else "setBrightness"
                 val method = dm.javaClass.getMethod(
                     methodName,
@@ -2132,8 +2269,10 @@ object PrivilegedHelperMain {
                     Float::class.javaPrimitiveType
                 )
                 method.invoke(dm, displayId, brightness)
+                true
             } catch (t: Throwable) {
                 Log.w(TAG, "setDisplayBrightnessInternal($displayId, $brightness) failed", t)
+                false
             }
         }
 
@@ -2698,14 +2837,15 @@ object PrivilegedHelperMain {
 
         private fun getOrCreateScreenRecorder(): ScreenRecorderEngine {
             screenRecorderOverride?.let { return it }
-            val existing = screenRecorderInstance
-            if (existing != null) return existing
-            return ScreenRecorderEngine(
-                contextProvider = { systemContext ?: getOrCreateDisplay0Context() },
-                displayManagerProxy = displayManagerProxy,
-                profileProvider = { resolveActiveDeviceProfile() }
-            ).also {
-                screenRecorderInstance = it
+            screenRecorderInstance?.let { return it }
+            return synchronized(screenRecorderLock) {
+                screenRecorderOverride ?: screenRecorderInstance ?: ScreenRecorderEngine(
+                    contextProvider = { systemContext ?: getOrCreateDisplay0Context() },
+                    displayManagerProxy = displayManagerProxy,
+                    profileProvider = { resolveActiveDeviceProfile() }
+                ).also {
+                    screenRecorderInstance = it
+                }
             }
         }
 
@@ -2794,14 +2934,30 @@ object PrivilegedHelperMain {
             }
 
             var allOk = true
+            var topOk = false
+            var bottomOk = false
             if (wantTop) {
-                val topOk = captureSingleDisplayToFileInternal(0, File(topPath))
+                topOk = captureSingleDisplayToFileInternal(0, File(topPath))
                 if (!topOk) allOk = false
             }
             if (wantBottom) {
                 val bottomDisplayId = resolveBottomDisplayIdInternal()
-                val bottomOk = captureSingleDisplayToFileInternal(bottomDisplayId, File(bottomPath))
+                bottomOk = captureSingleDisplayToFileInternal(bottomDisplayId, File(bottomPath))
                 if (!bottomOk) allOk = false
+            }
+            if (!allOk && wantTop && wantBottom) {
+                if (topOk) {
+                    try {
+                        File(topPath).delete()
+                    } catch (_: Throwable) {
+                    }
+                }
+                if (bottomOk) {
+                    try {
+                        File(bottomPath).delete()
+                    } catch (_: Throwable) {
+                    }
+                }
             }
             return allOk
         }
@@ -2894,16 +3050,11 @@ object PrivilegedHelperMain {
             }
 
             // 3. Fallback: dumpsys SurfaceFlinger --display-id (flattened to single line for pservice fgets)
-            val sfOut = try {
-                val proc = ProcessBuilder("/system/bin/dumpsys", "SurfaceFlinger", "--display-id")
-                    .redirectErrorStream(true)
-                    .start()
-                val text = proc.inputStream.bufferedReader().use { it.readText() }
-                proc.waitFor(2, TimeUnit.SECONDS)
-                text
-            } catch (_: Throwable) {
-                ""
-            }.ifBlank {
+            val sfOut = runProcessWithTimeout(
+                args = listOf("/system/bin/dumpsys", "SurfaceFlinger", "--display-id"),
+                timeoutMs = 2_000L,
+                captureOutput = true
+            ).second.ifBlank {
                 execRootCommand("dumpsys SurfaceFlinger --display-id | tr '\\n' ' '")
             }
 
@@ -2937,15 +3088,16 @@ object PrivilegedHelperMain {
             } else {
                 listOf("/system/bin/screencap", "-p", outFile.absolutePath)
             }
-            try {
-                val proc = ProcessBuilder(args).redirectErrorStream(true).start()
-                proc.inputStream.use { it.readBytes() }
-                proc.waitFor(5, TimeUnit.SECONDS)
-                if (outFile.exists() && outFile.length() > 0L) {
-                    return true
-                }
-            } catch (t: Throwable) {
-                Log.w(TAG, "ProcessBuilder screencap failed for display $logicalDisplayId (phys=$physId)", t)
+            val (procOk, _) = runProcessWithTimeout(
+                args = args,
+                timeoutMs = 5_000L,
+                captureOutput = false
+            )
+            if (procOk && outFile.exists() && outFile.length() > 0L) {
+                return true
+            }
+            if (outFile.exists() && outFile.length() > 0L) {
+                return true
             }
             deleteEmptyFileQuietly(outFile)
 
@@ -2999,39 +3151,38 @@ object PrivilegedHelperMain {
                     scClass.getMethod("getPhysicalDisplayToken", Long::class.javaPrimitiveType)
                         .invoke(null, physIdLong) as? IBinder
                 } catch (_: NoSuchMethodException) {
-                    val factoryClass = Class.forName("com.android.internal.os.ClassLoaderFactory")
-                    val createLoader = factoryClass.getDeclaredMethod(
-                        "createClassLoader",
-                        String::class.java,
-                        String::class.java,
-                        String::class.java,
-                        ClassLoader::class.java,
-                        Int::class.javaPrimitiveType,
-                        Boolean::class.javaPrimitiveType,
-                        String::class.java
-                    ).apply { isAccessible = true }
-                    val loader = createLoader.invoke(
-                        null,
-                        "/system/framework/services.jar",
-                        null,
-                        null,
-                        ClassLoader.getSystemClassLoader(),
-                        0,
-                        true,
-                        null
-                    ) as? ClassLoader
-                    val dcClass = loader?.loadClass("com.android.server.display.DisplayControl")
+                    val dcClass = loadDisplayControlClassWithJni()
                     dcClass?.getMethod("getPhysicalDisplayToken", Long::class.javaPrimitiveType)
                         ?.invoke(null, physIdLong) as? IBinder
                 } ?: return false
 
-                val builderClass = Class.forName("android.view.SurfaceControl\$DisplayCaptureArgs\$Builder")
-                val builder = builderClass.getConstructor(IBinder::class.java).newInstance(displayToken)
-                val args = builderClass.getMethod("build").invoke(builder)
-                val captureMethod = scClass.methods.firstOrNull { m ->
-                    m.name == "captureDisplay" && m.parameterTypes.size == 1
+                val buffer = try {
+                    val screenCaptureClass = Class.forName("android.window.ScreenCapture")
+                    val builderClass = Class.forName(
+                        "android.window.ScreenCapture\$DisplayCaptureArgs\$Builder"
+                    )
+                    val builder = builderClass.getConstructor(IBinder::class.java)
+                        .newInstance(displayToken)
+                    val args = builderClass.getMethod("build").invoke(builder)
+                    val captureMethod = screenCaptureClass.methods.firstOrNull { m ->
+                        m.name == "captureDisplay" && m.parameterTypes.size == 1
+                    }
+                    captureMethod?.invoke(null, args)
+                } catch (_: Throwable) {
+                    null
+                } ?: run {
+                    val builderClass = Class.forName(
+                        "android.view.SurfaceControl\$DisplayCaptureArgs\$Builder"
+                    )
+                    val builder = builderClass.getConstructor(IBinder::class.java)
+                        .newInstance(displayToken)
+                    val args = builderClass.getMethod("build").invoke(builder)
+                    val captureMethod = scClass.methods.firstOrNull { m ->
+                        m.name == "captureDisplay" && m.parameterTypes.size == 1
+                    } ?: return false
+                    captureMethod.invoke(null, args)
                 } ?: return false
-                val buffer = captureMethod.invoke(null, args) ?: return false
+
                 val bitmap = buffer.javaClass.getMethod("asBitmap").invoke(buffer) as? Bitmap ?: return false
                 writeBitmapToPngFile(bitmap, outFile)
             } catch (t: Throwable) {
@@ -3096,11 +3247,7 @@ object PrivilegedHelperMain {
             if (descriptor != DESCRIPTOR_WINDOW_SESSION) return false
 
             val allowedCodes = allowedWindowSessionCodesOverride ?: allowedWindowSessionCodes
-            val codeAllowed = if (allowedCodes.isNotEmpty()) {
-                targetCode in allowedCodes
-            } else {
-                targetCode in IBinder.FIRST_CALL_TRANSACTION..(IBinder.FIRST_CALL_TRANSACTION + 16)
-            }
+            val codeAllowed = allowedCodes.isNotEmpty() && targetCode in allowedCodes
             if (!codeAllowed) return false
 
             if (forwardData.dataSize() <= 0) return false
@@ -3144,9 +3291,93 @@ object PrivilegedHelperMain {
         }
     }
 
+    internal fun loadDisplayControlClassWithJni(): Class<*>? {
+        return try {
+            val factoryClass = Class.forName("com.android.internal.os.ClassLoaderFactory")
+            val createLoader = factoryClass.getDeclaredMethod(
+                "createClassLoader",
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                ClassLoader::class.java,
+                Int::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType,
+                String::class.java
+            ).apply { isAccessible = true }
+            val loader = createLoader.invoke(
+                null,
+                "/system/framework/services.jar",
+                SYSTEM_LIB_SEARCH_PATH,
+                SYSTEM_LIB_SEARCH_PATH,
+                ClassLoader.getSystemClassLoader(),
+                0,
+                true,
+                null
+            ) as? ClassLoader ?: return null
+            try {
+                val runtime = Runtime.getRuntime()
+                val loadLib0 = runtime.javaClass.getDeclaredMethod(
+                    "loadLibrary0",
+                    ClassLoader::class.java,
+                    String::class.java
+                ).apply { isAccessible = true }
+                loadLib0.invoke(runtime, loader, "android_servers")
+            } catch (_: Throwable) {
+            }
+            loader.loadClass("com.android.server.display.DisplayControl")
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     internal fun isValidScreenshotOutputPath(path: String): Boolean {
-        if (path.isBlank() || path.contains("..") || !path.endsWith(".png")) return false
-        return path.startsWith("/sdcard/") || path.startsWith("/storage/emulated/0/")
+        return isValidScopedMediaOutputPath(
+            path = path,
+            subDirs = listOf("Pictures", "Screenshots"),
+            requiredExtension = ".png"
+        )
+    }
+
+    internal fun isValidScopedMediaOutputPath(
+        path: String,
+        subDirs: List<String>,
+        requiredExtension: String
+    ): Boolean {
+        if (path.isBlank() ||
+            path.contains("..") ||
+            path.contains('\u0000') ||
+            !path.endsWith(requiredExtension)
+        ) {
+            return false
+        }
+        val storageRoot = when {
+            path.startsWith("/sdcard/") -> "/sdcard"
+            path.startsWith("/storage/emulated/0/") -> "/storage/emulated/0"
+            else -> return false
+        }
+        val expectedPrefix = "$storageRoot/${subDirs.joinToString("/")}/"
+        if (!path.startsWith(expectedPrefix)) return false
+        val leafName = path.removePrefix(expectedPrefix)
+        if (leafName.length <= requiredExtension.length ||
+            leafName.contains('/') ||
+            leafName.contains('\\') ||
+            leafName.startsWith(".")
+        ) {
+            return false
+        }
+        // Check each component below storageRoot (never storageRoot itself, since /sdcard is an OS symlink)
+        var current = storageRoot
+        for (segment in subDirs + leafName) {
+            current = "$current/$segment"
+            try {
+                if (Files.isSymbolicLink(File(current).toPath())) {
+                    return false
+                }
+            } catch (_: Throwable) {
+                return false
+            }
+        }
+        return true
     }
 
     internal fun extractPhysicalDisplayIdFromUniqueId(uniqueId: String?): String? {

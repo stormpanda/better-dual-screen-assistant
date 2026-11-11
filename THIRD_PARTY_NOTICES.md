@@ -1,12 +1,12 @@
 # Third-Party Notices
 
-Better Dual Screen Assistant includes unmodified third-party font files used for the **Retroid Pixel** UI look. Their copyright notices and license terms are reproduced below.
+Better Dual Screen Assistant includes unmodified third-party open-source font files and runtime libraries. Their copyright notices and license terms are listed below.
 
 ---
 
 ## 1. Fusion Pixel (`app/src/main/res/font/tcc_pixel_label.ttf`)
 
-- **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, v2025.07.02)
+- **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, `2025.07.02`)
 - **Source**: https://github.com/TakWolf/fusion-pixel-font
 - **Copyright**: `Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"`
 - **License**: SIL Open Font License, Version 1.1 (reproduced below)
@@ -19,6 +19,24 @@ Better Dual Screen Assistant includes unmodified third-party font files used for
 - **Source**: https://github.com/leedheo/DOSIyagi
 - **Copyright**: `Copyright (c) 2022 Damheo Lee`
 - **License**: MIT License / SIL Open Font License, Version 1.1 (reproduced below)
+
+---
+
+## 3. AndroidX & Jetpack Compose Runtime Libraries (`androidx.*`)
+
+- **Components**: `androidx.core:core-ktx`, `androidx.activity:activity-compose`, `androidx.lifecycle:*`, `androidx.savedstate:savedstate-ktx`, `androidx.compose.ui:*`, `androidx.compose.foundation:foundation`, `androidx.compose.material3:material3`, `androidx.compose.material:material-icons-extended`
+- **Source**: https://android.googlesource.com/platform/frameworks/support
+- **Copyright**: `Copyright (c) The Android Open Source Project`
+- **License**: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+
+---
+
+## 4. Kotlin Standard Library & Kotlinx Coroutines (`org.jetbrains.*`)
+
+- **Components**: `org.jetbrains.kotlin:kotlin-stdlib`, `org.jetbrains.kotlinx:kotlinx-coroutines-android`
+- **Source**: https://github.com/JetBrains/kotlin, https://github.com/Kotlin/kotlinx.coroutines
+- **Copyright**: `Copyright (c) 2010-2025 JetBrains s.r.o. and Kotlin Programming Language contributors`
+- **License**: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
 
 ---
 

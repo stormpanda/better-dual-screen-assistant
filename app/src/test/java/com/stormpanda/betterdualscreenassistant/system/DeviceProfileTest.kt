@@ -45,6 +45,28 @@ class DeviceProfileTest {
     }
 
     @Test
+    fun `detectFromSystem ignores cachedProfile when evaluating an explicit model string`() {
+        val mockPm = mockk<PackageManager>()
+        val mockCtx = mockk<Context>()
+        every { mockCtx.packageManager } returns mockPm
+        every {
+            mockPm.getApplicationInfo(
+                DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE,
+                PackageManager.MATCH_UNINSTALLED_PACKAGES
+            )
+        } returns ApplicationInfo().apply {
+            packageName = DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE
+        }
+
+        // Populate cachedProfile = RETROID_POCKET_DUO
+        assertEquals(DeviceProfile.RETROID_POCKET_DUO, DeviceProfile.current(mockCtx))
+
+        // Explicit non-default model argument must NOT return stale cachedProfile
+        assertEquals(DeviceProfile.AYN_THOR, DeviceProfile.detectFromSystem("AYN Thor"))
+        assertEquals(DeviceProfile.RETROID_POCKET_DUO, DeviceProfile.detectFromSystem("Retroid Pocket Duo"))
+    }
+
+    @Test
     fun `current falls back to checking installed stock Retroid package when Build MODEL is generic`() {
         val mockPm = mockk<PackageManager>()
         val mockCtx = mockk<Context>()
@@ -113,7 +135,8 @@ class DeviceProfileTest {
         assertFalse(ayn.dismissOverlayOnBackMapping)
         assertEquals("Odin", ayn.standardControllerLabel)
         assertEquals("Standard Style", ayn.controllerStyleOptionLabel)
-        assertTrue(ayn.closeBottomTipText.contains("AYN key"))
+        assertTrue(ayn.closeBottomTipText.contains("press the AYN key"))
+        assertFalse(ayn.closeBottomTipText.contains("long press"))
         assertEquals("com.odin.dualscreen.assistant", ayn.stockAssistantPackage)
 
         val retroid = DeviceProfile.RETROID_POCKET_DUO
@@ -136,7 +159,7 @@ class DeviceProfileTest {
         assertTrue(retroid.dismissOverlayOnBackMapping)
         assertEquals("Retro", retroid.standardControllerLabel)
         assertEquals("Retro", retroid.controllerStyleOptionLabel)
-        assertTrue(retroid.closeBottomTipText.contains("Dual Screen key"))
+        assertTrue(retroid.closeBottomTipText.contains("long press or press the Dual Screen key"))
         assertEquals("com.retroidpocket.dualscreen.assistant", retroid.stockAssistantPackage)
 
         assertEquals(

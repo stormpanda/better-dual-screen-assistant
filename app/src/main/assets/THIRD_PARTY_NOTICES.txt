@@ -1,15 +1,25 @@
-Third-Party Font Notices — Better Dual Screen Assistant
+Third-Party Notices — Better Dual Screen Assistant
 =======================================================
 
-1. Fusion Pixel 12px Monospaced (res/font/tcc_pixel_label.ttf)
+1. Fusion Pixel 12px Monospaced (zh_hans, 2025.07.02 — res/font/tcc_pixel_label.ttf)
    Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"
    Source: https://github.com/TakWolf/fusion-pixel-font
    License: SIL Open Font License, Version 1.1
 
-2. DOSIyagiBoldface (res/font/tcc_pixel_display.ttf)
+2. DOSIyagiBoldface (Version 1.00 — res/font/tcc_pixel_display.ttf)
    Copyright (c) 2022 Damheo Lee
    Source: https://github.com/leedheo/DOSIyagi
    License: MIT License / SIL Open Font License, Version 1.1
+
+3. AndroidX & Jetpack Compose Runtime Libraries (androidx.*)
+   Copyright (c) The Android Open Source Project
+   Source: https://android.googlesource.com/platform/frameworks/support
+   License: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+
+4. Kotlin Standard Library & Kotlinx Coroutines (org.jetbrains.*)
+   Copyright (c) 2010-2025 JetBrains s.r.o. and Kotlin Programming Language contributors
+   Source: https://github.com/JetBrains/kotlin, https://github.com/Kotlin/kotlinx.coroutines
+   License: Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

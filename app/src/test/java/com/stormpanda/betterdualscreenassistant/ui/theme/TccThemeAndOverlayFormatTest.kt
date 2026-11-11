@@ -3,6 +3,7 @@ package com.stormpanda.betterdualscreenassistant.ui.theme
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -237,7 +238,7 @@ class TccThemeAndOverlayFormatTest {
                 val palette = resolveTccPalette(
                     option = option,
                     systemDark = true,
-                    customAccentArgb = RetroidPixelTealSwatch.hashCode(),
+                    customAccentArgb = RetroidPixelTealSwatch.toArgb(),
                     uiLook = look
                 )
                 assertNotNull("$look x $option must produce valid palette", palette)

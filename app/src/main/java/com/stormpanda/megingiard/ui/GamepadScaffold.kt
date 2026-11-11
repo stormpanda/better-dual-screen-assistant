@@ -516,7 +516,7 @@ fun GamepadTwoPaneScaffold(
             if (savedKey != null) {
                 val savedRequester = activeDeckCardRequesters[savedKey]
                 if (savedRequester != null) {
-                    if (tryRequestFocus(savedRequester)) {
+                    if (tryRequestFocus(savedRequester) && isDeckFocused) {
                         AppLog.d(TAG, "GamepadTwoPaneScaffold: restored focus to card '$savedKey' at depth $depth")
                         return true
                     }
@@ -524,19 +524,24 @@ fun GamepadTwoPaneScaffold(
                         savedFocusKeyByDepth.remove(depth)
                         onRemoveFocusedKey?.invoke(depth)
                     }
+                } else if (allowCardFallback) {
+                    savedFocusKeyByDepth.remove(depth)
+                    onRemoveFocusedKey?.invoke(depth)
                 }
                 if (!allowCardFallback) {
                     return false
                 }
             }
         }
-        if (tryRequestFocus(firstContentRequester)) {
+        if (tryRequestFocus(firstContentRequester) && isDeckFocused) {
             AppLog.d(TAG, "GamepadTwoPaneScaffold: focused first content item at depth $depth")
             return true
         }
         if (allowCardFallback) {
-            val fallbackRequester = activeDeckCardRequesters.values.firstOrNull()
-            if (fallbackRequester != null && tryRequestFocus(fallbackRequester)) {
+            val fallbackRequester = activeDeckCardRequesters.values.firstOrNull { candidate ->
+                tryRequestFocus(candidate) && isDeckFocused
+            }
+            if (fallbackRequester != null) {
                 AppLog.d(TAG, "GamepadTwoPaneScaffold: fallback focus on active deck card at depth $depth")
                 return true
             }

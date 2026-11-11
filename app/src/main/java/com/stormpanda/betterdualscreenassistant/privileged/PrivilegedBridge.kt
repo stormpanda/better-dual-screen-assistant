@@ -25,9 +25,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 @SuppressLint("PrivateApi")
 object PrivilegedBridge {
     private const val TAG = "PrivilegedBridge"
+    internal const val PRIVILEGED_OVERLAY_WINDOW_TYPE = 2021
+    private const val HELPER_SPAWN_COOLDOWN_MS = 1_500L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val isSpawning = AtomicBoolean(false)
     private val clientToken = Binder()
+
+    @Volatile
+    private var lastSpawnAttemptElapsedMs: Long = 0L
 
     @Volatile
     private var helperBinder: IBinder? = null
@@ -108,11 +113,12 @@ object PrivilegedBridge {
         if (bottomScreenBlanked) {
             dispatchBottomScreenBlankedToBinder(binder, bottomScreenBlanked, bottomScreenShowCoverWindow)
         }
-        if (panel0BacklightBlanked) {
-            dispatchBacklightPowerToBinder(binder, 0, true)
+        val syncBacklightSysfs = DeviceProfile.current(context).blankViaBacklightSysfs
+        if (panel0BacklightBlanked || syncBacklightSysfs) {
+            dispatchBacklightPowerToBinder(binder, 0, panel0BacklightBlanked)
         }
-        if (panel1BacklightBlanked) {
-            dispatchBacklightPowerToBinder(binder, 1, true)
+        if (panel1BacklightBlanked || syncBacklightSysfs) {
+            dispatchBacklightPowerToBinder(binder, 1, panel1BacklightBlanked)
         }
         pendingOsThemeRequest?.let { req ->
             scope.launch {
@@ -211,6 +217,10 @@ object PrivilegedBridge {
             syncWatchdogStateToHelper()
             return
         }
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        if (lastSpawnAttemptElapsedMs > 0L && nowElapsed - lastSpawnAttemptElapsedMs in 0L until HELPER_SPAWN_COOLDOWN_MS) {
+            return
+        }
         if (!isSpawning.compareAndSet(false, true)) return
         val appContext = context.applicationContext
         scope.launch {
@@ -222,6 +232,7 @@ object PrivilegedBridge {
                     syncWatchdogStateToHelper()
                     return@launch
                 }
+                lastSpawnAttemptElapsedMs = android.os.SystemClock.elapsedRealtime()
                 val apkPath = PServerClient.shellQuote(appContext.applicationInfo.sourceDir)
                 val cmd = "CLASSPATH=$apkPath /system/bin/app_process /system/bin " +
                     "com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain >/dev/null 2>&1 &"
@@ -529,7 +540,7 @@ object PrivilegedBridge {
         try {
             val sysProps = Class.forName("android.os.SystemProperties")
             val get = sysProps.getMethod("get", String::class.java, String::class.java)
-            val res = get.invoke(null, key, defaultValue) as? String
+            val res = get.invoke(null, key, "") as? String
             if (!res.isNullOrEmpty()) return res
         } catch (_: Throwable) {
         }
@@ -652,10 +663,11 @@ object PrivilegedBridge {
             try {
                 data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
                 data.writeString(path)
-                binder.transact(PrivilegedHelperMain.TRANSACTION_READ_FILE, data, reply, 0)
-                reply.readException()
-                val text = reply.readString() ?: ""
-                if (text.isNotEmpty()) return text
+                val transacted = binder.transact(PrivilegedHelperMain.TRANSACTION_READ_FILE, data, reply, 0)
+                if (transacted) {
+                    reply.readException()
+                    return reply.readString() ?: ""
+                }
             } catch (_: Throwable) {
             } finally {
                 data.recycle()
@@ -1027,13 +1039,13 @@ object PrivilegedBridge {
             return false
         }
 
-        val cmds = mutableListOf("mkdir -p $dir")
+        val cmds = mutableListOf("mkdir -p ${PServerClient.shellQuote(dir)}")
         if (wantTop) {
             val dArg = if (!topPhysId.isNullOrEmpty()) "-d $topPhysId" else ""
-            cmds.add("/system/bin/screencap -p $dArg $topPath")
+            cmds.add("/system/bin/screencap -p $dArg ${PServerClient.shellQuote(topPath)}")
         }
         if (wantBottom) {
-            cmds.add("/system/bin/screencap -p -d $bottomPhysId $bottomPath")
+            cmds.add("/system/bin/screencap -p -d $bottomPhysId ${PServerClient.shellQuote(bottomPath)}")
         }
 
         val res = PServerClient.exec(cmds.joinToString(" && "), wait = true)
@@ -1048,6 +1060,14 @@ object PrivilegedBridge {
                             f.delete()
                         } catch (_: Throwable) {
                         }
+                    }
+                }
+            }
+            if (!allNonEmpty && paths.size > 1) {
+                for (p in paths) {
+                    try {
+                        File(p).delete()
+                    } catch (_: Throwable) {
                     }
                 }
             }
@@ -1400,8 +1420,11 @@ object PrivilegedBridge {
                     iWindowSessionClass.classLoader,
                     arrayOf(iWindowSessionClass)
                 ) { _, method, args ->
+                    val lp = args?.firstOrNull { it is android.view.WindowManager.LayoutParams }
+                        as? android.view.WindowManager.LayoutParams
                     val target = if (
                         method.name.startsWith("addToDisplay") &&
+                        lp?.type == PRIVILEGED_OVERLAY_WINDOW_TYPE &&
                         helperBinder?.isBinderAlive == true
                     ) {
                         bridgedSession
@@ -1472,5 +1495,19 @@ object PrivilegedBridge {
             helperData.recycle()
             helperReply.recycle()
         }
+    }
+
+    internal fun resetForTesting() {
+        helperBinder = null
+        _isHelperConnected.value = false
+        lastSpawnAttemptElapsedMs = 0L
+        isSpawning.set(false)
+        topScreenBlanked = false
+        topScreenShowCoverWindow = false
+        bottomScreenBlanked = false
+        bottomScreenShowCoverWindow = false
+        panel0BacklightBlanked = false
+        panel1BacklightBlanked = false
+        pendingOsThemeRequest = null
     }
 }

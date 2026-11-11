@@ -954,6 +954,53 @@ class GamepadScaffoldTouchNavigationTest {
         )
     }
 
+    @Test
+    @Config(qualifiers = "w832dp-h468dp-369dpi")
+    fun `MainActivity renders Retroid Pocket Duo strings Quick Toggles count and Open-Source Licenses sub-page`() {
+        com.stormpanda.betterdualscreenassistant.system.DeviceProfile.testOverride =
+            com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO
+        resetSystemSettingsRepositorySingleton()
+
+        mockkObject(PServerClient)
+        mockkObject(PrivilegedBridge)
+        mockkObject(UpdateManager)
+        every { PServerClient.isAvailable() } returns true
+        every { PServerClient.isStockAssistantEnabled(any()) } returns false
+        every { PServerClient.ensurePermissionsGranted(any()) } just runs
+        every { PrivilegedBridge.ensureInitialized(any()) } just runs
+        every { UpdateManager.init(any()) } just runs
+        every { UpdateManager.checkForUpdates(any(), any()) } just runs
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        activeControllers.add(controller)
+        val activity = controller.get()
+        idleCompose(activity, 300)
+
+        // 1. General tab shows Retroid Pocket Duo button/vendor strings
+        assertNotNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
+        assertNotNull(findNodeWithTextOrNull(activity, "physical Dual Screen button"))
+
+        // 2. Quick Toggles tab filters unsupported tiles (Ambient Light & Double-Tap Home -> 22 supported tiles)
+        tapClickableNodeWithText(activity, "Quick Toggles")
+        idleCompose(activity, 300)
+        val supportedCount = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+            .supportedEntries(com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO)
+            .size
+        assertEquals(22, supportedCount)
+        assertNotNull(findNodeWithTextOrNull(activity, "9 / 22 Active"))
+
+        // 3. Updates tab exposes "Open-Source Licenses" sub-page displaying bundled notices
+        tapClickableNodeWithText(activity, "Updates")
+        idleCompose(activity, 300)
+        assertNotNull(findNodeWithTextOrNull(activity, "Open-Source Licenses"))
+
+        tapClickableNodeWithText(activity, "Open-Source Licenses")
+        idleCompose(activity, 500)
+        assertNotNull(findNodeWithTextOrNull(activity, "Fusion Pixel"))
+        assertNotNull(findNodeWithTextOrNull(activity, "DOSIyagiBoldface"))
+        assertNotNull(findNodeWithTextOrNull(activity, "AndroidX & Jetpack Compose"))
+    }
+
     private fun resetSystemSettingsRepositorySingleton() {
         try {
             val field = SystemSettingsRepository::class.java.getDeclaredField("instance").apply {

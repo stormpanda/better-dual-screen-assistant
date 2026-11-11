@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.os.Parcel
 import android.util.Log
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
+import com.stormpanda.betterdualscreenassistant.system.DirectBootPrefs
 import java.nio.charset.StandardCharsets
 
 /**
@@ -116,12 +117,12 @@ object PServerClient {
     }
 
     fun isReplaceStockPreferred(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = DirectBootPrefs.open(context, PREFS_NAME)
         return prefs.getBoolean(KEY_REPLACE_STOCK, true)
     }
 
     fun setReplaceStockPreferred(context: Context, replace: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        DirectBootPrefs.open(context, PREFS_NAME)
             .edit()
             .putBoolean(KEY_REPLACE_STOCK, replace)
             .apply()
@@ -180,7 +181,7 @@ object PServerClient {
         }
         return if (enabled) {
             val shouldClearOsTheme = if (context != null) {
-                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val prefs = DirectBootPrefs.open(context, PREFS_NAME)
                 prefs.getBoolean("inject_os_theme", false) ||
                     prefs.contains("saved_os_night_mode") ||
                     prefs.contains("saved_os_theme_json")

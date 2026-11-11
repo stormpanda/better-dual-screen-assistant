@@ -141,8 +141,11 @@ class ScreenRecorderEngine(
         }
 
         internal fun isValidRecordingOutputPath(path: String): Boolean {
-            if (path.isBlank() || path.contains("..") || !path.endsWith(".mp4")) return false
-            return path.startsWith("/sdcard/") || path.startsWith("/storage/emulated/0/")
+            return PrivilegedHelperMain.isValidScopedMediaOutputPath(
+                path = path,
+                subDirs = listOf("Movies", "ScreenRecordings"),
+                requiredExtension = ".mp4"
+            )
         }
 
         internal fun alignEven(value: Int): Int = (value.coerceAtLeast(2) + 1) and 1.inv()
@@ -1532,35 +1535,8 @@ class ScreenRecorderEngine(
         }
     }
 
-    private fun loadDisplayControlClass(): Class<*>? {
-        return try {
-            val factoryClass = Class.forName("com.android.internal.os.ClassLoaderFactory")
-            val createLoader = factoryClass.getDeclaredMethod(
-                "createClassLoader",
-                String::class.java,
-                String::class.java,
-                String::class.java,
-                ClassLoader::class.java,
-                Int::class.javaPrimitiveType,
-                Boolean::class.javaPrimitiveType,
-                String::class.java
-            )
-            createLoader.isAccessible = true
-            val loader = createLoader.invoke(
-                null,
-                "/system/framework/services.jar",
-                null,
-                null,
-                ClassLoader.getSystemClassLoader(),
-                0,
-                true,
-                null
-            ) as? ClassLoader ?: return null
-            loader.loadClass("com.android.server.display.DisplayControl")
-        } catch (_: Throwable) {
-            null
-        }
-    }
+    private fun loadDisplayControlClass(): Class<*>? =
+        PrivilegedHelperMain.loadDisplayControlClassWithJni()
 
     private fun createVirtualDisplayMirrorFallback(
         name: String,

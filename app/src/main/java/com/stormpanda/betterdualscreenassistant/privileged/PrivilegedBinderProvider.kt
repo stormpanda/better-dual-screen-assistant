@@ -18,7 +18,7 @@ class PrivilegedBinderProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         if (method == PrivilegedHelperMain.METHOD_REGISTER_BINDER && extras != null) {
             val callingUid = Binder.getCallingUid()
-            if (callingUid == 0 || callingUid == Process.SYSTEM_UID || callingUid == Process.myUid()) {
+            if (callingUid == 0 || callingUid == Process.myUid()) {
                 val binder = extras.getBinder(PrivilegedHelperMain.EXTRA_BINDER)
                 if (binder != null) {
                     Log.i("PrivilegedBinderProvider", "Received helper binder from uid=$callingUid")

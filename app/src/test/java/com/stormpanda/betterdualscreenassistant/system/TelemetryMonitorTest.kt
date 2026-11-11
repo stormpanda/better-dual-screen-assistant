@@ -27,6 +27,8 @@ class TelemetryMonitorTest {
     fun setUp() {
         DeviceProfile.testOverride = null
         DeviceProfile.resetCacheForTesting()
+        TelemetryMonitor.resetThermalPathCacheForTesting()
+        PrivilegedBridge.resetForTesting()
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences(SystemSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -39,6 +41,8 @@ class TelemetryMonitorTest {
     fun tearDown() {
         DeviceProfile.testOverride = null
         DeviceProfile.resetCacheForTesting()
+        TelemetryMonitor.resetThermalPathCacheForTesting()
+        PrivilegedBridge.resetForTesting()
         setHelperBinder(null)
     }
 
@@ -243,5 +247,50 @@ class TelemetryMonitorTest {
 
         repo.setRememberLastQuickTogglePage(true)
         assertTrue(repo.rememberLastQuickTogglePage.value)
+    }
+
+    @Test
+    fun `resolveCpuThermalPath discovers Retroid cpuss zone and avoids caching fallback when sysfs is unreadable`() {
+        // 1. Before PrivilegedHelperMain connects (sysfs returns ""), fallback is returned WITHOUT latching cache
+        setHelperBinder(null)
+        assertEquals(
+            "/sys/devices/virtual/thermal/thermal_zone48/temp",
+            TelemetryMonitor.resolveCpuThermalPath()
+        )
+
+        // 2. Once helper connects on Retroid Pocket Duo (thermal_zone7 = cpuss-0, thermal_zone48 = non-CPU),
+        // resolveCpuThermalPath immediately discovers thermal_zone7
+        val sysfs = mutableMapOf(
+            "/sys/devices/virtual/thermal/thermal_zone48/type" to "modem-skin-usr",
+            "/sys/devices/virtual/thermal/thermal_zone7/type" to "cpuss-0",
+            "/sys/devices/virtual/thermal/thermal_zone7/temp" to "48500"
+        )
+        val binder = mockk<IBinder>(relaxed = true)
+        every { binder.isBinderAlive } returns true
+        every { binder.transact(PrivilegedHelperMain.TRANSACTION_READ_FILE, any(), any(), any()) } answers {
+            val data = secondArg<Parcel>()
+            val reply = thirdArg<Parcel?>()
+            data.setDataPosition(0)
+            data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+            val path = data.readString().orEmpty()
+            reply?.writeNoException()
+            reply?.writeString(sysfs[path].orEmpty())
+            reply?.setDataPosition(0)
+            true
+        }
+        setHelperBinder(binder)
+
+        assertEquals(
+            "/sys/devices/virtual/thermal/thermal_zone7/temp",
+            TelemetryMonitor.resolveCpuThermalPath()
+        )
+
+        // 3. Resetting cache on AYN Thor (thermal_zone48 = cpuss-0-usr) takes the fast path
+        TelemetryMonitor.resetThermalPathCacheForTesting()
+        sysfs["/sys/devices/virtual/thermal/thermal_zone48/type"] = "cpuss-0-usr"
+        assertEquals(
+            "/sys/devices/virtual/thermal/thermal_zone48/temp",
+            TelemetryMonitor.resolveCpuThermalPath()
+        )
     }
 }
