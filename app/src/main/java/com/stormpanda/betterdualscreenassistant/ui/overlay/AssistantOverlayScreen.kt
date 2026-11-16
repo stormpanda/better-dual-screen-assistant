@@ -618,7 +618,13 @@ private fun buildQuickSettingTileModels(
                 QuickSettingTileId.CONTROLLER_STYLE -> {
                     val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
                         0 -> stringResource(R.string.fan_option_xbox_style) to true
-                        1 -> profile.controllerStyleOptionLabel to true
+                        1 -> stringResource(
+                            if (profile == DeviceProfile.RETROID_POCKET_DUO) {
+                                R.string.fan_option_retro_style
+                            } else {
+                                R.string.fan_option_odin_style
+                            }
+                        ) to true
                         else -> stringResource(R.string.fan_option_disable) to false
                     }
                     add(QuickSettingTileModel(ctrlLabel, R.drawable.ic_qs_controller_style, ctrlSelected) {
@@ -664,42 +670,42 @@ private fun buildQuickSettingTileModels(
                         AppThemeOption.STOCK_SYSTEM -> stringResource(R.string.text_system_theme) to false
                         AppThemeOption.STOCK_LIGHT -> stringResource(R.string.text_light_theme) to false
                         AppThemeOption.STOCK_DARK -> stringResource(R.string.text_dark_theme) to true
-                        else -> currentThemeOpt.shortTileLabel to true
+                        else -> currentThemeOpt.shortTileLabel(LocalContext.current) to true
                     }
                     add(QuickSettingTileModel(themeLabel, R.drawable.ic_qs_theme_mode, themeSelected) {
                         onOpenDialog(ActiveDialog.THEME_MODE)
                     })
                 }
                 QuickSettingTileId.WIFI -> add(
-                    QuickSettingTileModel("Wi-Fi", R.drawable.ic_qs_wifi, wifiEnabled) { repository.toggleWifi() }
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_wifi_title), R.drawable.ic_qs_wifi, wifiEnabled) { repository.toggleWifi() }
                 )
                 QuickSettingTileId.BLUETOOTH -> add(
-                    QuickSettingTileModel("Bluetooth", R.drawable.ic_bluetooth, bluetoothEnabled) { repository.toggleBluetooth() }
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_bluetooth_title), R.drawable.ic_bluetooth, bluetoothEnabled) { repository.toggleBluetooth() }
                 )
                 QuickSettingTileId.DO_NOT_DISTURB -> add(
-                    QuickSettingTileModel("Do Not Disturb", R.drawable.ic_qs_dnd, dndEnabled) { repository.toggleDnd() }
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_dnd_title), R.drawable.ic_qs_dnd, dndEnabled) { repository.toggleDnd() }
                 )
                 QuickSettingTileId.AIRPLANE_MODE -> add(
-                    QuickSettingTileModel("Airplane Mode", R.drawable.ic_qs_airplane, airplaneModeEnabled) { repository.toggleAirplaneMode() }
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_airplane_mode_title), R.drawable.ic_qs_airplane, airplaneModeEnabled) { repository.toggleAirplaneMode() }
                 )
                 QuickSettingTileId.TOUCH_LOCK -> add(
                     QuickSettingTileModel(
-                        if (touchLockEnabled) "Touch Locked" else "Touch Lock",
+                        stringResource(if (touchLockEnabled) R.string.qs_tile_touch_locked_short else R.string.qs_tile_touch_lock_title),
                         R.drawable.ic_qs_touch_lock,
                         touchLockEnabled,
                         onToggleTouchLock
                     )
                 )
                 QuickSettingTileId.SCREENSHOT -> add(
-                    QuickSettingTileModel("Screenshot", R.drawable.ic_qs_screenshot, false) {
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_screenshot_title), R.drawable.ic_qs_screenshot, false) {
                         onOpenDialog(ActiveDialog.SCREENSHOT)
                     }
                 )
                 QuickSettingTileId.SCREEN_RECORD -> {
                     val tileLabel = if (isRecordingScreen) {
-                        "Stop (${recordingElapsedText.ifEmpty { "00:00" }})"
+                        stringResource(R.string.qs_tile_record_stop_fmt, recordingElapsedText.ifEmpty { "00:00" })
                     } else {
-                        "Screen Record"
+                        stringResource(R.string.qs_tile_screen_record_title)
                     }
                     add(QuickSettingTileModel(tileLabel, R.drawable.ic_qs_screen_record, isRecordingScreen) {
                         if (isRecordingScreen) onStopScreenRecording() else onOpenDialog(ActiveDialog.SCREEN_RECORD)
@@ -707,41 +713,41 @@ private fun buildQuickSettingTileModels(
                 }
                 QuickSettingTileId.TRIGGER_MODE -> {
                     val triggerLabel = when (triggerMode) {
-                        1 -> "Trigger: Analog"
-                        0 -> "Trigger: Digital"
-                        else -> "Trigger: Both"
+                        1 -> stringResource(R.string.qs_tile_trigger_analog)
+                        0 -> stringResource(R.string.qs_tile_trigger_digital)
+                        else -> stringResource(R.string.qs_tile_trigger_both)
                     }
                     add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != 2) {
                         onOpenDialog(ActiveDialog.TRIGGER_MODE)
                     })
                 }
                 QuickSettingTileId.CHARGE_LIMIT_80 -> add(
-                    QuickSettingTileModel("80% Charge Limit", R.drawable.ic_qs_charge_limit, chargeLimit80) {
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_charge_limit_title), R.drawable.ic_qs_charge_limit, chargeLimit80) {
                         repository.toggleChargeLimit80()
                     }
                 )
                 QuickSettingTileId.GAMEPAD_MOUSE_MODE -> add(
-                    QuickSettingTileModel("Mouse Mode", R.drawable.ic_qs_mouse_mode, gamepadMouseMode) {
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_mouse_mode_title), R.drawable.ic_qs_mouse_mode, gamepadMouseMode) {
                         repository.toggleGamepadMouseMode()
                     }
                 )
                 QuickSettingTileId.KEY_MAPPER -> add(
-                    QuickSettingTileModel("Key Mapper", R.drawable.ic_qs_key_mapper, keyMapperEnabled) {
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_key_mapper_title), R.drawable.ic_qs_key_mapper, keyMapperEnabled) {
                         repository.toggleKeyMapper()
                     }
                 )
                 QuickSettingTileId.KEEP_SCREEN_ON -> add(
-                    QuickSettingTileModel("Keep Screen On", R.drawable.ic_qs_keep_awake, keepScreenOn) {
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_keep_screen_on_title), R.drawable.ic_qs_keep_awake, keepScreenOn) {
                         repository.toggleKeepScreenOn()
                     }
                 )
                 QuickSettingTileId.PREVENT_ACCIDENTAL_HOME -> add(
-                    QuickSettingTileModel("Home Lock", R.drawable.ic_qs_prevent_home, preventAccidentalHome) {
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_home_lock_title), R.drawable.ic_qs_prevent_home, preventAccidentalHome) {
                         repository.togglePreventAccidentalHome()
                     }
                 )
                 QuickSettingTileId.CLEAR_ALL_TASKS -> add(
-                    QuickSettingTileModel("Clear All Tasks", R.drawable.ic_qs_clear_tasks, false, onClearAllTasks)
+                    QuickSettingTileModel(stringResource(R.string.qs_tile_clear_tasks_title), R.drawable.ic_qs_clear_tasks, false, onClearAllTasks)
                 )
             }
         }
@@ -966,7 +972,7 @@ private fun SystemSettingsTab(
                 horizontalArrangement = Arrangement.spacedBy(settingsSpec.tempFanGap)
             ) {
                 HardwareInfoComponentCard(
-                    title = "TEMP",
+                    title = stringResource(R.string.telemetry_temp),
                     valueWithUnit = displayTempText,
                     iconRes = R.drawable.ic_temp,
                     iconTint = tempTint,
@@ -978,7 +984,7 @@ private fun SystemSettingsTab(
                 )
 
                 HardwareInfoComponentCard(
-                    title = "FAN",
+                    title = stringResource(R.string.telemetry_fan),
                     valueWithUnit = "${telemetry.fanSpeedPercent}%",
                     iconRes = R.drawable.ic_fan_normal,
                     iconTint = fanTint,
@@ -1025,7 +1031,7 @@ private fun SystemSettingsTab(
                 }
 
                 HardwareRingGauge(
-                    title = "CPU",
+                    title = stringResource(R.string.telemetry_cpu),
                     valueText = formatRingValue(telemetry.cpuCurFreqGhz),
                     unitText = telemetry.cpuUnit,
                     value = telemetry.cpuCurFreqGhz,
@@ -1038,7 +1044,7 @@ private fun SystemSettingsTab(
                 )
 
                 HardwareRingGauge(
-                    title = "GPU",
+                    title = stringResource(R.string.telemetry_gpu),
                     valueText = formatRingValue(telemetry.gpuCurFreqMhz),
                     unitText = telemetry.gpuUnit,
                     value = telemetry.gpuCurFreqMhz,
@@ -1051,7 +1057,7 @@ private fun SystemSettingsTab(
                 )
 
                 HardwareRingGauge(
-                    title = "PWR",
+                    title = stringResource(R.string.telemetry_pwr),
                     valueText = formatRingValue(telemetry.powerWatts),
                     unitText = "W",
                     value = telemetry.powerWatts,

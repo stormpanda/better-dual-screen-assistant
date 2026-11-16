@@ -182,8 +182,9 @@ class TccThemeAndOverlayFormatTest {
         assertEquals(TccUiLook.AYN, TccUiLookPreference.AYN.resolve(DeviceProfile.RETROID_POCKET_DUO))
         assertEquals(TccUiLook.RETROID, TccUiLookPreference.RETROID.resolve(DeviceProfile.AYN_THOR))
 
-        assertEquals("Auto (AYN Smooth)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.AYN_THOR))
-        assertEquals("Auto (Retroid Pixel)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.RETROID_POCKET_DUO))
+        assertEquals(R.string.ui_look_auto, TccUiLookPreference.AUTO.displayNameRes)
+        assertEquals(R.string.ui_look_ayn, TccUiLookPreference.AYN.displayNameRes)
+        assertEquals(R.string.ui_look_retroid, TccUiLookPreference.RETROID.displayNameRes)
 
         assertTrue(RetroidPixelTealSwatch in MegingiardAccentPresets)
         assertTrue(RetroidPixelOrangeSwatch in MegingiardAccentPresets)

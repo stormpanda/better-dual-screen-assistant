@@ -541,10 +541,10 @@ class ScreenOverlayManager(
                 val clearedCount = repository.clearAllRecentTasks()
                 mainHandler.post {
                     val message = when {
-                        clearedCount > 1 -> "Cleared $clearedCount recent apps"
-                        clearedCount == 1 -> "Cleared 1 recent app"
-                        clearedCount == 0 -> "Cleared recent apps"
-                        else -> "Failed to clear recent apps"
+                        clearedCount > 1 -> context.getString(R.string.toast_cleared_apps_plural, clearedCount)
+                        clearedCount == 1 -> context.getString(R.string.toast_cleared_apps_one)
+                        clearedCount == 0 -> context.getString(R.string.toast_cleared_apps_zero)
+                        else -> context.getString(R.string.toast_cleared_apps_fail)
                     }
                     showBottomToast(message)
                 }
@@ -559,9 +559,9 @@ class ScreenOverlayManager(
                 val swapped = repository.swapScreens()
                 mainHandler.post {
                     if (swapped) {
-                        showBottomToast("Swapped apps between screens")
+                        showBottomToast(context.getString(R.string.toast_swapped_apps))
                     } else {
-                        showBottomToast("No movable foreground apps to swap")
+                        showBottomToast(context.getString(R.string.toast_swapped_apps_none))
                     }
                 }
             }.start()
@@ -573,11 +573,13 @@ class ScreenOverlayManager(
             val locked = repository.toggleTouchLock()
             if (locked) {
                 hideAssistantOverlay()
-                val roleTitle = if (repository.promotedToManager.value) "Manager" else "Assistant"
-                showBottomToast("Bottom screen touch locked (open $roleTitle to unlock)")
+                val roleTitle = context.getString(
+                    if (repository.promotedToManager.value) R.string.role_manager else R.string.role_assistant
+                )
+                showBottomToast(context.getString(R.string.toast_touch_locked_fmt, roleTitle))
             } else {
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
-                showBottomToast("Bottom screen touch unlocked")
+                showBottomToast(context.getString(R.string.toast_touch_unlocked))
             }
         }
     }
@@ -587,16 +589,18 @@ class ScreenOverlayManager(
         mainHandler.postDelayed({
             Thread {
                 val ok = PrivilegedBridge.captureScreenshot(context, targetMode)
-                val targetName = when (targetMode) {
-                    0 -> "Top screen"
-                    1 -> "Bottom screen"
-                    else -> "Both screens"
-                }
+                val targetName = context.getString(
+                    when (targetMode) {
+                        0 -> R.string.dialog_target_top_screen
+                        1 -> R.string.dialog_target_bottom_screen
+                        else -> R.string.dialog_target_both_screens
+                    }
+                )
                 mainHandler.post {
                     if (ok) {
-                        showBottomToast("Saved $targetName screenshot to Pictures/Screenshots")
+                        showBottomToast(context.getString(R.string.toast_screenshot_saved_fmt, targetName))
                     } else {
-                        showBottomToast("Failed to capture $targetName screenshot")
+                        showBottomToast(context.getString(R.string.toast_screenshot_failed_fmt, targetName))
                     }
                 }
             }.start()
@@ -612,9 +616,9 @@ class ScreenOverlayManager(
                     val stopReason = repository.screenRecordingState.value.lastStopReason
                     mainHandler.post {
                         if (stopReason == "low_storage") {
-                            showBottomToast("Insufficient storage (<250 MB) to start recording")
+                            showBottomToast(context.getString(R.string.toast_record_low_storage))
                         } else {
-                            showBottomToast("Failed to start screen recording")
+                            showBottomToast(context.getString(R.string.toast_record_start_failed))
                         }
                     }
                 }
@@ -627,9 +631,9 @@ class ScreenOverlayManager(
             val state = repository.stopScreenRecording(reason)
             mainHandler.post {
                 if (state.lastCompletedPath.isNotEmpty()) {
-                    showBottomToast("Saved recording to Movies/ScreenRecordings")
+                    showBottomToast(context.getString(R.string.toast_record_saved))
                 } else {
-                    showBottomToast("Screen recording stopped")
+                    showBottomToast(context.getString(R.string.toast_record_stopped))
                 }
             }
         }.start()

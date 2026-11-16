@@ -1,6 +1,8 @@
 package com.stormpanda.betterdualscreenassistant.ui.theme
 
+import android.content.Context
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -33,12 +35,12 @@ enum class TccUiLook {
 
 enum class TccUiLookPreference(
     val id: Int,
-    val displayName: String,
-    val shortLabel: String
+    @param:StringRes val displayNameRes: Int,
+    @param:StringRes val shortLabelRes: Int
 ) {
-    AUTO(0, "Auto", "Auto"),
-    AYN(1, "AYN Smooth", "AYN"),
-    RETROID(2, "Retroid Pixel", "Retroid");
+    AUTO(0, R.string.ui_look_auto, R.string.ui_look_auto),
+    AYN(1, R.string.ui_look_ayn, R.string.ui_look_ayn),
+    RETROID(2, R.string.ui_look_retroid, R.string.ui_look_retroid);
 
     fun resolve(profile: DeviceProfile): TccUiLook = when (this) {
         AUTO -> when (profile.defaultUiLookPreferenceId) {
@@ -49,13 +51,15 @@ enum class TccUiLookPreference(
         RETROID -> TccUiLook.RETROID
     }
 
-    fun displayNameFor(profile: DeviceProfile): String = when (this) {
+    fun displayNameFor(context: Context, profile: DeviceProfile): String = when (this) {
         AUTO -> {
             val nativePref = if (profile.defaultUiLookPreferenceId == RETROID.id) RETROID else AYN
-            "Auto (${nativePref.displayName})"
+            context.getString(R.string.ui_look_auto_fmt, context.getString(nativePref.displayNameRes))
         }
-        else -> displayName
+        else -> context.getString(displayNameRes)
     }
+
+    fun shortLabel(context: Context): String = context.getString(shortLabelRes)
 
     companion object {
         fun fromId(id: Int): TccUiLookPreference =
@@ -138,8 +142,8 @@ val MegingiardAccentPresets: List<Color> = listOf(
 
 enum class AppThemeOption(
     val id: Int,
-    val displayName: String,
-    val shortTileLabel: String,
+    @param:StringRes val displayNameRes: Int,
+    @param:StringRes val shortTileLabelRes: Int,
     val isMegingiardStyle: Boolean,
     val supportsCustomAccent: Boolean = false,
     val megingiardIpcName: String? = null,
@@ -149,8 +153,8 @@ enum class AppThemeOption(
 ) {
     STOCK_SYSTEM(
         id = 1,
-        displayName = "Follow System (Stock)",
-        shortTileLabel = "Follow System",
+        displayNameRes = R.string.theme_stock_system,
+        shortTileLabelRes = R.string.theme_stock_system_short,
         isMegingiardStyle = false,
         previewBackground = Color.Black,
         previewSurface = Color(0xFF161616),
@@ -158,8 +162,8 @@ enum class AppThemeOption(
     ),
     STOCK_LIGHT(
         id = 3,
-        displayName = "Light (Stock)",
-        shortTileLabel = "Light",
+        displayNameRes = R.string.theme_stock_light,
+        shortTileLabelRes = R.string.theme_stock_light_short,
         isMegingiardStyle = false,
         previewBackground = Color(0xFFDEDBDB),
         previewSurface = Color(0xFFE7E5E5),
@@ -167,8 +171,8 @@ enum class AppThemeOption(
     ),
     STOCK_DARK(
         id = 4,
-        displayName = "Dark (Stock)",
-        shortTileLabel = "Dark",
+        displayNameRes = R.string.theme_stock_dark,
+        shortTileLabelRes = R.string.theme_stock_dark_short,
         isMegingiardStyle = false,
         previewBackground = Color.Black,
         previewSurface = Color(0xFF161616),
@@ -176,8 +180,8 @@ enum class AppThemeOption(
     ),
     SYNC_MEGINGIARD(
         id = 100,
-        displayName = "Sync with Megingiard",
-        shortTileLabel = "Megingiard Sync",
+        displayNameRes = R.string.theme_sync_megingiard,
+        shortTileLabelRes = R.string.theme_sync_megingiard_short,
         isMegingiardStyle = true,
         previewBackground = Color(0xFF040C08),
         previewSurface = Color(0xFF06140C),
@@ -185,8 +189,8 @@ enum class AppThemeOption(
     ),
     MEGINGIARD_DARK(
         id = 101,
-        displayName = "Dark",
-        shortTileLabel = "Dark",
+        displayNameRes = R.string.theme_dark,
+        shortTileLabelRes = R.string.theme_dark,
         isMegingiardStyle = true,
         supportsCustomAccent = true,
         megingiardIpcName = "DARK",
@@ -196,8 +200,8 @@ enum class AppThemeOption(
     ),
     MEGINGIARD_DARK_OLED(
         id = 102,
-        displayName = "Dark OLED",
-        shortTileLabel = "Dark OLED",
+        displayNameRes = R.string.theme_dark_oled,
+        shortTileLabelRes = R.string.theme_dark_oled,
         isMegingiardStyle = true,
         supportsCustomAccent = true,
         megingiardIpcName = "DARK_OLED",
@@ -207,8 +211,8 @@ enum class AppThemeOption(
     ),
     MEGINGIARD(
         id = 103,
-        displayName = "Norse Forest",
-        shortTileLabel = "Norse Forest",
+        displayNameRes = R.string.theme_norse_forest,
+        shortTileLabelRes = R.string.theme_norse_forest,
         isMegingiardStyle = true,
         megingiardIpcName = "MEGINGIARD",
         previewBackground = Color(0xFF040C08),
@@ -217,8 +221,8 @@ enum class AppThemeOption(
     ),
     MJOLNIR(
         id = 104,
-        displayName = "Mjölnir Steel",
-        shortTileLabel = "Mjölnir",
+        displayNameRes = R.string.theme_mjolnir_steel,
+        shortTileLabelRes = R.string.theme_mjolnir_short,
         isMegingiardStyle = true,
         megingiardIpcName = "MJOLNIR",
         previewBackground = Color(0xFF101418),
@@ -227,8 +231,8 @@ enum class AppThemeOption(
     ),
     VALHALLA(
         id = 105,
-        displayName = "Valhalla Sunset",
-        shortTileLabel = "Valhalla",
+        displayNameRes = R.string.theme_valhalla_sunset,
+        shortTileLabelRes = R.string.theme_valhalla_short,
         isMegingiardStyle = true,
         megingiardIpcName = "VALHALLA",
         previewBackground = Color(0xFF140E0A),
@@ -237,8 +241,8 @@ enum class AppThemeOption(
     ),
     AURORA(
         id = 106,
-        displayName = "Aurora Borealis",
-        shortTileLabel = "Aurora",
+        displayNameRes = R.string.theme_aurora_borealis,
+        shortTileLabelRes = R.string.theme_aurora_short,
         isMegingiardStyle = true,
         megingiardIpcName = "AURORA",
         previewBackground = Color(0xFF0A0A14),
@@ -247,8 +251,8 @@ enum class AppThemeOption(
     ),
     RETRO_PHOSPHOR(
         id = 107,
-        displayName = "Retro Phosphor",
-        shortTileLabel = "Retro Phosphor",
+        displayNameRes = R.string.theme_retro_phosphor,
+        shortTileLabelRes = R.string.theme_retro_phosphor,
         isMegingiardStyle = true,
         megingiardIpcName = "RETRO_PHOSPHOR",
         previewBackground = Color(0xFF141712),
@@ -257,14 +261,17 @@ enum class AppThemeOption(
     ),
     ROYAL_ASGARD(
         id = 108,
-        displayName = "Royal Asgard",
-        shortTileLabel = "Royal Asgard",
+        displayNameRes = R.string.theme_royal_asgard,
+        shortTileLabelRes = R.string.theme_royal_asgard,
         isMegingiardStyle = true,
         megingiardIpcName = "ROYAL_ASGARD",
         previewBackground = Color.Black,
         previewSurface = Color(0xFF12110E),
         previewAccent = Color(0xFFFFD700)
     );
+
+    fun displayName(context: Context): String = context.getString(displayNameRes)
+    fun shortTileLabel(context: Context): String = context.getString(shortTileLabelRes)
 
     companion object {
         fun fromId(id: Int): AppThemeOption {

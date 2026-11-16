@@ -1,12 +1,20 @@
 package com.stormpanda.betterdualscreenassistant.system
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class QuickSettingTileIdTest {
+
+    private val context: Context
+        get() = ApplicationProvider.getApplicationContext()
 
     @Test
     fun `QuickSettingCategory default enabled flags match stock vs optional categories`() {
@@ -22,8 +30,9 @@ class QuickSettingTileIdTest {
         assertEquals(entries.size, keys.toSet().size)
         entries.forEach { tile ->
             assertTrue(tile.key.isNotBlank())
-            assertTrue(tile.title.isNotBlank())
-            assertTrue(tile.description.isNotBlank())
+            assertTrue(tile.titleRes != 0)
+            assertTrue(tile.descriptionRes != 0)
+            assertTrue(tile.title(context).isNotBlank())
             assertTrue(tile.iconRes != 0)
         }
     }
@@ -43,8 +52,8 @@ class QuickSettingTileIdTest {
         assertTrue(QuickSettingTileId.SCREEN_RECORD in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CLEAR_ALL_TASKS in QuickSettingTileId.defaultDisabled)
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.SCREEN_RECORD.category)
-        assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title)
-        assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title)
+        assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title(context))
+        assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title(context))
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLEAR_ALL_TASKS.category)
     }
 
@@ -71,20 +80,20 @@ class QuickSettingTileIdTest {
 
         assertEquals(
             "Stock AYN Toggles",
-            QuickSettingCategory.STOCK_AYN.titleFor(DeviceProfile.AYN_THOR)
+            QuickSettingCategory.STOCK_AYN.titleFor(context, DeviceProfile.AYN_THOR)
         )
         assertEquals(
             "Stock Retroid Toggles",
-            QuickSettingCategory.STOCK_AYN.titleFor(DeviceProfile.RETROID_POCKET_DUO)
+            QuickSettingCategory.STOCK_AYN.titleFor(context, DeviceProfile.RETROID_POCKET_DUO)
         )
         assertTrue(
             QuickSettingTileId.CONTROLLER_STYLE
-                .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
+                .descriptionFor(context, promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
                 .contains("Retro")
         )
         assertTrue(
             QuickSettingTileId.KEY_MAPPER
-                .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
+                .descriptionFor(context, promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
                 .contains("Retroid")
         )
     }

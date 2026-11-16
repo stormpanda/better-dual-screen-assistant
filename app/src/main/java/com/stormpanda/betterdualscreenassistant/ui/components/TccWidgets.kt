@@ -1241,7 +1241,7 @@ fun TccOptionDialog(
 
             if (showOsThemeToggle && onToggleInjectOsTheme != null) {
                 TccDialogToggleRow(
-                    label = "Inject Theme Colors into OS",
+                    label = androidx.compose.ui.res.stringResource(com.stormpanda.betterdualscreenassistant.R.string.widget_inject_os_theme_label),
                     checked = injectOsThemeEnabled,
                     onCheckedChange = onToggleInjectOsTheme
                 )
@@ -1540,7 +1540,7 @@ fun TccDialogFpsSelectorRow(
 ) {
     val normalized = if (selectedFps <= 30) 30 else 60
     TccDialogSegmentedRow(
-        label = "Frame Rate",
+        label = androidx.compose.ui.res.stringResource(com.stormpanda.betterdualscreenassistant.R.string.widget_frame_rate_label),
         segments = listOf(30 to "30 FPS", 60 to "60 FPS"),
         selectedId = normalized,
         onSelectId = onSelectFps,
