@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="40dp"
+    android:viewportWidth="50"
+    android:viewportHeight="40">
+    <!-- 5px-grid pixel screen frame with open stepped corners -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,0H45V5H5V0ZM0,5H5V10H0V5ZM45,5H50V35H45V5ZM30,35H45V40H30V35Z" />
+    <!-- Stepped pixel wireless cast broadcast waves in bottom-left corner -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,15H15V20H0V15ZM15,20H20V25H15V20ZM20,25H25V40H20V25Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,25H10V30H0V25ZM10,30H15V40H10V30Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,35H5V40H0V35Z" />
+</vector>

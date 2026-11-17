@@ -97,10 +97,18 @@ class TccThemeAndOverlayFormatTest {
         assertTrue(syncedPalette.isDark)
         assertEquals(Color(syncedAccent), syncedPalette.accent)
 
-        // Verify all remaining options resolve cleanly
+        // Verify all remaining options resolve cleanly with opaque surface and content colors
         for (opt in AppThemeOption.entries) {
             val resolved = resolveTccPalette(opt, systemDark = true)
-            assertTrue(resolved.panelBackground.alpha > 0f)
+            assertEquals("primaryBackground alpha for $opt", 1f, resolved.primaryBackground.alpha, 0.001f)
+            assertEquals("panelBackground alpha for $opt", 1f, resolved.panelBackground.alpha, 0.001f)
+            assertEquals("panelBackgroundSelected alpha for $opt", 1f, resolved.panelBackgroundSelected.alpha, 0.001f)
+            assertEquals("primary alpha for $opt", 1f, resolved.primary.alpha, 0.001f)
+            assertEquals("secondary alpha for $opt", 1f, resolved.secondary.alpha, 0.001f)
+            assertEquals("tertiary alpha for $opt", 1f, resolved.tertiary.alpha, 0.001f)
+            assertEquals("fourth alpha for $opt", 1f, resolved.fourth.alpha, 0.001f)
+            assertEquals("fifth alpha for $opt", 1f, resolved.fifth.alpha, 0.001f)
+            assertEquals("dialogBackground alpha for $opt", 1f, resolved.dialogBackground.alpha, 0.001f)
         }
     }
 
@@ -512,5 +520,53 @@ class TccThemeAndOverlayFormatTest {
             assertEquals(brightCyanArgb, cyanMap[key])
         }
         assertEquals(Color.Black.toArgb(), cyanMap["android:color/system_on_shade_active_dark"])
+    }
+
+    @Test
+    fun `formatScreenCastTileLabel and rp_ic_qs_cast mapping handle idle connecting and active cast states`() {
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.R.drawable.rp_ic_qs_cast,
+            retroidPixelDrawableOrNull(com.stormpanda.betterdualscreenassistant.R.drawable.ic_qs_cast)
+        )
+
+        val idle = com.stormpanda.betterdualscreenassistant.system.ScreenCastState()
+        assertFalse(idle.isActiveOrConnecting)
+        assertEquals(
+            "Screen Cast",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(idle)
+        )
+
+        val connecting = com.stormpanda.betterdualscreenassistant.system.ScreenCastState(
+            isCasting = false,
+            isConnecting = true,
+            deviceName = "Living Room TV"
+        )
+        assertTrue(connecting.isActiveOrConnecting)
+        assertEquals(
+            "Connecting…",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(connecting)
+        )
+
+        val unnamedCast = com.stormpanda.betterdualscreenassistant.system.ScreenCastState(
+            isCasting = true,
+            isConnecting = false,
+            deviceName = ""
+        )
+        assertTrue(unnamedCast.isActiveOrConnecting)
+        assertEquals(
+            "Casting",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(unnamedCast)
+        )
+
+        val namedCast = com.stormpanda.betterdualscreenassistant.system.ScreenCastState(
+            isCasting = true,
+            isConnecting = false,
+            deviceName = "Living Room TV"
+        )
+        assertTrue(namedCast.isActiveOrConnecting)
+        assertEquals(
+            "Living Room TV",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(namedCast)
+        )
     }
 }

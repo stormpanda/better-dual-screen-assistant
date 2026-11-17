@@ -33,6 +33,10 @@ class SystemSettingsRepositoryTest {
     private var lastCapturedRecFps = 0
     private var lastCapturedRecInternal = false
     private var lastCapturedRecMic = false
+    private var simulatedCastActive = false
+    private var simulatedCastConnecting = false
+    private var simulatedCastDeviceName = ""
+    private var disconnectCastCalls = 0
     private val appliedOsThemes = java.util.Collections.synchronizedList(
         mutableListOf<Triple<List<String>, List<Int>, String>>()
     )
@@ -62,6 +66,10 @@ class SystemSettingsRepositoryTest {
         lastCapturedRecFps = 0
         lastCapturedRecInternal = false
         lastCapturedRecMic = false
+        simulatedCastActive = false
+        simulatedCastConnecting = false
+        simulatedCastDeviceName = ""
+        disconnectCastCalls = 0
         appliedOsThemes.clear()
 
         val helper = mockk<IBinder>(relaxed = true)
@@ -137,6 +145,22 @@ class SystemSettingsRepositoryTest {
                         reply.writeString(simulatedRecOutputPath)
                         reply.writeString(simulatedRecCompletedPath)
                         reply.writeString(simulatedRecStopReason)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        reply.writeNoException()
+                        reply.writeInt(if (simulatedCastActive) 1 else 0)
+                        reply.writeInt(if (simulatedCastConnecting) 1 else 0)
+                        reply.writeString(simulatedCastDeviceName)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        disconnectCastCalls++
+                        simulatedCastActive = false
+                        simulatedCastConnecting = false
+                        simulatedCastDeviceName = ""
+                        reply.writeNoException()
+                        reply.writeInt(1)
                     }
                     PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME -> {
                         data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
@@ -985,6 +1009,72 @@ class SystemSettingsRepositoryTest {
         val colorMap2 = names2.indices.associate { names2[it] to colors2[it] }
         assertTrue(json2.contains("26A69A"))
         assertEquals(syncedTealArgb, colorMap2["android:color/system_shade_active_dark"])
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `screenCastState syncs on WIFI_DISPLAY_STATUS_CHANGED broadcast disconnects cleanly and migrates screen_cast disabled by default`() {
+        // Simulate upgrading from a version prior to screen_cast whileWIFI was enabled by the user
+        val legacyKnown = QuickSettingTileId.entries
+            .filter { it != QuickSettingTileId.SCREEN_CAST }
+        val legacyDisabled = legacyKnown
+            .filter { !it.enabledByDefault && it != QuickSettingTileId.WIFI }
+        DirectBootPrefs.open(context, SystemSettingsRepository.PREFS_NAME).edit()
+            .putString("disabled_quick_tiles", legacyDisabled.joinToString(",") { it.key })
+            .putString("known_quick_tiles", legacyKnown.joinToString(",") { it.key })
+            .commit()
+
+        val repo = SystemSettingsRepository(context).also { it.register() }
+        fun awaitCastRefresh() {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(60L)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        }
+
+        awaitCastRefresh()
+        // User's enabled WIFI choice is preserved while newly introduced SCREEN_CAST defaults to disabled
+        assertFalse(QuickSettingTileId.WIFI in repo.disabledQuickTiles.value)
+        assertTrue(QuickSettingTileId.SCREEN_CAST in repo.disabledQuickTiles.value)
+        assertTrue(QuickSettingTileId.SCREEN_CAST in repo.quickTileOrder.value)
+        assertFalse(repo.screenCastState.value.isActiveOrConnecting)
+
+        // Simulate Miracast connecting via WIFI_DISPLAY_STATUS_CHANGED broadcast (with real WifiDisplayStatus extra)
+        val wfdStatusExtra = Class.forName("android.hardware.display.WifiDisplayStatus")
+            .getDeclaredConstructor()
+            .newInstance() as android.os.Parcelable
+        fun buildWfdBroadcastIntent(): android.content.Intent =
+            android.content.Intent(SystemSettingsRepository.ACTION_WIFI_DISPLAY_STATUS_CHANGED).apply {
+                putExtra("android.hardware.display.extra.WIFI_DISPLAY_STATUS", wfdStatusExtra)
+            }
+
+        simulatedCastConnecting = true
+        simulatedCastDeviceName = "Living Room TV"
+        context.sendBroadcast(buildWfdBroadcastIntent())
+        awaitCastRefresh()
+        assertFalse(repo.screenCastState.value.isCasting)
+        assertTrue(repo.screenCastState.value.isConnecting)
+        assertEquals("Living Room TV", repo.screenCastState.value.deviceName)
+
+        // Transition to connected
+        simulatedCastConnecting = false
+        simulatedCastActive = true
+        context.sendBroadcast(buildWfdBroadcastIntent())
+        awaitCastRefresh()
+        assertTrue(repo.screenCastState.value.isCasting)
+        assertFalse(repo.screenCastState.value.isConnecting)
+        assertEquals("Living Room TV", repo.screenCastState.value.deviceName)
+
+        // Disconnect clears state immediately, invokes helper disconnect, and suppresses 0ms bounce-back during settle window
+        assertTrue(repo.disconnectScreenCast())
+        assertEquals(1, disconnectCastCalls)
+        assertFalse(repo.screenCastState.value.isActiveOrConnecting)
+        assertEquals("", repo.screenCastState.value.deviceName)
+
+        // Advance past the 350ms post-disconnect settle refresh and verify state remains clean
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(400L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCastRefresh()
+        assertFalse(repo.screenCastState.value.isActiveOrConnecting)
 
         repo.unregister()
     }

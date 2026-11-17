@@ -12,7 +12,7 @@ This document provides a complete functional reference for **Better Dual Screen 
    - [3.1 Top Status Bar](#31-top-status-bar)
    - [3.2 Mode Tab (`Tab 0`)](#32-mode-tab-tab-0)
    - [3.3 Settings Tab (`Tab 1`)](#33-settings-tab-tab-1)
-   - [3.4 Quick Setting Tiles Reference (23 Tiles)](#34-quick-setting-tiles-reference-23-tiles)
+   - [3.4 Quick Setting Tiles Reference (25 Tiles)](#34-quick-setting-tiles-reference-25-tiles)
    - [3.5 Modal Configuration Dialogs](#35-modal-configuration-dialogs)
    - [3.6 Live Hardware Telemetry Panel](#36-live-hardware-telemetry-panel)
    - [3.7 Bottom Navigation Bar](#37-bottom-navigation-bar)
@@ -37,7 +37,7 @@ The AYN Thor features two physical landscape displays:
 | **Bottom Screen** | `4` | `port=132` | `1240 × 1080` (`369 dpi`, ~`840dp × 732dp`) | Hosts the **Assistant Overlay** (`AssistantOverlayScreen`) and secondary tasks |
 
 **Better Dual Screen Assistant** operates across both screens:
-- **Bottom-Screen Assistant Overlay**: A system-wide overlay (`TYPE_APPLICATION_OVERLAY`) anchored to `displayId = 4` that provides instant access to display blanking modes, screen task swapping, per-display brightness & volume sliders, refresh rate switching, 23 customizable Quick Setting tiles, and real-time CPU/GPU/Thermal/Fan/Power/RAM telemetry.
+- **Bottom-Screen Assistant Overlay**: A system-wide overlay (`TYPE_APPLICATION_OVERLAY`) anchored to `displayId = 4` that provides instant access to display blanking modes, screen task swapping, per-display brightness & volume sliders, refresh rate switching, 25 customizable Quick Setting tiles, and real-time CPU/GPU/Thermal/Fan/Power/RAM telemetry.
 - **Top-Screen Companion App (`MainActivity`)**: A gamepad-first configuration interface launched from the Android app drawer or via the overlay's **Edit** button. When opened on the top screen (`displayId = 0`), it automatically reveals the Assistant Overlay on the bottom screen (`displayId = 4`) so that layout, tile ordering, and theme changes can be previewed in real time.
 
 ---
@@ -163,9 +163,9 @@ The **Settings** tab (`SystemSettingsTab` in `AssistantOverlayScreen.kt`) is div
 
 ---
 
-### 3.4 Quick Setting Tiles Reference (23 Tiles)
+### 3.4 Quick Setting Tiles Reference (25 Tiles)
 
-All 23 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into three categories. By default, the 10 **Stock AYN Toggles** are enabled in their exact stock order, while **Android System Toggles** and **Tools** can be selectively enabled in the Companion App.
+All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into three categories. By default, the 10 **Stock AYN Toggles** are enabled in their exact stock order, while **Android System Toggles** and **Tools** can be selectively enabled in the Companion App.
 
 #### Category A: Stock AYN Toggles (10 Tiles — Enabled by Default)
 
@@ -182,7 +182,7 @@ All 23 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | **#9** | `force_landscape` | **Force Landscape** | Instant Toggle | Forces portrait apps into landscape orientation (`Settings.System["force_landscape"]`: `0` / `1`). |
 | **#10** | `theme_mode` | **Theme Mode** (Shows active theme name) | Modal Dialog | Opens the **Theme Mode** dialog supporting Stock System/Light/Dark, Megingiard Live Sync, 8 Megingiard Palettes, Accent Swatches, and OS Theme Injection. |
 
-#### Category B: Android System Toggles (4 Tiles — Disabled by Default)
+#### Category B: Android System Toggles (5 Tiles — Disabled by Default)
 
 | Tile ID (`key`) | Label & Dynamic Title | Interaction Type | Functional Description |
 | :--- | :--- | :---: | :--- |
@@ -190,13 +190,15 @@ All 23 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | `bluetooth` | **Bluetooth** | Instant Toggle | Toggles Bluetooth adapter state via `BluetoothAdapter.enable()/disable()` with `svc bluetooth enable/disable` fallback. |
 | `do_not_disturb` | **Do Not Disturb** | Instant Toggle | Toggles Android Zen Mode (`Settings.Global["zen_mode"]`: `0` = Off, `1` = Priority Only) and synchronizes via `cmd notification set_dnd on/off`. |
 | `airplane_mode` | **Airplane Mode** | Instant Toggle | Toggles Airplane Mode (`Settings.Global["airplane_mode_on"]`: `0` / `1`), broadcasts `Intent.ACTION_AIRPLANE_MODE_CHANGED`, and runs `cmd connectivity airplane-mode enable/disable`. |
+| `screen_cast` | **Screen Cast** (`Screen Cast` / `Connecting…` / `<Device Name>` / `Casting`) | Launch / Instant Disconnect | When idle, dismisses the overlay and opens Android's wireless Cast picker (`Settings.ACTION_CAST_SETTINGS`) on the Top Screen (`displayId = 0`, or `bottomDisplayId` when in Mode `2` *Only bottom screen*). When connecting or actively casting via Chromecast (`com.google.android.gms` `MediaProjection`) or Miracast (`WifiDisplay`), highlights the tile with the target receiver's name and disconnects immediately on a single tap. |
 
-#### Category C: Tools (9 Tiles — Disabled by Default)
+#### Category C: Tools (10 Tiles — Disabled by Default)
 
 | Tile ID (`key`) | Label & Dynamic Title | Interaction Type | Functional Description |
 | :--- | :--- | :---: | :--- |
 | `touch_lock` | **Bottom Touch Lock** (`Bottom Touch Locked` / `Bottom Touch Lock`) | Instant Toggle | Disables touchscreen input on the bottom display (`sys.temp.disabled.touch = "0,1"`) while keeping the bottom display visible (ideal for watching video or preventing accidental palm touches). While the Assistant Overlay itself is open, bottom touch is temporarily unlocked so you can interact with the overlay, then re-locked automatically when the overlay closes. |
 | `screenshot` | **Screenshot** | Modal Dialog | Opens a 3-option modal (**Top Screen**, **Bottom Screen**, **Both Screens**). Dismisses the overlay, waits `320ms` for the exit animation to finish, resolves physical SurfaceFlinger display IDs (`port=131` / `port=132`), captures lossless PNGs to `/sdcard/Pictures/Screenshots/Screenshot_<timestamp>_<Top|Bottom>.png`, indexes them via `MediaScannerConnection`, and displays a confirmation toast. |
+| `screen_record` | **Screen Record** (`Screen Record` / `MM:SS`) | Modal Dialog / Instant Stop | Opens the **Screen Record** modal (**Top Screen**, **Bottom Screen**, or GPU-composited **Both Screens** at `30`/`60 FPS`, with optional **Internal Game Audio** and **Microphone** mixing) saved to `/sdcard/Movies/ScreenRecordings`; while recording, displays the live elapsed timer and stops recording on tap. |
 | `trigger_mode` | **L2/R2 Trigger Mode** (`Trigger: Analog` / `Trigger: Digital` / `Trigger: Both`) | Modal Dialog | Configures L2/R2 shoulder trigger input mode (`Settings.System["trigger_input_mode"]`: `1` = Analog only, `0` = Digital only, `2` = Both Analog & Digital). |
 | `charge_limit_80` | **80% Charge Limit** | Instant Toggle | Caps battery charging at 80% (`Settings.System["percent_80_charge_limit"]`: `0` / `1`) to preserve long-term battery health. |
 | `gamepad_mouse_mode` | **Virtual Mouse** | Instant Toggle | Toggles virtual gamepad-to-mouse cursor mode (`Settings.System["global_gamepad_to_mouse_mode"]`: `0` / `1`). |
@@ -316,10 +318,10 @@ Allows complete customization of which Quick Setting tiles appear in the overlay
    - **Touch Reordering**: Tap any tile to select it, then tap a second tile to swap their positions.
    - **Gamepad Reordering**: Focus the layout card and press **`A`** to enter the grid -> use **D-Pad** (or **`L1`/`R1`** to cross page boundaries) to highlight a tile -> press **`A`** to **Grab** the tile -> move with **D-Pad** / **`L1`/`R1`** to shift the tile through the grid in real time -> press **`A`** or **`B`** to **Drop** the tile -> press **`B`** again to return to the settings deck.
 2. **Enable / Disable Toggles (`SubPage.ENABLE_DISABLE_TOGGLES`)**:
-   - Opens a dedicated sub-page displaying all **23 Quick Setting tiles** organized under three section headers:
+   - Opens a dedicated sub-page displaying all **25 Quick Setting tiles** organized under three section headers:
      - **Stock AYN Toggles** (`10` tiles, enabled by default)
-     - **Android System Toggles** (`4` tiles, disabled by default)
-     - **Tools** (`9` tiles, disabled by default)
+     - **Android System Toggles** (`5` tiles, disabled by default)
+     - **Tools** (`10` tiles, disabled by default)
    - Enforces the safety invariant that **at least 1 toggle must remain enabled** at all times (if only 1 toggle is enabled, attempting to turn it off displays `"At least 1 toggle must remain enabled"`).
 3. **Reset Quick Toggles (`GamepadTwoStepConfirmCard`)**:
    - Uses a two-step destructive confirmation prompt (*Tap once to arm -> Tap "Confirm" to execute*) that resets tile order and restores the default 10 Stock AYN tiles.

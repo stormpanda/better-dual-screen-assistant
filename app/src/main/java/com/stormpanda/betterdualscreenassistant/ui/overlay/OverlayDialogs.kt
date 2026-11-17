@@ -107,6 +107,19 @@ internal fun AssistantOverlayDialogHost(
     onCaptureScreenshotRequest: (Int) -> Unit,
     onStartScreenRecordingRequest: (Int) -> Unit
 ) {
+    val themeDialogToken = remember { System.identityHashCode(Any()) }
+    val isThemeDialogOpen = activeDialog == ActiveDialog.THEME_MODE
+    DisposableEffect(isThemeDialogOpen) {
+        if (isThemeDialogOpen) {
+            repository.setSettingsUiActive(themeDialogToken, active = true)
+        }
+        onDispose {
+            if (isThemeDialogOpen) {
+                repository.setSettingsUiActive(themeDialogToken, active = false)
+            }
+        }
+    }
+
     var pendingDismissJob by remember { mutableStateOf<Job?>(null) }
     DisposableEffect(activeDialog) {
         pendingDismissJob?.cancel()

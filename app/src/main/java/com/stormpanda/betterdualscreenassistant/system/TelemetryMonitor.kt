@@ -5,6 +5,7 @@ import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.compose.runtime.Stable
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ data class HardwareTelemetryState(
  * Polls live FPS, CPU/GPU frequencies, thermal_zone48 temperature, fan percentage,
  * battery power (W), and RAM usage when the Settings tab is visible.
  */
+@Stable
 class TelemetryMonitor(private val context: Context) {
 
     companion object {
@@ -202,6 +204,13 @@ class TelemetryMonitor(private val context: Context) {
                 .divide(BigDecimal.valueOf(denominator), scale, RoundingMode.HALF_UP)
                 .toFloat()
         }
+
+        private fun roundFloat(value: Float, scale: Int = 2): Float {
+            if (!value.isFinite()) return 0f
+            return BigDecimal.valueOf(value.toDouble())
+                .setScale(scale, RoundingMode.HALF_UP)
+                .toFloat()
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -274,7 +283,7 @@ class TelemetryMonitor(private val context: Context) {
             val memInfo = ActivityManager.MemoryInfo()
             am?.getMemoryInfo(memInfo)
             val totalRamGb = if (memInfo.totalMem > 0) {
-                memInfo.totalMem / 1_000_000_000f
+                roundDiv(memInfo.totalMem, 1_000_000_000L, scale = 2)
             } else {
                 12f
             }
@@ -299,7 +308,7 @@ class TelemetryMonitor(private val context: Context) {
                 }
                 val tempRaw = PrivilegedBridge.readSysfsLong(cpuThermalPath)
                 val cpuTemp = when {
-                    tempRaw > 1000L -> tempRaw / 1000f
+                    tempRaw > 1000L -> roundDiv(tempRaw, 1000L, scale = 1)
                     tempRaw > 0L -> tempRaw.toFloat()
                     else -> _state.value.cpuTempCelsius
                 }
@@ -336,10 +345,17 @@ class TelemetryMonitor(private val context: Context) {
                 val currentNowUa = PrivilegedBridge.readSysfsLong(BATTERY_CURRENT_NOW_PATH)
                 val voltageNowUv = PrivilegedBridge.readSysfsLong(BATTERY_VOLTAGE_NOW_PATH)
                 // Replicate S0.n power calculation: (current_now / 1e6f) * (voltage_now / 1e6f) -> Watts
-                val powerWatts = (currentNowUa / 1_000_000f) * (voltageNowUv / 1_000_000f)
+                val powerWatts = roundFloat(
+                    (currentNowUa / 1_000_000f) * (voltageNowUv / 1_000_000f),
+                    scale = 2
+                )
 
                 am?.getMemoryInfo(memInfo)
-                val usedRamGb = ((memInfo.totalMem - memInfo.availMem).coerceAtLeast(0L)) / 1_000_000_000f
+                val usedRamGb = roundDiv(
+                    (memInfo.totalMem - memInfo.availMem).coerceAtLeast(0L),
+                    1_000_000_000L,
+                    scale = 2
+                )
 
                 _state.value = _state.value.copy(
                     cpuTempCelsius = cpuTemp,

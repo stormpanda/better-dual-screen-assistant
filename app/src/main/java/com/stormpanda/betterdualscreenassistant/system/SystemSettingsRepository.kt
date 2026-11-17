@@ -14,6 +14,7 @@ import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.hardware.display.DisplayManager
 import android.media.AudioManager
+import android.media.MediaRouter
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -27,6 +28,7 @@ import android.provider.Settings
 import androidx.compose.ui.graphics.toArgb
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
 import com.stormpanda.betterdualscreenassistant.privileged.ScreenRecorderEngine
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.DEFAULT_MEGINGIARD_ACCENT_ARGB
@@ -47,6 +49,15 @@ data class ScreenRecordingState(
     val lastCompletedPath: String = "",
     val lastStopReason: String = ""
 )
+
+data class ScreenCastState(
+    val isCasting: Boolean = false,
+    val isConnecting: Boolean = false,
+    val deviceName: String = ""
+) {
+    val isActiveOrConnecting: Boolean
+        get() = isCasting || isConnecting
+}
 
 /**
  * Reactive repository for all AYN Thor dual-screen, performance, fan, controller,
@@ -102,7 +113,12 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_UI_LOOK_MODE = "ui_look_mode"
         const val PREF_RETROID_READABILITY_BOOST = "retroid_readability_boost"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
+        const val PREF_SYNCED_MEGINGIARD_OPTION_ID = "synced_megingiard_option_id"
+        const val PREF_SYNCED_MEGINGIARD_ACCENT_ARGB = "synced_megingiard_accent_argb"
         const val ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT = "dual_screen_action.volume.key.event"
+        const val ACTION_WIFI_DISPLAY_STATUS_CHANGED =
+            "android.hardware.display.action.WIFI_DISPLAY_STATUS_CHANGED"
+        private const val MEDIA_ROUTER_TYPE_REMOTE_DISPLAY = 4
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
         const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
         const val PREF_SAVED_OS_THEME_JSON = "saved_os_theme_json"
@@ -145,6 +161,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val contentResolver = context.contentResolver
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val displayManager = context.getSystemService(DisplayManager::class.java)
+    private val mediaRouter = context.getSystemService(MediaRouter::class.java)
     private val powerManager = context.getSystemService(PowerManager::class.java)
     private val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
@@ -156,6 +173,13 @@ class SystemSettingsRepository(private val context: Context) {
     private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "BDSA-ThemeSync").apply { isDaemon = true }
     }
+    private val castStateExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "BDSA-CastState").apply { isDaemon = true }
+    }
+    private val castStateEpoch = java.util.concurrent.atomic.AtomicInteger(0)
+
+    @Volatile
+    private var castDisconnectSettleUntilElapsedMs: Long = 0L
     private val refreshRateWriteLock = Any()
 
     @Volatile
@@ -287,10 +311,22 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val customAccentArgb: StateFlow<Int> = _customAccentArgb.asStateFlow()
 
-    private val _syncedMegingiardOption = MutableStateFlow(AppThemeOption.MEGINGIARD)
+    private val _syncedMegingiardOption = MutableStateFlow(
+        prefs.getInt(PREF_SYNCED_MEGINGIARD_OPTION_ID, AppThemeOption.MEGINGIARD.id)
+            .let { savedId ->
+                AppThemeOption.entries.firstOrNull { it.id == savedId && it.megingiardIpcName != null }
+                    ?: AppThemeOption.MEGINGIARD
+            }
+    )
     val syncedMegingiardOption: StateFlow<AppThemeOption> = _syncedMegingiardOption.asStateFlow()
 
-    private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(null)
+    private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(
+        if (prefs.contains(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB)) {
+            prefs.getInt(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB, DEFAULT_MEGINGIARD_ACCENT_ARGB)
+        } else {
+            null
+        }
+    )
     val syncedMegingiardAccentArgb: StateFlow<Int?> = _syncedMegingiardAccentArgb.asStateFlow()
 
     private val _isMegingiardProviderAvailable = MutableStateFlow(isAnyMegingiardInstalled())
@@ -369,6 +405,9 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val _airplaneModeEnabled = MutableStateFlow(readAirplaneModeEnabled())
     val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
+
+    private val _screenCastState = MutableStateFlow(ScreenCastState())
+    val screenCastState: StateFlow<ScreenCastState> = _screenCastState.asStateFlow()
 
     // Tools Toggles
     private val _touchLockEnabled = MutableStateFlow(false)
@@ -484,6 +523,54 @@ class SystemSettingsRepository(private val context: Context) {
             if (displayId != 0 && displayId != bottomDisplayId) return
             if (isInSelfBrightnessGraceWindow()) return
             onExternalDisplayBrightnessChanged(displayId, fromDisplayListener = true)
+        }
+    }
+
+    private val castRefreshRunnable = Runnable {
+        refreshScreenCastStateAsync()
+    }
+
+    private val castPostDisconnectRefreshRunnable = Runnable {
+        castDisconnectSettleUntilElapsedMs = 0L
+        refreshScreenCastStateAsync()
+    }
+
+    private val castDisplayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {
+            if (displayId == 0 || displayId == bottomDisplayId) return
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onDisplayRemoved(displayId: Int) {
+            if (displayId == 0 || displayId == bottomDisplayId) return
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == 0 || displayId == bottomDisplayId) return
+            if (!_screenCastState.value.isActiveOrConnecting && !isWifiDisplayId(displayId)) return
+            scheduleScreenCastStateRefresh()
+        }
+    }
+
+    private val mediaRouterCastCallback = object : MediaRouter.SimpleCallback() {
+        override fun onRouteSelected(router: MediaRouter?, type: Int, info: MediaRouter.RouteInfo?) {
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onRouteUnselected(router: MediaRouter?, type: Int, info: MediaRouter.RouteInfo?) {
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onRouteChanged(router: MediaRouter?, info: MediaRouter.RouteInfo?) {
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onRoutePresentationDisplayChanged(
+            router: MediaRouter?,
+            info: MediaRouter.RouteInfo?
+        ) {
+            scheduleScreenCastStateRefresh()
         }
     }
 
@@ -631,6 +718,9 @@ class SystemSettingsRepository(private val context: Context) {
                 }
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                     _airplaneModeEnabled.value = readAirplaneModeEnabled()
+                }
+                ACTION_WIFI_DISPLAY_STATUS_CHANGED -> {
+                    scheduleScreenCastStateRefresh()
                 }
                 Intent.ACTION_USER_UNLOCKED -> {
                     registerMegingiardContentObservers()
@@ -782,6 +872,7 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(ACTION_WIFI_DISPLAY_STATUS_CHANGED)
             addAction(Intent.ACTION_USER_UNLOCKED)
         }
         context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -807,6 +898,14 @@ class SystemSettingsRepository(private val context: Context) {
             }
         }
         registerDisplayBrightnessListener()
+        try {
+            displayManager?.registerDisplayListener(castDisplayListener, mainHandler)
+        } catch (_: Throwable) {
+        }
+        try {
+            mediaRouter?.addCallback(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY, mediaRouterCastCallback, 0)
+        } catch (_: Throwable) {
+        }
         refreshAll()
         dispatchOrDeferLauncherAliasSync()
         resyncFloatingIconGestureGuard()
@@ -821,6 +920,8 @@ class SystemSettingsRepository(private val context: Context) {
         mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
         mainHandler.removeCallbacks(floatingIconEarlyResyncRunnable)
         mainHandler.removeCallbacks(floatingIconLateResyncRunnable)
+        mainHandler.removeCallbacks(castRefreshRunnable)
+        mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
         if (pendingRefreshRateTarget != null) {
             commitPendingRefreshRate()
         }
@@ -828,6 +929,14 @@ class SystemSettingsRepository(private val context: Context) {
         isRegistered = false
         try {
             displayManager?.unregisterDisplayListener(displayBrightnessListener)
+        } catch (_: Throwable) {
+        }
+        try {
+            displayManager?.unregisterDisplayListener(castDisplayListener)
+        } catch (_: Throwable) {
+        }
+        try {
+            mediaRouter?.removeCallback(mediaRouterCastCallback)
         } catch (_: Throwable) {
         }
         try {
@@ -931,6 +1040,7 @@ class SystemSettingsRepository(private val context: Context) {
         _bluetoothEnabled.value = readBluetoothEnabled()
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
+        refreshScreenCastStateAsync()
         _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
@@ -1443,6 +1553,14 @@ class SystemSettingsRepository(private val context: Context) {
                             _syncedMegingiardOption.value = resolvedOption
                             _syncedMegingiardAccentArgb.value = accentInt
                             _isMegingiardProviderAvailable.value = true
+                            val editor = prefs.edit()
+                                .putInt(PREF_SYNCED_MEGINGIARD_OPTION_ID, resolvedOption.id)
+                            if (accentInt != null) {
+                                editor.putInt(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB, accentInt)
+                            } else {
+                                editor.remove(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB)
+                            }
+                            editor.apply()
                             if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
                                 (changed || forceScheduleOsSync || debounceOsSyncMs == 0L)
                             ) {
@@ -2545,5 +2663,153 @@ class SystemSettingsRepository(private val context: Context) {
             )
         } catch (_: Throwable) {
         }
+    }
+
+    private fun isWifiDisplayId(displayId: Int): Boolean {
+        return try {
+            val d = displayManager?.getDisplay(displayId) ?: return false
+            val type = d.javaClass.getMethod("getType").invoke(d) as? Int ?: 0
+            type == 3
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun scheduleScreenCastStateRefresh(delayMs: Long = 0L) {
+        val now = SystemClock.elapsedRealtime()
+        val settleRemainingMs = castDisconnectSettleUntilElapsedMs - now
+        if (settleRemainingMs > 0L && delayMs < settleRemainingMs) {
+            return
+        }
+        mainHandler.removeCallbacks(castRefreshRunnable)
+        if (delayMs <= 0L) {
+            mainHandler.post(castRefreshRunnable)
+        } else {
+            mainHandler.postDelayed(castRefreshRunnable, delayMs)
+        }
+    }
+
+    private fun mergeScreenCastStates(
+        helperStatus: PrivilegedBridge.ScreenCastHelperStatus,
+        mrStatus: ScreenCastState
+    ): ScreenCastState {
+        val isCasting = helperStatus.isCasting || mrStatus.isCasting
+        val isConnecting = !isCasting && (helperStatus.isConnecting || mrStatus.isConnecting)
+        val deviceName = if (isCasting || isConnecting) {
+            helperStatus.deviceName.ifBlank { mrStatus.deviceName }
+        } else {
+            ""
+        }
+        return ScreenCastState(
+            isCasting = isCasting,
+            isConnecting = isConnecting,
+            deviceName = deviceName
+        )
+    }
+
+    fun refreshScreenCastStateAsync() {
+        val epochSnapshot = castStateEpoch.get()
+        castStateExecutor.execute {
+            if (epochSnapshot != castStateEpoch.get()) return@execute
+            val helperStatus = PrivilegedBridge.getScreenCastState(context)
+            mainHandler.post {
+                if (epochSnapshot != castStateEpoch.get()) return@post
+                if (SystemClock.elapsedRealtime() < castDisconnectSettleUntilElapsedMs) return@post
+                val mrStatus = readMediaRouterRemoteDisplayState()
+                _screenCastState.value = mergeScreenCastStates(helperStatus, mrStatus)
+            }
+        }
+    }
+
+    fun refreshScreenCastState(): ScreenCastState {
+        castDisconnectSettleUntilElapsedMs = 0L
+        val epochSnapshot = castStateEpoch.incrementAndGet()
+        val helperStatus = PrivilegedBridge.getScreenCastState(context)
+        val mrStatus = readMediaRouterRemoteDisplayState()
+        val updated = mergeScreenCastStates(helperStatus, mrStatus)
+        if (epochSnapshot == castStateEpoch.get()) {
+            _screenCastState.value = updated
+        }
+        return updated
+    }
+
+    private fun readMediaRouterRemoteDisplayState(): ScreenCastState {
+        val mr = mediaRouter ?: return ScreenCastState()
+        return try {
+            val route = mr.getSelectedRoute(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY)
+                ?: return ScreenCastState()
+            if (route === mr.defaultRoute ||
+                (route.supportedTypes and MEDIA_ROUTER_TYPE_REMOTE_DISPLAY) == 0
+            ) {
+                return ScreenCastState()
+            }
+            val connecting = try {
+                route.javaClass.getMethod("isConnecting").invoke(route) as? Boolean ?: false
+            } catch (_: Throwable) {
+                false
+            }
+            val rawName = try {
+                route.getName(context)?.toString()
+            } catch (_: Throwable) {
+                null
+            }
+            ScreenCastState(
+                isCasting = !connecting,
+                isConnecting = connecting,
+                deviceName = PrivilegedHelperMain.sanitizeCastDeviceName(rawName)
+            )
+        } catch (_: Throwable) {
+            ScreenCastState()
+        }
+    }
+
+    private fun unselectMediaRouterRemoteDisplayRouteOnMain(): Boolean {
+        return try {
+            val mr = mediaRouter ?: return false
+            val selected = mr.getSelectedRoute(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY) ?: return false
+            val defRoute = mr.defaultRoute ?: return false
+            if (selected !== defRoute &&
+                (selected.supportedTypes and MEDIA_ROUTER_TYPE_REMOTE_DISPLAY) != 0
+            ) {
+                mr.selectRoute(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY, defRoute)
+                true
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun disconnectScreenCast(): Boolean {
+        castStateEpoch.incrementAndGet()
+        castDisconnectSettleUntilElapsedMs = SystemClock.elapsedRealtime() + 350L
+        mainHandler.removeCallbacks(castRefreshRunnable)
+        mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
+        _screenCastState.value = ScreenCastState()
+
+        var routeUnselected = false
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            routeUnselected = unselectMediaRouterRemoteDisplayRouteOnMain()
+        } else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            mainHandler.post {
+                try {
+                    routeUnselected = unselectMediaRouterRemoteDisplayRouteOnMain()
+                } finally {
+                    latch.countDown()
+                }
+            }
+            try {
+                latch.await(200L, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        val helperDisconnected = PrivilegedBridge.disconnectScreenCast(context)
+        mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
+        mainHandler.postDelayed(castPostDisconnectRefreshRunnable, 350L)
+        return helperDisconnected || routeUnselected
     }
 }

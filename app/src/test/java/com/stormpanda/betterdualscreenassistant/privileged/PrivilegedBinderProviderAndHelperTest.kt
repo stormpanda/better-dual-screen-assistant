@@ -1093,6 +1093,262 @@ class PrivilegedBinderProviderAndHelperTest {
         assertEquals(sampleColors.toList(), committedPalettes[1].second)
     }
 
+    private interface FakeMediaRouter2ManagerCallback : android.os.IInterface
+
+    @Test
+    fun `HelperBinder screen cast state and disconnect handle Miracast GMS MediaProjection and ignore screen recorders`() {
+        // 1. Cast package filter & device name sanitization
+        assertTrue(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.google.android.gms"))
+        assertTrue(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.google.android.apps.chromecast.app"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.android.systemui"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.odin.gameassistant"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.rp.gameassistant"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage(PrivilegedHelperMain.APP_PACKAGE_NAME))
+
+        assertEquals("", PrivilegedHelperMain.sanitizeCastDeviceName("CastDisplay"))
+        assertEquals("", PrivilegedHelperMain.sanitizeCastDeviceName("VirtualDisplay"))
+        assertEquals("Living Room TV", PrivilegedHelperMain.sanitizeCastDeviceName("  Living Room TV  "))
+
+        // 2. 0-arg (Android 13-14) vs 1-arg int (Android 15-16) stopActiveProjection invocation
+        var zeroArgStopped = false
+        val sdk33ProjMgr = object {
+            @Suppress("unused")
+            fun stopActiveProjection() {
+                zeroArgStopped = true
+            }
+        }
+        assertTrue(PrivilegedHelperMain.invokeStopActiveProjection(sdk33ProjMgr))
+        assertTrue(zeroArgStopped)
+
+        var capturedStopReason = -1
+        val sdk36ProjMgr = object {
+            @Suppress("unused")
+            fun stopActiveProjection(stopReason: Int) {
+                capturedStopReason = stopReason
+            }
+        }
+        assertTrue(PrivilegedHelperMain.invokeStopActiveProjection(sdk36ProjMgr))
+        assertEquals(0, capturedStopReason)
+
+        // 3. Proxy inspection: GameAssistant screen recorder projection is ignored; GMS Cast projection + remote session resolves receiver name
+        var activeProjPkg: String? = "com.odin.gameassistant"
+        var wfdState = 0
+        var wfdDisconnectCalled = false
+        var gmsStopCalled = false
+
+        val fakeWfdDisplay = object {
+            @Suppress("unused")
+            fun getFriendlyDisplayName(): String = "Office Miracast"
+        }
+        val fakeDm = object {
+            @Suppress("unused")
+            fun getWifiDisplayStatus(): Any = object {
+                @Suppress("unused")
+                fun getActiveDisplayState(): Int = wfdState
+                @Suppress("unused")
+                fun getActiveDisplay(): Any? = if (wfdState != 0) fakeWfdDisplay else null
+            }
+
+            @Suppress("unused")
+            fun disconnectWifiDisplay() {
+                wfdDisconnectCalled = true
+                wfdState = 0
+            }
+
+            @Suppress("unused")
+            fun getDisplayIds(): IntArray = intArrayOf(0, 4)
+
+            @Suppress("unused")
+            fun getDisplayInfo(id: Int): Any = object {
+                @JvmField
+                val type: Int = 1
+                @JvmField
+                val ownerPackageName: String? = null
+                @JvmField
+                val name: String = "Built-in Screen"
+            }
+        }
+        val fakeProj = object {
+            @Suppress("unused")
+            fun getActiveProjectionInfo(): Any? = activeProjPkg?.let { pkg ->
+                object {
+                    @Suppress("unused")
+                    fun getPackageName(): String = pkg
+                }
+            }
+
+            @Suppress("unused")
+            fun stopActiveProjection(stopReason: Int) {
+                gmsStopCalled = true
+                activeProjPkg = null
+            }
+        }
+        var routerSessionReleased = false
+        val fakeRouteSession = object {
+            @Suppress("unused")
+            fun getId(): String = "cast-session-1"
+            @Suppress("unused")
+            fun isSystemSession(): Boolean = false
+            @Suppress("unused")
+            fun getOwnerPackageName(): String = "com.google.android.gms"
+            @Suppress("unused")
+            fun getName(): CharSequence = ""
+        }
+        val fakeRouter = object {
+            @Suppress("unused")
+            fun getRemoteSessions(): List<Any> = listOf(fakeRouteSession)
+
+            @Suppress("unused")
+            fun getSelectedRoutes(session: Any): List<Any> = listOf(
+                object {
+                    @Suppress("unused")
+                    fun getName(): CharSequence = "Family Room TV"
+                }
+            )
+
+            @Suppress("unused")
+            fun releaseSession(session: Any) {
+                routerSessionReleased = true
+            }
+        }
+
+        // Also test 1-arg IMediaRouterService.getRemoteSessions(IMediaRouter2Manager) fallback
+        var serviceRegisteredMgr: FakeMediaRouter2ManagerCallback? = null
+        var serviceUnregistered = false
+        var serviceReleasedSessionId: String? = null
+        val fakeRouterService = object {
+            @Suppress("unused")
+            fun registerManager(mgr: FakeMediaRouter2ManagerCallback, pkg: String) {
+                if (pkg != "root") throw SecurityException("Package $pkg does not match UID 0")
+                serviceRegisteredMgr = mgr
+            }
+
+            @Suppress("unused")
+            fun unregisterManager(mgr: FakeMediaRouter2ManagerCallback) {
+                if (mgr === serviceRegisteredMgr) {
+                    serviceUnregistered = true
+                }
+            }
+
+            @Suppress("unused")
+            fun getRemoteSessions(mgr: FakeMediaRouter2ManagerCallback): List<Any> {
+                assertNotNull(mgr.asBinder())
+                return listOf(
+                    object {
+                        @Suppress("unused")
+                        fun getId(): String = "service-cast-session"
+                        @Suppress("unused")
+                        fun isSystemSession(): Boolean = false
+                        @Suppress("unused")
+                        fun getOwnerPackageName(): String = "com.google.android.gms"
+                        @Suppress("unused")
+                        fun getName(): CharSequence = "Den Chromecast"
+                    }
+                )
+            }
+
+            @Suppress("unused")
+            fun releaseSessionWithManager(
+                requestId: Int,
+                mgr: FakeMediaRouter2ManagerCallback,
+                sessionId: String
+            ) {
+                serviceReleasedSessionId = sessionId
+            }
+        }
+
+        // GameAssistant active -> NOT treated as wireless cast and NOT stopped on disconnect
+        val nonCastStatus = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, fakeRouter)
+        assertFalse(nonCastStatus.isCasting)
+        assertFalse(PrivilegedHelperMain.disconnectScreenCastViaProxies(fakeDm, fakeProj, fakeRouter))
+        assertFalse(gmsStopCalled)
+        assertFalse(routerSessionReleased)
+
+        // Non-cast GMS display names (e.g. Android Auto) are filtered out
+        assertTrue(PrivilegedHelperMain.isNonCastGmsDisplayName("Android Auto"))
+        assertFalse(PrivilegedHelperMain.isNonCastGmsDisplayName("Chromecast"))
+
+        // GMS Cast active -> detected via MediaRouter2Manager getSelectedRoutes & stopped + session released
+        activeProjPkg = "com.google.android.gms"
+        val gmsCastStatus = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, fakeRouter)
+        assertTrue(gmsCastStatus.isCasting)
+        assertEquals("Family Room TV", gmsCastStatus.deviceName)
+        assertTrue(PrivilegedHelperMain.disconnectScreenCastViaProxies(fakeDm, fakeProj, fakeRouter))
+        assertTrue(gmsStopCalled)
+        assertTrue(routerSessionReleased)
+
+        // 1-arg IMediaRouterService fallback resolves receiver name & unregisters temporary manager
+        activeProjPkg = "com.google.android.gms"
+        val serviceFallbackStatus = PrivilegedHelperMain.resolveScreenCastStateFromProxies(
+            dmProxy = fakeDm,
+            projectionProxy = fakeProj,
+            routerProxy = null,
+            fallbackRouterProxy = fakeRouterService
+        )
+        assertTrue(serviceFallbackStatus.isCasting)
+        assertEquals("Den Chromecast", serviceFallbackStatus.deviceName)
+        assertTrue(serviceUnregistered)
+        assertTrue(
+            PrivilegedHelperMain.disconnectScreenCastViaProxies(
+                dmProxy = fakeDm,
+                projectionProxy = fakeProj,
+                routerProxy = null,
+                fallbackRouterProxy = fakeRouterService
+            )
+        )
+        assertEquals("service-cast-session", serviceReleasedSessionId)
+
+        // Miracast connecting & connected -> detected and disconnected via disconnectWifiDisplay
+        wfdState = 1
+        val wfdConnecting = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, null)
+        assertFalse(wfdConnecting.isCasting)
+        assertTrue(wfdConnecting.isConnecting)
+        assertEquals("Office Miracast", wfdConnecting.deviceName)
+
+        wfdState = 2
+        val wfdConnected = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, null)
+        assertTrue(wfdConnected.isCasting)
+        assertEquals("Office Miracast", wfdConnected.deviceName)
+        assertTrue(PrivilegedHelperMain.disconnectScreenCastViaProxies(fakeDm, fakeProj))
+        assertTrue(wfdDisconnectCalled)
+
+        // 4. Binder transaction roundtrip on HelperBinder
+        val helperBinder = createAuthorizedHelperBinder()
+        var overrideConnected = true
+        helperBinder.screenCastStateOverride = {
+            PrivilegedHelperMain.HelperCastStatus(
+                isCasting = overrideConnected,
+                isConnecting = false,
+                deviceName = if (overrideConnected) "Studio TV" else ""
+            )
+        }
+        helperBinder.disconnectScreenCastOverride = {
+            overrideConnected = false
+            true
+        }
+
+        val qData = Parcel.obtain().apply { writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR) }
+        val qReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE, qData, qReply, 0))
+        qReply.setDataPosition(0)
+        qReply.readException()
+        assertEquals(1, qReply.readInt())
+        assertEquals(0, qReply.readInt())
+        assertEquals("Studio TV", qReply.readString())
+        qData.recycle()
+        qReply.recycle()
+
+        val dData = Parcel.obtain().apply { writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR) }
+        val dReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST, dData, dReply, 0))
+        dReply.setDataPosition(0)
+        dReply.readException()
+        assertEquals(1, dReply.readInt())
+        assertFalse(overrideConnected)
+        dData.recycle()
+        dReply.recycle()
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

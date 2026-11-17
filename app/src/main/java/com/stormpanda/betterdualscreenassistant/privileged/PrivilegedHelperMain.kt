@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.AttributionSource
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -82,9 +83,36 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
     const val TRANSACTION_WINDOW_SESSION_TRANSACT = IBinder.FIRST_CALL_TRANSACTION + 26
     const val TRANSACTION_CAPTURE_SCREENSHOT = IBinder.FIRST_CALL_TRANSACTION + 27
+    const val TRANSACTION_GET_SCREEN_CAST_STATE = IBinder.FIRST_CALL_TRANSACTION + 28
+    const val TRANSACTION_DISCONNECT_SCREEN_CAST = IBinder.FIRST_CALL_TRANSACTION + 29
 
-    const val HELPER_PROTOCOL_VERSION = 23
+    const val HELPER_PROTOCOL_VERSION = 25
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
+
+    internal val CAST_PROJECTION_PACKAGES: Set<String> = setOf(
+        "com.google.android.gms",
+        "com.google.android.apps.chromecast.app"
+    )
+    private val GENERIC_CAST_DISPLAY_NAMES: Set<String> = setOf(
+        "castdisplay",
+        "virtualdisplay",
+        "screencast",
+        "screen cast",
+        "cast",
+        "chromecast virtual display"
+    )
+    private val NON_CAST_GMS_DISPLAY_KEYWORDS: List<String> = listOf(
+        "android auto",
+        "carprojection",
+        "nearby",
+        "companion"
+    )
+
+    internal data class HelperCastStatus(
+        val isCasting: Boolean = false,
+        val isConnecting: Boolean = false,
+        val deviceName: String = ""
+    )
     internal const val SYSTEM_LIB_SEARCH_PATH =
         "/system/lib64:/system/lib:/system_ext/lib64:/system_ext/lib:/product/lib64:/product/lib"
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
@@ -352,6 +380,41 @@ object PrivilegedHelperMain {
             null
         }
 
+        private val mediaProjectionManagerProxy: Any? by lazy {
+            try {
+                val binder = getServiceMethod.invoke(null, "media_projection") as? IBinder
+                if (binder != null) {
+                    val stubClass =
+                        Class.forName("android.media.projection.IMediaProjectionManager\$Stub")
+                    stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+                } else {
+                    null
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to get IMediaProjectionManager", t)
+                null
+            }
+        }
+
+        private val mediaRouter2Manager: Any? by lazy {
+            createMediaRouter2Manager(systemContext)
+        }
+
+        private val mediaRouterServiceProxy: Any? by lazy {
+            try {
+                val binder = getServiceMethod.invoke(null, "media_router") as? IBinder
+                if (binder != null) {
+                    val stubClass = Class.forName("android.media.IMediaRouterService\$Stub")
+                    stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+                } else {
+                    null
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to get IMediaRouterService", t)
+                null
+            }
+        }
+
         private val statusBarDisableToken = Binder()
         private var topDisplayContext: Context? = null
         private var topBootProgressBlankView: View? = null
@@ -450,6 +513,8 @@ object PrivilegedHelperMain {
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
         internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
+        internal var screenCastStateOverride: (() -> HelperCastStatus)? = null
+        internal var disconnectScreenCastOverride: (() -> Boolean)? = null
         internal var commitOsThemeOverlaysOverride: ((Array<String>, IntArray) -> Unit)? = null
         internal var allowedWindowSessionCodesOverride: Set<Int>? = null
 
@@ -1133,6 +1198,28 @@ object PrivilegedHelperMain {
                         val callingToken = Binder.clearCallingIdentity()
                         val ok = try {
                             captureScreenshotInternal(targetMode, topPath, bottomPath)
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (ok) 1 else 0)
+                        true
+                    }
+                    TRANSACTION_GET_SCREEN_CAST_STATE -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val status = try {
+                            getScreenCastStateInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        writeScreenCastStatusToParcel(reply, status)
+                        true
+                    }
+                    TRANSACTION_DISCONNECT_SCREEN_CAST -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val ok = try {
+                            disconnectScreenCastInternal()
                         } finally {
                             Binder.restoreCallingIdentity(callingToken)
                         }
@@ -2915,6 +3002,36 @@ object PrivilegedHelperMain {
             reply.writeString(status.lastStopReason)
         }
 
+        private fun getScreenCastStateInternal(): HelperCastStatus {
+            screenCastStateOverride?.let { return it() }
+            return resolveScreenCastStateFromProxies(
+                dmProxy = displayManagerProxy,
+                projectionProxy = mediaProjectionManagerProxy,
+                routerProxy = mediaRouter2Manager,
+                fallbackRouterProxy = mediaRouterServiceProxy
+            )
+        }
+
+        private fun disconnectScreenCastInternal(): Boolean {
+            disconnectScreenCastOverride?.let { return it() }
+            return disconnectScreenCastViaProxies(
+                dmProxy = displayManagerProxy,
+                projectionProxy = mediaProjectionManagerProxy,
+                routerProxy = mediaRouter2Manager,
+                fallbackRouterProxy = mediaRouterServiceProxy
+            )
+        }
+
+        private fun writeScreenCastStatusToParcel(
+            reply: Parcel?,
+            status: HelperCastStatus
+        ) {
+            if (reply == null) return
+            reply.writeInt(if (status.isCasting) 1 else 0)
+            reply.writeInt(if (status.isConnecting) 1 else 0)
+            reply.writeString(status.deviceName)
+        }
+
         private fun captureScreenshotInternal(
             targetMode: Int,
             topPath: String,
@@ -3417,5 +3534,543 @@ object PrivilegedHelperMain {
             }
         }
         return topPhysId to bottomPhysId
+    }
+
+    internal fun isWirelessCastProjectionPackage(packageName: String?): Boolean {
+        val pkg = packageName?.trim().orEmpty()
+        return pkg in CAST_PROJECTION_PACKAGES
+    }
+
+    internal fun sanitizeCastDeviceName(rawName: String?): String {
+        val trimmed = rawName?.trim().orEmpty()
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.lowercase( java.util.Locale.US) in GENERIC_CAST_DISPLAY_NAMES) return ""
+        return trimmed
+    }
+
+    internal fun isNonCastGmsDisplayName(rawName: String?): Boolean {
+        val lower = rawName?.trim()?.lowercase(java.util.Locale.US).orEmpty()
+        if (lower.isEmpty()) return false
+        return NON_CAST_GMS_DISPLAY_KEYWORDS.any { lower.contains(it) }
+    }
+
+    private fun createMediaRouter2Manager(sysCtx: Context?): Any? {
+        val baseCtx = sysCtx ?: return null
+        val mgrClass = try {
+            Class.forName("android.media.MediaRouter2Manager")
+        } catch (_: Throwable) {
+            return null
+        }
+        val candidatePackageNames = if (Process.myUid() == 0) {
+            listOf("root", baseCtx.packageName)
+        } else {
+            listOf(baseCtx.packageName)
+        }
+        for (pkg in candidatePackageNames.distinct()) {
+            try {
+                val wrapped = object : ContextWrapper(baseCtx) {
+                    override fun getApplicationContext(): Context = this
+                    override fun getPackageName(): String = pkg
+                }
+                val ctor = mgrClass.getDeclaredConstructor(Context::class.java).apply {
+                    isAccessible = true
+                }
+                val instance = ctor.newInstance(wrapped)
+                mgrClass.getMethod("getRemoteSessions").invoke(instance)
+                return instance
+            } catch (_: Throwable) {
+            }
+        }
+        return try {
+            val wrapped = object : ContextWrapper(baseCtx) {
+                override fun getApplicationContext(): Context = this
+            }
+            mgrClass.getMethod("getInstance", Context::class.java).invoke(null, wrapped)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to initialize MediaRouter2Manager", t)
+            null
+        }
+    }
+
+    internal fun invokeStopActiveProjection(projectionManager: Any?): Boolean {
+        val pm = projectionManager ?: return false
+        return try {
+            val methods = pm.javaClass.methods
+            val zeroArg = methods.firstOrNull {
+                it.name == "stopActiveProjection" && it.parameterCount == 0
+            }
+            if (zeroArg != null) {
+                zeroArg.invoke(pm)
+                return true
+            }
+            val oneArg = methods.firstOrNull {
+                it.name == "stopActiveProjection" &&
+                    it.parameterCount == 1 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType
+            }
+            if (oneArg != null) {
+                oneArg.invoke(pm, 0)
+                return true
+            }
+            false
+        } catch (t: Throwable) {
+            Log.w(TAG, "invokeStopActiveProjection failed", t)
+            false
+        }
+    }
+
+    internal fun resolveScreenCastStateFromProxies(
+        dmProxy: Any?,
+        projectionProxy: Any?,
+        routerProxy: Any? = null,
+        fallbackRouterProxy: Any? = null
+    ): HelperCastStatus {
+        // 1. Miracast / Wi-Fi Display via IDisplayManager.getWifiDisplayStatus()
+        if (dmProxy != null) {
+            try {
+                val wfdStatus = dmProxy.javaClass.getMethod("getWifiDisplayStatus").invoke(dmProxy)
+                if (wfdStatus != null) {
+                    val activeState =
+                        wfdStatus.javaClass.getMethod("getActiveDisplayState").invoke(wfdStatus) as? Int ?: 0
+                    val activeDisplay =
+                        wfdStatus.javaClass.getMethod("getActiveDisplay").invoke(wfdStatus)
+                    val rawFriendly = try {
+                        activeDisplay?.javaClass?.getMethod("getFriendlyDisplayName")
+                            ?.invoke(activeDisplay) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val rawDevice = try {
+                        activeDisplay?.javaClass?.getMethod("getDeviceName")
+                            ?.invoke(activeDisplay) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val cleanName = sanitizeCastDeviceName(rawFriendly).ifEmpty {
+                        sanitizeCastDeviceName(rawDevice)
+                    }
+                    if (activeState == 2) {
+                        return HelperCastStatus(
+                            isCasting = true,
+                            isConnecting = false,
+                            deviceName = cleanName
+                        )
+                    }
+                    if (activeState == 1) {
+                        return HelperCastStatus(
+                            isCasting = false,
+                            isConnecting = true,
+                            deviceName = cleanName
+                        )
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        // 2. Google Cast / Chromecast MediaProjection + Cast VirtualDisplay / Wi-Fi Display
+        var castProjectionActive = false
+        if (projectionProxy != null) {
+            try {
+                val projInfo = projectionProxy.javaClass
+                    .getMethod("getActiveProjectionInfo")
+                    .invoke(projectionProxy)
+                val projPkg = projInfo?.javaClass
+                    ?.getMethod("getPackageName")
+                    ?.invoke(projInfo) as? String
+                if (isWirelessCastProjectionPackage(projPkg)) {
+                    castProjectionActive = true
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        val primarySessions = findMatchingRemoteCastSessions(routerProxy)
+        val activeRouterSource: Any?
+        val matchingRemoteSessions: List<Any>
+        if (primarySessions.isNotEmpty()) {
+            activeRouterSource = routerProxy
+            matchingRemoteSessions = primarySessions
+        } else {
+            activeRouterSource = fallbackRouterProxy
+            matchingRemoteSessions = findMatchingRemoteCastSessions(fallbackRouterProxy)
+        }
+        val hasRouterInspection = routerProxy != null || fallbackRouterProxy != null
+
+        var wifiDisplayActive = false
+        var gmsVirtualDisplayActive = false
+        var castDisplayName = ""
+        if (dmProxy != null) {
+            try {
+                val ids = invokeGetDisplayIds(dmProxy)
+                val getInfo = dmProxy.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                for (id in ids) {
+                    if (id == 0) continue
+                    val info = getInfo.invoke(dmProxy, id) ?: continue
+                    val type = try {
+                        info.javaClass.getField("type").getInt(info)
+                    } catch (_: Throwable) {
+                        0
+                    }
+                    val ownerPkg = try {
+                        info.javaClass.getField("ownerPackageName").get(info) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val rawInfoName = try {
+                        info.javaClass.getField("name").get(info) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (type == 3) {
+                        wifiDisplayActive = true
+                        val sanitized = sanitizeCastDeviceName(rawInfoName)
+                        if (sanitized.isNotEmpty() && castDisplayName.isEmpty()) {
+                            castDisplayName = sanitized
+                        }
+                    } else if (type == 5 &&
+                        isWirelessCastProjectionPackage(ownerPkg) &&
+                        !isNonCastGmsDisplayName(rawInfoName) &&
+                        (castProjectionActive || matchingRemoteSessions.isNotEmpty() || !hasRouterInspection)
+                    ) {
+                        gmsVirtualDisplayActive = true
+                        val sanitized = sanitizeCastDeviceName(rawInfoName)
+                        if (sanitized.isNotEmpty() && castDisplayName.isEmpty()) {
+                            castDisplayName = sanitized
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        if (castProjectionActive || wifiDisplayActive || gmsVirtualDisplayActive) {
+            val sessionName = extractRemoteCastSessionDeviceName(
+                sessions = matchingRemoteSessions,
+                routerSource = activeRouterSource
+            )
+            return HelperCastStatus(
+                isCasting = true,
+                isConnecting = false,
+                deviceName = sessionName.ifEmpty { castDisplayName }
+            )
+        }
+
+        return HelperCastStatus()
+    }
+
+    internal fun disconnectScreenCastViaProxies(
+        dmProxy: Any?,
+        projectionProxy: Any?,
+        routerProxy: Any? = null,
+        fallbackRouterProxy: Any? = null
+    ): Boolean {
+        var disconnectedAny = false
+        var hadCastVirtualDisplay = false
+        if (dmProxy != null) {
+            try {
+                val wfdStatus = try {
+                    dmProxy.javaClass.getMethod("getWifiDisplayStatus").invoke(dmProxy)
+                } catch (_: Throwable) {
+                    null
+                }
+                val activeState = try {
+                    wfdStatus?.javaClass?.getMethod("getActiveDisplayState")
+                        ?.invoke(wfdStatus) as? Int ?: 0
+                } catch (_: Throwable) {
+                    0
+                }
+                var hasWifiDisplay = false
+                try {
+                    val ids = invokeGetDisplayIds(dmProxy)
+                    val getInfo = dmProxy.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                    for (id in ids) {
+                        if (id == 0) continue
+                        val info = getInfo.invoke(dmProxy, id) ?: continue
+                        val type = try {
+                            info.javaClass.getField("type").getInt(info)
+                        } catch (_: Throwable) {
+                            0
+                        }
+                        val ownerPkg = try {
+                            info.javaClass.getField("ownerPackageName").get(info) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        val rawInfoName = try {
+                            info.javaClass.getField("name").get(info) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        if (type == 3) {
+                            hasWifiDisplay = true
+                        } else if (type == 5 &&
+                            isWirelessCastProjectionPackage(ownerPkg) &&
+                            !isNonCastGmsDisplayName(rawInfoName)
+                        ) {
+                            hadCastVirtualDisplay = true
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+                if (activeState == 1 || activeState == 2 || hasWifiDisplay) {
+                    dmProxy.javaClass.getMethod("disconnectWifiDisplay").invoke(dmProxy)
+                    disconnectedAny = true
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "disconnectWifiDisplay failed", t)
+            }
+        }
+        var stoppedCastProjection = false
+        if (projectionProxy != null) {
+            try {
+                val projInfo = projectionProxy.javaClass
+                    .getMethod("getActiveProjectionInfo")
+                    .invoke(projectionProxy)
+                val projPkg = projInfo?.javaClass
+                    ?.getMethod("getPackageName")
+                    ?.invoke(projInfo) as? String
+                if (isWirelessCastProjectionPackage(projPkg)) {
+                    if (invokeStopActiveProjection(projectionProxy)) {
+                        stoppedCastProjection = true
+                        disconnectedAny = true
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "stopActiveProjection for cast failed", t)
+            }
+        }
+        if (stoppedCastProjection || hadCastVirtualDisplay) {
+            if (releaseMatchingRemoteCastSessions(routerProxy) ||
+                releaseMatchingRemoteCastSessions(fallbackRouterProxy)
+            ) {
+                disconnectedAny = true
+            }
+        }
+        return disconnectedAny
+    }
+
+    private fun invokeGetDisplayIds(dmProxy: Any): IntArray {
+        val methods = dmProxy.javaClass.methods
+        val zeroArg = methods.firstOrNull {
+            it.name == "getDisplayIds" && it.parameterCount == 0
+        }
+        if (zeroArg != null) {
+            return (zeroArg.invoke(dmProxy) as? IntArray) ?: IntArray(0)
+        }
+        val oneArg = methods.firstOrNull {
+            it.name == "getDisplayIds" &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0] == Boolean::class.javaPrimitiveType
+        }
+        if (oneArg != null) {
+            return (oneArg.invoke(dmProxy, false) as? IntArray) ?: IntArray(0)
+        }
+        return IntArray(0)
+    }
+
+    private fun isMatchingRemoteCastSession(session: Any): Boolean {
+        val isSystem = try {
+            session.javaClass.getMethod("isSystemSession").invoke(session) as? Boolean ?: false
+        } catch (_: Throwable) {
+            false
+        }
+        if (isSystem) return false
+        val ownerPkg = try {
+            session.javaClass.getMethod("getOwnerPackageName").invoke(session) as? String
+        } catch (_: Throwable) {
+            null
+        }
+        val clientPkg = try {
+            session.javaClass.getMethod("getClientPackageName").invoke(session) as? String
+        } catch (_: Throwable) {
+            null
+        }
+        return isWirelessCastProjectionPackage(ownerPkg) || isWirelessCastProjectionPackage(clientPkg)
+    }
+
+    private fun findMatchingRemoteCastSessions(routerProxy: Any?): List<Any> {
+        val router = routerProxy ?: return emptyList()
+        return try {
+            val methods = router.javaClass.methods
+            val zeroArg = methods.firstOrNull {
+                it.name == "getRemoteSessions" && it.parameterCount == 0
+            }
+            val rawSessions: List<*>? = if (zeroArg != null) {
+                zeroArg.invoke(router) as? List<*>
+            } else {
+                invokeServiceWithTemporaryRouter2Manager(router) { getSessions, managerProxy ->
+                    getSessions.invoke(router, managerProxy) as? List<*>
+                }
+            }
+            rawSessions?.filterNotNull()?.filter { isMatchingRemoteCastSession(it) }.orEmpty()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun extractRemoteCastSessionDeviceName(
+        sessions: List<Any>,
+        routerSource: Any?
+    ): String {
+        for (session in sessions) {
+            val rawSessionName = try {
+                (session.javaClass.getMethod("getName").invoke(session) as? CharSequence)?.toString()
+            } catch (_: Throwable) {
+                null
+            }
+            val cleanSessionName = sanitizeCastDeviceName(rawSessionName)
+            if (cleanSessionName.isNotEmpty()) return cleanSessionName
+
+            if (routerSource != null) {
+                val selectedRoutes = try {
+                    val getSelectedRoutes = routerSource.javaClass.methods.firstOrNull {
+                        it.name == "getSelectedRoutes" &&
+                            it.parameterCount == 1 &&
+                            it.parameterTypes[0].isAssignableFrom(session.javaClass)
+                    }
+                    getSelectedRoutes?.invoke(routerSource, session) as? List<*>
+                } catch (_: Throwable) {
+                    null
+                }
+                if (selectedRoutes != null) {
+                    for (route in selectedRoutes) {
+                        if (route == null) continue
+                        val rawRouteName = try {
+                            (route.javaClass.getMethod("getName").invoke(route) as? CharSequence)
+                                ?.toString()
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        val cleanRouteName = sanitizeCastDeviceName(rawRouteName)
+                        if (cleanRouteName.isNotEmpty()) return cleanRouteName
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun releaseMatchingRemoteCastSessions(routerProxy: Any?): Boolean {
+        val router = routerProxy ?: return false
+        var releasedAny = false
+        try {
+            val releaseMethod = router.javaClass.methods.firstOrNull {
+                it.name == "releaseSession" && it.parameterCount == 1
+            }
+            if (releaseMethod != null) {
+                val sessions = findMatchingRemoteCastSessions(router)
+                for (session in sessions) {
+                    if (releaseMethod.parameterTypes[0].isAssignableFrom(session.javaClass)) {
+                        releaseMethod.invoke(router, session)
+                        releasedAny = true
+                    }
+                }
+                return releasedAny
+            }
+
+            val releaseWithManager = router.javaClass.methods.firstOrNull {
+                it.name == "releaseSessionWithManager" && it.parameterCount == 3
+            }
+            if (releaseWithManager != null) {
+                releasedAny = invokeServiceWithTemporaryRouter2Manager(router) { getSessions, managerProxy ->
+                    val sessions = (getSessions.invoke(router, managerProxy) as? List<*>)
+                        ?.filterNotNull()
+                        ?.filter { isMatchingRemoteCastSession(it) }
+                        .orEmpty()
+                    var released = false
+                    var reqId = 1
+                    for (session in sessions) {
+                        val sessionId = try {
+                            session.javaClass.getMethod("getId").invoke(session) as? String
+                        } catch (_: Throwable) {
+                            null
+                        } ?: continue
+                        val firstType = releaseWithManager.parameterTypes[0]
+                        if (firstType == Long::class.javaPrimitiveType) {
+                            releaseWithManager.invoke(router, reqId.toLong(), managerProxy, sessionId)
+                        } else {
+                            releaseWithManager.invoke(router, reqId, managerProxy, sessionId)
+                        }
+                        reqId++
+                        released = true
+                    }
+                    released
+                } ?: false
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "releaseMatchingRemoteCastSessions failed", t)
+        }
+        return releasedAny
+    }
+
+    private fun <T> invokeServiceWithTemporaryRouter2Manager(
+        routerService: Any,
+        block: (java.lang.reflect.Method, Any) -> T
+    ): T? {
+        val methods = routerService.javaClass.methods
+        val getRemoteSessions = methods.firstOrNull {
+            it.name == "getRemoteSessions" &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0].isInterface
+        } ?: return null
+        val managerInterface = getRemoteSessions.parameterTypes[0]
+        val registerManager = methods.firstOrNull {
+            it.name == "registerManager" &&
+                it.parameterCount == 2 &&
+                it.parameterTypes[0] == managerInterface &&
+                it.parameterTypes[1] == String::class.java
+        } ?: return null
+        val unregisterManager = methods.firstOrNull {
+            it.name == "unregisterManager" &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0] == managerInterface
+        }
+        val callbackBinder = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                return if (code == IBinder.INTERFACE_TRANSACTION) {
+                    reply?.writeString(managerInterface.name)
+                    true
+                } else {
+                    true
+                }
+            }
+        }
+        val managerProxy = java.lang.reflect.Proxy.newProxyInstance(
+            managerInterface.classLoader,
+            arrayOf(managerInterface, android.os.IInterface::class.java)
+        ) { _, method, _ ->
+            when (method.name) {
+                "asBinder" -> callbackBinder
+                "hashCode" -> System.identityHashCode(callbackBinder)
+                "equals" -> false
+                "toString" -> "TempMediaRouter2ManagerProxy"
+                else -> when (method.returnType) {
+                    Boolean::class.javaPrimitiveType -> false
+                    Int::class.javaPrimitiveType -> 0
+                    Long::class.javaPrimitiveType -> 0L
+                    else -> null
+                }
+            }
+        }
+        val candidatePackages = listOf("root", "android", OS_THEME_OWNING_PACKAGE)
+        var registered = false
+        for (pkg in candidatePackages) {
+            try {
+                registerManager.invoke(routerService, managerProxy, pkg)
+                registered = true
+                break
+            } catch (_: Throwable) {
+            }
+        }
+        if (!registered) return null
+        return try {
+            block(getRemoteSessions, managerProxy)
+        } finally {
+            try {
+                unregisterManager?.invoke(routerService, managerProxy)
+            } catch (_: Throwable) {
+            }
+        }
     }
 }

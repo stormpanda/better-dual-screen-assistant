@@ -149,6 +149,13 @@ enum class QuickSettingTileId(
         iconRes = R.drawable.ic_qs_airplane,
         category = QuickSettingCategory.ANDROID_SYSTEM
     ),
+    SCREEN_CAST(
+        key = "screen_cast",
+        title = "Screen Cast",
+        description = "Cast screen wirelessly via Chromecast or Miracast, or disconnect active cast",
+        iconRes = R.drawable.ic_qs_cast,
+        category = QuickSettingCategory.ANDROID_SYSTEM
+    ),
 
     // 3. Tools (OFF by default)
     TOUCH_LOCK(

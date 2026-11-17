@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
@@ -381,6 +382,12 @@ private fun buildMegingiardPalette(
     accent: Color,
     error: Color
 ): TccColorPalette {
+    val opaquePanel = panelSurface.copy(alpha = 1f)
+    val opaqueSecondary = if (onSurfaceSecondary.alpha >= 0.999f) {
+        onSurfaceSecondary.copy(alpha = 1f)
+    } else {
+        onSurfaceSecondary.compositeOver(opaquePanel).copy(alpha = 1f)
+    }
     val resolvedOnAccent = accent.contrastingContentColor(
         dark = appBackground,
         light = Color.White
@@ -392,8 +399,8 @@ private fun buildMegingiardPalette(
         panelBackground = panelSurface,
         panelBackgroundSelected = pressedSurface,
         primary = onSurface,
-        secondary = onSurfaceSecondary,
-        tertiary = onSurfaceSecondary,
+        secondary = opaqueSecondary,
+        tertiary = opaqueSecondary,
         fourth = elevatedSurface,
         fifth = elevatedSurface,
         dialogBackground = elevatedSurface,
@@ -411,7 +418,7 @@ private fun megingiardDarkPalette(accent: Color): TccColorPalette = buildMegingi
     elevatedSurface = Color(0xFF2C2C2E),
     pressedSurface = Color(0xFF48484A),
     onSurface = Color.White,
-    onSurfaceSecondary = Color.White.copy(alpha = 0.6f),
+    onSurfaceSecondary = Color(0xFFA4A4A6),
     accent = accent,
     error = Color(0xFFCF6679)
 )
@@ -425,7 +432,7 @@ private fun megingiardDarkOledPalette(accent: Color): TccColorPalette {
         elevatedSurface = Color(0xFF26262A),
         pressedSurface = Color(0xFF323235),
         onSurface = oledText,
-        onSurfaceSecondary = oledText.copy(alpha = 0.6f),
+        onSurfaceSecondary = Color(0xFF919195),
         accent = accent,
         error = Color(0xFFCF6679)
     )
@@ -925,15 +932,26 @@ fun TccTheme(
     val option = AppThemeOption.fromId(themeMode)
     val resolvedUiLook = TccUiLookPreference.fromId(uiLookMode)
         .resolve(DeviceProfile.current(context))
-    val lookSpec = lookSpecFor(resolvedUiLook, retroidReadabilityBoost)
-    val palette = resolveTccPalette(
-        option = option,
-        systemDark = systemDark,
-        customAccentArgb = customAccentArgb,
-        syncedOption = syncedMegingiardOption,
-        syncedAccentArgb = syncedMegingiardAccentArgb,
-        uiLook = resolvedUiLook
-    )
+    val lookSpec = remember(resolvedUiLook, retroidReadabilityBoost) {
+        lookSpecFor(resolvedUiLook, retroidReadabilityBoost)
+    }
+    val palette = remember(
+        option,
+        systemDark,
+        customAccentArgb,
+        syncedMegingiardOption,
+        syncedMegingiardAccentArgb,
+        resolvedUiLook
+    ) {
+        resolveTccPalette(
+            option = option,
+            systemDark = systemDark,
+            customAccentArgb = customAccentArgb,
+            syncedOption = syncedMegingiardOption,
+            syncedAccentArgb = syncedMegingiardAccentArgb,
+            uiLook = resolvedUiLook
+        )
+    }
 
     CompositionLocalProvider(
         LocalTccColors provides palette,
@@ -969,6 +987,7 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_performance_mode -> R.drawable.rp_ic_performance_mode
     R.drawable.ic_qs_airplane -> R.drawable.rp_ic_qs_airplane
     R.drawable.ic_qs_ambient_light -> R.drawable.rp_ic_qs_ambient_light
+    R.drawable.ic_qs_cast -> R.drawable.rp_ic_qs_cast
     R.drawable.ic_qs_charge_limit -> R.drawable.rp_ic_qs_charge_limit
     R.drawable.ic_qs_charging_separation -> R.drawable.rp_ic_qs_charging_separation
     R.drawable.ic_qs_clean -> R.drawable.rp_ic_qs_clean

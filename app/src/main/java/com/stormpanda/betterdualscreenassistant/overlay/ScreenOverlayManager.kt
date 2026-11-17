@@ -16,6 +16,7 @@ import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -161,6 +162,11 @@ class ScreenOverlayManager(
          */
         const val PRIVILEGED_OVERLAY_WINDOW_TYPE = PrivilegedBridge.PRIVILEGED_OVERLAY_WINDOW_TYPE
         private const val FADE_DURATION_MS = 200L
+
+        internal fun resolveCastSettingsTargetDisplayId(
+            dualScreenMode: Int,
+            bottomDisplayId: Int
+        ): Int = if (dualScreenMode == 2) bottomDisplayId else TOP_DISPLAY_ID
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -310,6 +316,12 @@ class ScreenOverlayManager(
                         onStopScreenRecordingRequest = {
                             performStopScreenRecordingWithToast()
                         },
+                        onOpenScreenCastRequest = {
+                            openCastSettingsOnTopScreen()
+                        },
+                        onDisconnectScreenCastRequest = {
+                            performDisconnectScreenCastWithToast()
+                        },
                         onOpenEditRequest = {
                             openMainActivityOnTopScreen()
                         },
@@ -351,6 +363,7 @@ class ScreenOverlayManager(
                 applyImmersiveFullscreen(composeView)
                 composeView.requestFocus()
                 composeView.animate()
+                    .withLayer()
                     .translationY(0f)
                     .alpha(1f)
                     .setDuration(FADE_DURATION_MS)
@@ -367,8 +380,11 @@ class ScreenOverlayManager(
     }
 
     fun hideAssistantOverlay(immediate: Boolean = false) {
-        mainHandler.post {
-            val view = assistantView ?: return@post
+        val action = Runnable {
+            if (immediate) {
+                cleanupExitingAssistant()
+            }
+            val view = assistantView ?: return@Runnable
             val lifecycle = assistantLifecycle
             assistantView = null
             assistantLifecycle = null
@@ -384,7 +400,7 @@ class ScreenOverlayManager(
                 }
                 lifecycle?.onPause()
                 lifecycle?.onDestroy()
-                return@post
+                return@Runnable
             }
 
             cleanupExitingAssistant()
@@ -394,6 +410,7 @@ class ScreenOverlayManager(
             val slideOutDistance =
                 (view.height.takeIf { it > 0 } ?: profile.bottomFallbackHeight) * 0.90f
             view.animate()
+                .withLayer()
                 .translationY(slideOutDistance)
                 .alpha(0f)
                 .setDuration(FADE_DURATION_MS)
@@ -411,6 +428,11 @@ class ScreenOverlayManager(
                     }
                 }
                 .start()
+        }
+        if (immediate && Looper.myLooper() == Looper.getMainLooper()) {
+            action.run()
+        } else {
+            mainHandler.post(action)
         }
     }
 
@@ -659,6 +681,65 @@ class ScreenOverlayManager(
                 wait = false
             )
         }
+    }
+
+    fun openCastSettingsOnTopScreen() {
+        val targetDisplayId = resolveCastSettingsTargetDisplayId(
+            dualScreenMode = repository.dualScreenDisplayMode.value,
+            bottomDisplayId = bottomDisplayId
+        )
+        hideAssistantOverlay()
+        mainHandler.postDelayed({
+            val candidateActions = listOf(
+                Settings.ACTION_CAST_SETTINGS,
+                "android.settings.WIFI_DISPLAY_SETTINGS",
+                "android.settings.CONNECTED_DEVICE_SETTINGS"
+            )
+            var launchedAction: String? = null
+            val options = ActivityOptions.makeBasic().apply {
+                launchDisplayId = targetDisplayId
+            }.toBundle()
+            for (action in candidateActions) {
+                try {
+                    val intent = Intent(action).apply {
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        )
+                    }
+                    context.startActivity(intent, options)
+                    launchedAction = action
+                    break
+                } catch (_: Throwable) {
+                }
+            }
+            val rootAction = launchedAction ?: Settings.ACTION_CAST_SETTINGS
+            val execResult = PServerClient.exec(
+                "am start --display $targetDisplayId --activity-clear-top --activity-single-top -a $rootAction",
+                wait = false
+            )
+            if (launchedAction == null && execResult.isFailure) {
+                showBottomToast("Cast settings unavailable on this device")
+            } else if (targetDisplayId == TOP_DISPLAY_ID) {
+                showBottomToast("Choose a Cast device on Top Screen")
+            }
+        }, FADE_DURATION_MS)
+    }
+
+    fun performDisconnectScreenCastWithToast() {
+        val previousDeviceName = repository.screenCastState.value.deviceName
+        Thread {
+            val disconnected = repository.disconnectScreenCast()
+            mainHandler.post {
+                val message = when {
+                    !disconnected -> "Unable to disconnect screen cast"
+                    previousDeviceName.isNotBlank() -> "Disconnected from $previousDeviceName"
+                    else -> "Disconnected screen cast"
+                }
+                showBottomToast(message)
+            }
+        }.start()
     }
 
     private fun dismissActiveToast() {

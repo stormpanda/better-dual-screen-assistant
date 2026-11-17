@@ -496,4 +496,42 @@ class PrivilegedBridgeTest {
         assertEquals(testPath, stopped.lastCompletedPath)
         assertEquals("user", stopped.lastStopReason)
     }
+
+    @Test
+    fun `getScreenCastState and disconnectScreenCast marshal Parcel fields accurately`() {
+        var disconnectCalled = false
+        var activeCast = true
+
+        val helper = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    reply.writeNoException()
+                    reply.writeInt(if (activeCast) 1 else 0)
+                    reply.writeInt(0)
+                    reply.writeString(if (activeCast) "Bedroom Chromecast" else "")
+                }
+                PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    disconnectCalled = true
+                    activeCast = false
+                    reply.writeNoException()
+                    reply.writeInt(1)
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        val castStatus = PrivilegedBridge.getScreenCastState(context)
+        assertTrue(castStatus.isCasting)
+        assertFalse(castStatus.isConnecting)
+        assertEquals("Bedroom Chromecast", castStatus.deviceName)
+
+        assertTrue(PrivilegedBridge.disconnectScreenCast(context))
+        assertTrue(disconnectCalled)
+
+        val afterDisconnect = PrivilegedBridge.getScreenCastState(context)
+        assertFalse(afterDisconnect.isCasting)
+        assertEquals("", afterDisconnect.deviceName)
+    }
 }

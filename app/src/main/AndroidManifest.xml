@@ -35,6 +35,15 @@
         <intent>
             <action android:name="com.ro.mapping.action.MAPPING_SERVICE" />
         </intent>
+        <intent>
+            <action android:name="android.settings.CAST_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.WIFI_DISPLAY_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.CONNECTED_DEVICE_SETTINGS" />
+        </intent>
     </queries>
 
     <application

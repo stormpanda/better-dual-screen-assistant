@@ -55,8 +55,8 @@ import androidx.compose.ui.unit.min
 import androidx.core.content.res.ResourcesCompat
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
-import com.stormpanda.betterdualscreenassistant.system.HardwareTelemetryState
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+import com.stormpanda.betterdualscreenassistant.system.ScreenCastState
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareInfoComponentCard
@@ -77,6 +77,8 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -95,6 +97,12 @@ internal fun formatRecordingElapsedSeconds(totalSeconds: Long): String {
     }
 }
 
+internal fun formatScreenCastTileLabel(state: ScreenCastState): String = when {
+    state.isCasting -> state.deviceName.ifBlank { "Casting" }
+    state.isConnecting -> "Connecting…"
+    else -> "Screen Cast"
+}
+
 @Composable
 fun AssistantOverlayScreen(
     repository: SystemSettingsRepository,
@@ -110,6 +118,8 @@ fun AssistantOverlayScreen(
     onCaptureScreenshotRequest: (Int) -> Unit = {},
     onStartScreenRecordingRequest: (Int) -> Unit = {},
     onStopScreenRecordingRequest: () -> Unit = {},
+    onOpenScreenCastRequest: () -> Unit = {},
+    onDisconnectScreenCastRequest: () -> Unit = {},
     onDismissOverlayRequest: () -> Unit
 ) {
     val context = LocalContext.current
@@ -122,7 +132,6 @@ fun AssistantOverlayScreen(
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
     val showEditButton by repository.showEditButton.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
-    val telemetry by telemetryMonitor.state.collectAsState()
     val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
 
     var recordingElapsedSeconds by remember { mutableLongStateOf(0L) }
@@ -236,10 +245,12 @@ fun AssistantOverlayScreen(
                             SystemSettingsTab(
                                 profile = profile,
                                 repository = repository,
-                                telemetry = telemetry,
+                                telemetryMonitor = telemetryMonitor,
                                 recordingElapsedText = recordingElapsedText,
                                 onOpenDialog = { dialog -> activeDialog = dialog },
                                 onStopScreenRecording = onStopScreenRecordingRequest,
+                                onOpenScreenCast = onOpenScreenCastRequest,
+                                onDisconnectScreenCast = onDisconnectScreenCastRequest,
                                 onCleanMemory = onCleanMemoryRequest,
                                 onClearAllTasks = onClearAllTasksRequest,
                                 onToggleTouchLock = onToggleTouchLockRequest
@@ -543,6 +554,8 @@ private fun buildQuickSettingTileModels(
     recordingElapsedText: String,
     onOpenDialog: (ActiveDialog) -> Unit,
     onStopScreenRecording: () -> Unit,
+    onOpenScreenCast: () -> Unit,
+    onDisconnectScreenCast: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
     onToggleTouchLock: () -> Unit
@@ -563,6 +576,7 @@ private fun buildQuickSettingTileModels(
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
     val dndEnabled by repository.dndEnabled.collectAsState()
     val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
+    val screenCastState by repository.screenCastState.collectAsState()
     val touchLockEnabled by repository.touchLockEnabled.collectAsState()
     val triggerMode by repository.triggerMode.collectAsState()
     val chargeLimit80 by repository.chargeLimit80.collectAsState()
@@ -682,6 +696,18 @@ private fun buildQuickSettingTileModels(
                 QuickSettingTileId.AIRPLANE_MODE -> add(
                     QuickSettingTileModel("Airplane Mode", R.drawable.ic_qs_airplane, airplaneModeEnabled) { repository.toggleAirplaneMode() }
                 )
+                QuickSettingTileId.SCREEN_CAST -> {
+                    val isCastActive = screenCastState.isActiveOrConnecting
+                    add(
+                        QuickSettingTileModel(
+                            label = formatScreenCastTileLabel(screenCastState),
+                            iconRes = R.drawable.ic_qs_cast,
+                            selected = isCastActive
+                        ) {
+                            if (isCastActive) onDisconnectScreenCast() else onOpenScreenCast()
+                        }
+                    )
+                }
                 QuickSettingTileId.TOUCH_LOCK -> add(
                     QuickSettingTileModel(
                         if (touchLockEnabled) "Touch Locked" else "Touch Lock",
@@ -752,16 +778,17 @@ private fun buildQuickSettingTileModels(
 private fun SystemSettingsTab(
     profile: DeviceProfile,
     repository: SystemSettingsRepository,
-    telemetry: HardwareTelemetryState,
+    telemetryMonitor: TelemetryMonitor,
     recordingElapsedText: String,
     onOpenDialog: (ActiveDialog) -> Unit,
     onStopScreenRecording: () -> Unit,
+    onOpenScreenCast: () -> Unit,
+    onDisconnectScreenCast: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
     onToggleTouchLock: () -> Unit
 ) {
     val refreshRate by repository.refreshRate.collectAsState()
-    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
     val rememberLastQuickTogglePage by repository.rememberLastQuickTogglePage.collectAsState()
     val lastQuickTogglePage by repository.lastQuickTogglePage.collectAsState()
     val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
@@ -778,6 +805,8 @@ private fun SystemSettingsTab(
         recordingElapsedText = recordingElapsedText,
         onOpenDialog = onOpenDialog,
         onStopScreenRecording = onStopScreenRecording,
+        onOpenScreenCast = onOpenScreenCast,
+        onDisconnectScreenCast = onDisconnectScreenCast,
         onCleanMemory = onCleanMemory,
         onClearAllTasks = onClearAllTasks,
         onToggleTouchLock = onToggleTouchLock
@@ -864,9 +893,9 @@ private fun SystemSettingsTab(
                     bottom = settingsSpec.topRowBottomPadding
                 )
         ) {
-            FrameRatePanelCard(
+            LiveFrameRatePanelCard(
                 refreshRate = refreshRate,
-                currentFps = telemetry.currentFps,
+                telemetryMonitor = telemetryMonitor,
                 onToggleRefreshRate = { repository.toggleRefreshRate() },
                 modifier = Modifier
                     .weight(leftColWeight)
@@ -920,163 +949,206 @@ private fun SystemSettingsTab(
             }
         }
 
-        Row(
+        LiveTelemetryBottomRow(
+            repository = repository,
+            telemetryMonitor = telemetryMonitor,
+            leftColWeight = leftColWeight,
+            rightColWeight = rightColWeight,
+            cardHalfGap = cardHalfGap,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(settingsSpec.bottomRowWeight)
                 .padding(top = settingsSpec.bottomRowTopPadding, bottom = 0.dp)
-        ) {
-            val tempCelsiusInt = telemetry.cpuTempCelsius.roundToInt()
-            val tempTint = when {
-                colors.isMegingiardStyle -> when {
-                    tempCelsiusInt >= 86 -> colors.error
-                    tempCelsiusInt >= 71 -> colors.error.copy(alpha = 0.85f)
-                    tempCelsiusInt >= 51 -> colors.accent
-                    else -> colors.secondary
-                }
-                lookSpec.isRetroid -> when {
-                    tempCelsiusInt >= 86 -> Color(0xFFF64646)
-                    tempCelsiusInt >= 71 -> Color(0xFFF67474)
-                    else -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
-                }
-                else -> when {
-                    tempCelsiusInt >= 86 -> Color(0xFFF64646)
-                    tempCelsiusInt >= 71 -> Color(0xFFF67474)
-                    tempCelsiusInt >= 51 -> Color(0xFFF6A6A6)
-                    else -> Color(0xFF818184)
-                }
+        )
+    }
+}
+
+@Composable
+private fun LiveFrameRatePanelCard(
+    refreshRate: Int,
+    telemetryMonitor: TelemetryMonitor,
+    onToggleRefreshRate: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val fpsFlow = remember(telemetryMonitor) {
+        telemetryMonitor.state.map { it.currentFps }.distinctUntilChanged()
+    }
+    val currentFps by fpsFlow.collectAsState(initial = telemetryMonitor.state.value.currentFps)
+    FrameRatePanelCard(
+        refreshRate = refreshRate,
+        currentFps = currentFps,
+        onToggleRefreshRate = onToggleRefreshRate,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun LiveTelemetryBottomRow(
+    repository: SystemSettingsRepository,
+    telemetryMonitor: TelemetryMonitor,
+    leftColWeight: Float,
+    rightColWeight: Float,
+    cardHalfGap: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    val telemetry by telemetryMonitor.state.collectAsState()
+    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
+    val colors = LocalTccColors.current
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
+    val cardShape = lookSpec.panelCardShape
+
+    Row(modifier = modifier) {
+        val tempCelsiusInt = telemetry.cpuTempCelsius.roundToInt()
+        val tempTint = when {
+            colors.isMegingiardStyle -> when {
+                tempCelsiusInt >= 86 -> colors.error
+                tempCelsiusInt >= 71 -> colors.error.copy(alpha = 0.85f)
+                tempCelsiusInt >= 51 -> colors.accent
+                else -> colors.secondary
             }
-            val fanTint = when {
-                colors.isMegingiardStyle -> colors.secondary
-                lookSpec.isRetroid -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+            lookSpec.isRetroid -> when {
+                tempCelsiusInt >= 86 -> Color(0xFFF64646)
+                tempCelsiusInt >= 71 -> Color(0xFFF67474)
+                else -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+            }
+            else -> when {
+                tempCelsiusInt >= 86 -> Color(0xFFF64646)
+                tempCelsiusInt >= 71 -> Color(0xFFF67474)
+                tempCelsiusInt >= 51 -> Color(0xFFF6A6A6)
                 else -> Color(0xFF818184)
             }
-            val rawTempText = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit)
-            val displayTempText = if (lookSpec.isRetroid) {
-                rawTempText.replace("℃", "°C").replace("℉", "°F")
-            } else {
-                rawTempText
-            }
+        }
+        val fanTint = when {
+            colors.isMegingiardStyle -> colors.secondary
+            lookSpec.isRetroid -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+            else -> Color(0xFF818184)
+        }
+        val rawTempText = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit)
+        val displayTempText = if (lookSpec.isRetroid) {
+            rawTempText.replace("℃", "°C").replace("℉", "°F")
+        } else {
+            rawTempText
+        }
 
-            Row(
+        Row(
+            modifier = Modifier
+                .weight(leftColWeight)
+                .fillMaxHeight()
+                .padding(end = cardHalfGap),
+            horizontalArrangement = Arrangement.spacedBy(settingsSpec.tempFanGap)
+        ) {
+            HardwareInfoComponentCard(
+                title = "TEMP",
+                valueWithUnit = displayTempText,
+                iconRes = R.drawable.ic_temp,
+                iconTint = tempTint,
+                iconSizeRate = 0.20f,
+                onClick = { repository.toggleTempFahrenheit() },
                 modifier = Modifier
-                    .weight(leftColWeight)
+                    .weight(1f)
                     .fillMaxHeight()
-                    .padding(end = cardHalfGap),
-                horizontalArrangement = Arrangement.spacedBy(settingsSpec.tempFanGap)
-            ) {
-                HardwareInfoComponentCard(
-                    title = "TEMP",
-                    valueWithUnit = displayTempText,
-                    iconRes = R.drawable.ic_temp,
-                    iconTint = tempTint,
-                    iconSizeRate = 0.20f,
-                    onClick = { repository.toggleTempFahrenheit() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
+            )
 
-                HardwareInfoComponentCard(
-                    title = "FAN",
-                    valueWithUnit = "${telemetry.fanSpeedPercent}%",
-                    iconRes = R.drawable.ic_fan_normal,
-                    iconTint = fanTint,
-                    iconSizeRate = 0.19f,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
-
-            Row(
+            HardwareInfoComponentCard(
+                title = "FAN",
+                valueWithUnit = "${telemetry.fanSpeedPercent}%",
+                iconRes = R.drawable.ic_fan_normal,
+                iconTint = fanTint,
+                iconSizeRate = 0.19f,
                 modifier = Modifier
-                    .weight(rightColWeight)
+                    .weight(1f)
                     .fillMaxHeight()
-                    .padding(start = cardHalfGap)
-                    .clip(cardShape)
-                    .background(colors.panelBackground)
-                    .padding(
-                        horizontal = settingsSpec.ringsHorizontalPadding,
-                        vertical = settingsSpec.ringsVerticalPadding
-                    ),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val cpuRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFFB125E3)
-                    else -> Color(0xFFEE188C)
-                }
-                val gpuRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFF373FC6)
-                    else -> Color(0xFF70E7FF)
-                }
-                val pwrRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFFE46D00)
-                    else -> Color(0xFFE26E01)
-                }
-                val ramRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFF86D100)
-                    else -> Color(0xFF76CA40)
-                }
+            )
+        }
 
-                HardwareRingGauge(
-                    title = "CPU",
-                    valueText = formatRingValue(telemetry.cpuCurFreqGhz),
-                    unitText = telemetry.cpuUnit,
-                    value = telemetry.cpuCurFreqGhz,
-                    minValue = 0f,
-                    maxValue = telemetry.cpuMaxFreqGhz,
-                    ringColor = cpuRingColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                HardwareRingGauge(
-                    title = "GPU",
-                    valueText = formatRingValue(telemetry.gpuCurFreqMhz),
-                    unitText = telemetry.gpuUnit,
-                    value = telemetry.gpuCurFreqMhz,
-                    minValue = 0f,
-                    maxValue = telemetry.gpuMaxFreqMhz,
-                    ringColor = gpuRingColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                HardwareRingGauge(
-                    title = "PWR",
-                    valueText = formatRingValue(telemetry.powerWatts),
-                    unitText = "W",
-                    value = telemetry.powerWatts,
-                    minValue = -20f,
-                    maxValue = 25f,
-                    ringColor = pwrRingColor,
-                    bidirectional = true,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                HardwareRingGauge(
-                    title = "RAM",
-                    valueText = formatRingValue(telemetry.ramUsedGb),
-                    unitText = "GB",
-                    value = telemetry.ramUsedGb,
-                    minValue = 0f,
-                    maxValue = telemetry.ramTotalGb,
-                    ringColor = ramRingColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
+        Row(
+            modifier = Modifier
+                .weight(rightColWeight)
+                .fillMaxHeight()
+                .padding(start = cardHalfGap)
+                .clip(cardShape)
+                .background(colors.panelBackground)
+                .padding(
+                    horizontal = settingsSpec.ringsHorizontalPadding,
+                    vertical = settingsSpec.ringsVerticalPadding
+                ),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val cpuRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFFB125E3)
+                else -> Color(0xFFEE188C)
             }
+            val gpuRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFF373FC6)
+                else -> Color(0xFF70E7FF)
+            }
+            val pwrRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFFE46D00)
+                else -> Color(0xFFE26E01)
+            }
+            val ramRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFF86D100)
+                else -> Color(0xFF76CA40)
+            }
+
+            HardwareRingGauge(
+                title = "CPU",
+                valueText = formatRingValue(telemetry.cpuCurFreqGhz),
+                unitText = telemetry.cpuUnit,
+                value = telemetry.cpuCurFreqGhz,
+                minValue = 0f,
+                maxValue = telemetry.cpuMaxFreqGhz,
+                ringColor = cpuRingColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+
+            HardwareRingGauge(
+                title = "GPU",
+                valueText = formatRingValue(telemetry.gpuCurFreqMhz),
+                unitText = telemetry.gpuUnit,
+                value = telemetry.gpuCurFreqMhz,
+                minValue = 0f,
+                maxValue = telemetry.gpuMaxFreqMhz,
+                ringColor = gpuRingColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+
+            HardwareRingGauge(
+                title = "PWR",
+                valueText = formatRingValue(telemetry.powerWatts),
+                unitText = "W",
+                value = telemetry.powerWatts,
+                minValue = -20f,
+                maxValue = 25f,
+                ringColor = pwrRingColor,
+                bidirectional = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+
+            HardwareRingGauge(
+                title = "RAM",
+                valueText = formatRingValue(telemetry.ramUsedGb),
+                unitText = "GB",
+                value = telemetry.ramUsedGb,
+                minValue = 0f,
+                maxValue = telemetry.ramTotalGb,
+                ringColor = ramRingColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
         }
     }
 }

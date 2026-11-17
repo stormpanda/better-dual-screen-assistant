@@ -394,7 +394,7 @@ class AssistantForegroundService : Service() {
             unregisterReceiver(systemEventsReceiver)
         } catch (_: Throwable) {
         }
-        overlayManager.hideAssistantOverlay()
+        overlayManager.hideAssistantOverlay(immediate = true)
         telemetryMonitor.stop()
         overviewProxyClient.unbind()
         mappingServiceClient.unbind()

@@ -137,6 +137,7 @@ object PrivilegedBridge {
                         .getInstance(appCtx)
                     repo.refreshDisplayBrightness()
                     repo.syncScreenRecordingStateFromHelper()
+                    repo.refreshScreenCastStateAsync()
                 } catch (_: Throwable) {
                 }
             }
@@ -1361,6 +1362,164 @@ object PrivilegedBridge {
             data.recycle()
             reply.recycle()
         }
+    }
+
+    data class ScreenCastHelperStatus(
+        val isCasting: Boolean = false,
+        val isConnecting: Boolean = false,
+        val deviceName: String = ""
+    )
+
+    private fun readScreenCastHelperStatusFromParcel(reply: Parcel): ScreenCastHelperStatus {
+        if (reply.dataAvail() <= 0) return ScreenCastHelperStatus()
+        val isCasting = reply.readInt() != 0
+        val isConnecting = reply.readInt() != 0
+        val deviceName = reply.readString() ?: ""
+        return ScreenCastHelperStatus(
+            isCasting = isCasting,
+            isConnecting = isConnecting,
+            deviceName = deviceName
+        )
+    }
+
+    /**
+     * Queries the current wireless screen cast status (Miracast / Wi-Fi Display + Google Cast)
+     * from [PrivilegedHelperMain] with in-process [DisplayManager] reflection fallback.
+     */
+    fun getScreenCastState(context: Context? = null): ScreenCastHelperStatus {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                return readScreenCastHelperStatusFromParcel(reply)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper getScreenCastState failed, using fallback", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        if (context != null) {
+            return readScreenCastStateFallback(context)
+        }
+        return ScreenCastHelperStatus()
+    }
+
+    private fun readScreenCastStateFallback(context: Context): ScreenCastHelperStatus {
+        val dm = try {
+            context.getSystemService(DisplayManager::class.java)
+        } catch (_: Throwable) {
+            null
+        } ?: return ScreenCastHelperStatus()
+
+        try {
+            val wfdStatus = dm.javaClass.getMethod("getWifiDisplayStatus").invoke(dm)
+            if (wfdStatus != null) {
+                val activeState =
+                    wfdStatus.javaClass.getMethod("getActiveDisplayState").invoke(wfdStatus) as? Int ?: 0
+                val activeDisplay =
+                    wfdStatus.javaClass.getMethod("getActiveDisplay").invoke(wfdStatus)
+                val friendlyName = try {
+                    activeDisplay?.javaClass?.getMethod("getFriendlyDisplayName")
+                        ?.invoke(activeDisplay) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                val deviceName = try {
+                    activeDisplay?.javaClass?.getMethod("getDeviceName")
+                        ?.invoke(activeDisplay) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                val cleanName = PrivilegedHelperMain.sanitizeCastDeviceName(friendlyName).ifEmpty {
+                    PrivilegedHelperMain.sanitizeCastDeviceName(deviceName)
+                }
+                if (activeState == 2) {
+                    return ScreenCastHelperStatus(isCasting = true, deviceName = cleanName)
+                }
+                if (activeState == 1) {
+                    return ScreenCastHelperStatus(isConnecting = true, deviceName = cleanName)
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        try {
+            for (display in dm.displays) {
+                if (display.displayId == 0) continue
+                val type = try {
+                    display.javaClass.getMethod("getType").invoke(display) as? Int ?: 0
+                } catch (_: Throwable) {
+                    0
+                }
+                val ownerPkg = try {
+                    display.javaClass.getMethod("getOwnerPackageName").invoke(display) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                if (type == 3 ||
+                    (type == 5 &&
+                        PrivilegedHelperMain.isWirelessCastProjectionPackage(ownerPkg) &&
+                        !PrivilegedHelperMain.isNonCastGmsDisplayName(display.name))
+                ) {
+                    val cleanName = PrivilegedHelperMain.sanitizeCastDeviceName(display.name)
+                    return ScreenCastHelperStatus(isCasting = true, deviceName = cleanName)
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        return ScreenCastHelperStatus()
+    }
+
+    /**
+     * Disconnects any active Miracast (Wi-Fi Display) or Google Cast screen mirroring session
+     * via [PrivilegedHelperMain] (`UID 0`), falling back to reflective [DisplayManager.disconnectWifiDisplay].
+     */
+    fun disconnectScreenCast(context: Context): Boolean {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                return reply.readInt() != 0
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper disconnectScreenCast failed, trying fallback", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        val fallbackOk = try {
+            val dm = context.getSystemService(DisplayManager::class.java)
+            if (dm != null) {
+                dm.javaClass.getMethod("disconnectWifiDisplay").invoke(dm)
+                true
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+        ensureStarted(context)
+        return fallbackOk
     }
 
     @Volatile

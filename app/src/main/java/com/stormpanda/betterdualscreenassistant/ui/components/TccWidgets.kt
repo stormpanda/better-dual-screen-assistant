@@ -733,7 +733,8 @@ fun HardwareRingGauge(
     val animatedRingProgress = remember { Animatable(0f) }
 
     LaunchedEffect(targetFraction) {
-        if (animatedRingProgress.value != targetFraction) {
+        val delta = kotlin.math.abs(animatedRingProgress.value - targetFraction)
+        if (delta >= 0.002f) {
             animatedRingProgress.animateTo(
                 targetValue = targetFraction,
                 animationSpec = tween(
@@ -741,6 +742,8 @@ fun HardwareRingGauge(
                     easing = RingDecelerateEasing
                 )
             )
+        } else if (delta > 0f) {
+            animatedRingProgress.snapTo(targetFraction)
         }
     }
 

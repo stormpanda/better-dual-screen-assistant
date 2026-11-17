@@ -367,4 +367,12 @@ class ScreenOverlayManagerTest {
         verify(exactly = 1) { PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = false) }
         verify(exactly = 1) { PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = false) }
     }
+
+    @Test
+    fun `resolveCastSettingsTargetDisplayId targets Top Screen unless Only Bottom Screen mode is active`() {
+        assertEquals(0, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 0, bottomDisplayId = 4))
+        assertEquals(0, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 1, bottomDisplayId = 4))
+        assertEquals(4, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 2, bottomDisplayId = 4))
+        assertEquals(2, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 2, bottomDisplayId = 2))
+    }
 }
