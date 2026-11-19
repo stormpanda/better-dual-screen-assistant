@@ -554,8 +554,16 @@ private data class QuickSettingTileModel(
     val label: String,
     @param:DrawableRes val iconRes: Int,
     val selected: Boolean,
+    val onLongClick: (() -> Unit)? = null,
     val onClick: () -> Unit
-)
+) {
+    constructor(
+        label: String,
+        @DrawableRes iconRes: Int,
+        selected: Boolean,
+        onClick: () -> Unit
+    ) : this(label = label, iconRes = iconRes, selected = selected, onLongClick = null, onClick = onClick)
+}
 
 @Composable
 private fun buildQuickSettingTileModels(
@@ -734,14 +742,16 @@ private fun buildQuickSettingTileModels(
                     QuickSettingTileModel(
                         label = formatScreenshotTileLabel(screenshotTargetMode),
                         iconRes = R.drawable.ic_qs_screenshot,
-                        selected = false
-                    ) {
-                        if (screenshotTargetMode in SystemSettingsRepository.SCREENSHOT_TARGET_TOP..SystemSettingsRepository.SCREENSHOT_TARGET_BOTH) {
-                            onCaptureScreenshot(screenshotTargetMode)
-                        } else {
-                            onOpenDialog(ActiveDialog.SCREENSHOT)
-                        }
-                    }
+                        selected = false,
+                        onClick = {
+                            if (screenshotTargetMode in SystemSettingsRepository.SCREENSHOT_TARGET_TOP..SystemSettingsRepository.SCREENSHOT_TARGET_BOTH) {
+                                onCaptureScreenshot(screenshotTargetMode)
+                            } else {
+                                onOpenDialog(ActiveDialog.SCREENSHOT)
+                            }
+                        },
+                        onLongClick = { onOpenDialog(ActiveDialog.SCREENSHOT) }
+                    )
                 )
                 QuickSettingTileId.SCREEN_RECORD -> {
                     val tileLabel = if (isRecordingScreen) {
@@ -1473,6 +1483,7 @@ private fun QuickSettingsGridPage(
                                 iconRes = item.iconRes,
                                 selected = item.selected,
                                 onClick = item.onClick,
+                                onLongClick = item.onLongClick,
                                 variant = TccTileVariant.QUICK_SETTING,
                                 maxLabelWidth = cellAllowance
                             )

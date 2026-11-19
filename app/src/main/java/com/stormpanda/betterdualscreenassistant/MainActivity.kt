@@ -1169,7 +1169,7 @@ private fun GeneralSettingsTabContent(
         .coerceAtLeast(0)
     GamepadChoiceCard(
         title = "Screenshot Display",
-        description = "Choose which display the Screenshot quick toggle captures immediately, or Ask Every Time to pick on each tap",
+        description = "Choose which display the Screenshot quick toggle captures immediately, or Ask Every Time to pick on each tap (long-press the toggle anytime to choose)",
         selectedText = screenshotTargetModes[currentScreenshotIndex].second,
         icon = Icons.Rounded.Screenshot,
         onPrevious = {

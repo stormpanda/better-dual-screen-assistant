@@ -455,17 +455,29 @@ internal fun AssistantOverlayDialogHost(
         }
 
         ActiveDialog.SCREENSHOT -> {
+            val screenshotTargetMode by repository.screenshotTargetMode.collectAsState()
+            var keepSelectionAsDefault by remember { mutableStateOf(false) }
             val options = screenTargetDialogOptions()
             TccOptionDialog(
                 title = "Capture Screenshot",
                 titleIconRes = R.drawable.ic_qs_screenshot,
                 options = options,
-                selectedId = -1,
+                selectedId = screenshotTargetMode,
                 onSelectOption = { selected ->
+                    if (keepSelectionAsDefault) {
+                        repository.setScreenshotTargetMode(selected)
+                    }
                     onDismiss()
                     onCaptureScreenshotRequest(selected)
                 },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                footerContent = {
+                    TccDialogToggleRow(
+                        label = "Set as default",
+                        checked = keepSelectionAsDefault,
+                        onCheckedChange = { keepSelectionAsDefault = it }
+                    )
+                }
             )
         }
 

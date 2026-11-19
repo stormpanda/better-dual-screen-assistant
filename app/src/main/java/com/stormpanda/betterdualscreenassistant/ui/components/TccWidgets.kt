@@ -6,10 +6,12 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -229,6 +231,7 @@ enum class TccTileVariant {
  * Unified, look-driven tile button replicating `TCCButtonView` across both AYN Smooth and
  * Retroid Pixel UI looks in the shared `720dp` canonical coordinate space.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TccButton(
     label: String,
@@ -237,7 +240,8 @@ fun TccButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     variant: TccTileVariant = TccTileVariant.QUICK_SETTING,
-    maxLabelWidth: Dp? = null
+    maxLabelWidth: Dp? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
@@ -245,6 +249,7 @@ fun TccButton(
     val tileSpec = lookSpec.tile
     val labelStyle = tccTextStyle()
     var isFocused by remember { mutableStateOf(false) }
+    var longPressConsumed by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
 
     val iconTint = tccTileIconTint(colors, isRetroid, selected)
@@ -300,21 +305,49 @@ fun TccButton(
             .background(if (isFocused) colors.panelBackgroundSelected else Color.Transparent)
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
-                if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
-                    (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
-                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
-                ) {
-                    onClick()
-                    true
-                } else {
-                    false
+                val native = event.nativeKeyEvent
+                val isConfirmKey = native.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                    native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_ENTER
+                if (!isConfirmKey) return@onKeyEvent false
+                when (native.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (onLongClick != null && !longPressConsumed &&
+                            (native.isLongPress || native.repeatCount > 0)
+                        ) {
+                            longPressConsumed = true
+                            onLongClick()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        if (longPressConsumed) {
+                            longPressConsumed = false
+                        } else {
+                            onClick()
+                        }
+                        true
+                    }
+                    else -> false
                 }
             }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = onLongClick
+                    )
+                } else {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                }
             ),
         contentAlignment = Alignment.Center
     ) {
