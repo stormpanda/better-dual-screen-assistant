@@ -161,7 +161,7 @@ object BdsaPluginContract {
             elapsed to false
         }
         val totalSeconds = if (countDown) {
-            (displayMs + 999L) / 1000L
+            (displayMs / 1000L) + if (displayMs % 1000L > 0L) 1L else 0L
         } else {
             displayMs / 1000L
         }

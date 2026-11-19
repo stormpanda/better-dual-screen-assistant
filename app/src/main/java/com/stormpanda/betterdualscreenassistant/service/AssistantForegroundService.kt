@@ -229,9 +229,12 @@ class AssistantForegroundService : Service() {
     private val pluginPackageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!::pluginRegistry.isInitialized) return
+            val action = intent?.action
             val pkg = intent?.data?.schemeSpecificPart
             val replacing = intent?.getBooleanExtra(Intent.EXTRA_REPLACING, false) == true
-            pluginRegistry.onPackageChanged(intent?.action, pkg, replacing)
+            serviceScope.launch(Dispatchers.IO) {
+                pluginRegistry.onPackageChanged(action, pkg, replacing)
+            }
         }
     }
 

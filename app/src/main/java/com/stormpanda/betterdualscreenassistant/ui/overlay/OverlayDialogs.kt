@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,6 +35,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
@@ -71,9 +73,11 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.resolveResponsiveDialog
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal enum class ActiveDialog {
     NONE,
@@ -538,32 +542,83 @@ internal fun PluginPickerDialogOverlay(
     val pluginVersionCode = remember(request.packageName) {
         pluginRegistry.findPluginForPackage(request.packageName)?.versionCode ?: 0L
     }
-    val titleIconBitmap = remember(request.packageName, pluginVersionCode, request.titleIconResId) {
-        PluginIconLoader.loadIconBitmap(
-            context = context,
+    val initialTitleBitmap = remember(request.packageName, pluginVersionCode, request.titleIconResId) {
+        PluginIconLoader.getCachedIconBitmap(
             packageName = request.packageName,
             versionCode = pluginVersionCode,
             resId = request.titleIconResId
         )
     }
-    val dialogOptions = remember(request.requestId, pluginVersionCode) {
-        request.options.mapIndexed { index, option ->
-            val optBitmap = if (option.iconResId != 0) {
-                PluginIconLoader.loadIconBitmap(
-                    context = context,
-                    packageName = request.packageName,
-                    versionCode = pluginVersionCode,
-                    resId = option.iconResId
-                )
-            } else {
-                null
+    val titleIconBitmap by produceState<ImageBitmap?>(
+        initialValue = initialTitleBitmap,
+        request.packageName,
+        pluginVersionCode,
+        request.titleIconResId
+    ) {
+        if (request.titleIconResId == 0 ||
+            PluginIconLoader.isCached(request.packageName, pluginVersionCode, request.titleIconResId)
+        ) {
+            value = initialTitleBitmap
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            PluginIconLoader.loadIconBitmap(
+                context = context,
+                packageName = request.packageName,
+                versionCode = pluginVersionCode,
+                resId = request.titleIconResId
+            )
+        }
+    }
+    val initialOptionBitmaps = remember(request.requestId, pluginVersionCode) {
+        buildMap {
+            request.options.forEach { option ->
+                if (option.iconResId != 0) {
+                    PluginIconLoader.getCachedIconBitmap(
+                        packageName = request.packageName,
+                        versionCode = pluginVersionCode,
+                        resId = option.iconResId
+                    )?.let { put(option.id, it) }
+                }
             }
+        }
+    }
+    val optionBitmaps by produceState(
+        initialValue = initialOptionBitmaps,
+        request.requestId,
+        pluginVersionCode
+    ) {
+        val allCached = request.options.all { option ->
+            option.iconResId == 0 ||
+                PluginIconLoader.isCached(request.packageName, pluginVersionCode, option.iconResId)
+        }
+        if (allCached) {
+            value = initialOptionBitmaps
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            buildMap {
+                request.options.forEach { option ->
+                    if (option.iconResId != 0) {
+                        PluginIconLoader.loadIconBitmap(
+                            context = context,
+                            packageName = request.packageName,
+                            versionCode = pluginVersionCode,
+                            resId = option.iconResId
+                        )?.let { put(option.id, it) }
+                    }
+                }
+            }
+        }
+    }
+    val dialogOptions = remember(request.requestId, optionBitmaps) {
+        request.options.mapIndexed { index, option ->
             TccDialogOption(
                 id = index,
                 label = option.label,
                 iconRes = 0,
                 subtitle = option.subtitle,
-                iconBitmap = optBitmap
+                iconBitmap = optionBitmaps[option.id]
             )
         }
     }
@@ -573,6 +628,7 @@ internal fun PluginPickerDialogOverlay(
         } ?: -1
     }
     var selectedIdx by remember(request.requestId) { mutableStateOf(initialSelectedIdx) }
+    var selectionSubmitted by remember(request.requestId) { mutableStateOf(false) }
 
     TccOptionDialog(
         title = request.title,
@@ -581,7 +637,9 @@ internal fun PluginPickerDialogOverlay(
         options = dialogOptions,
         selectedId = selectedIdx,
         onSelectOption = { idx ->
+            if (selectionSubmitted) return@TccOptionDialog
             val picked = request.options.getOrNull(idx) ?: return@TccOptionDialog
+            selectionSubmitted = true
             selectedIdx = idx
             pluginRegistry.dispatchOptionSelected(
                 request = request,
@@ -590,7 +648,7 @@ internal fun PluginPickerDialogOverlay(
             )
             coroutineScope.launch {
                 delay(180L)
-                onDismiss()
+                pluginRegistry.clearActivePicker(expectedRequestId = request.requestId)
             }
         },
         onDismiss = onDismiss

@@ -45,10 +45,10 @@ Per **Section 2.4** of the [BDSA Source-Available License v1.1](../LICENSE), thi
 
             <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.API_VERSION" android:value="1" />
             <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.AUTHOR" android:value="Your Name" />
-            <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.DESCRIPTION" android:value="@string/plugin_desc" />
+            <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.DESCRIPTION" android:resource="@string/plugin_desc" />
             <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.TILE_ID" android:value="boost_mode" />
-            <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.TILE_TITLE" android:value="@string/tile_boost_title" />
-            <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.TILE_DESCRIPTION" android:value="@string/tile_boost_desc" />
+            <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.TILE_TITLE" android:resource="@string/tile_boost_title" />
+            <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.TILE_DESCRIPTION" android:resource="@string/tile_boost_desc" />
             <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.TILE_ICON" android:resource="@drawable/ic_tile_boost" />
             <meta-data android:name="com.stormpanda.betterdualscreenassistant.plugin.SUPPORTS_LONG_PRESS" android:value="true" />
             <!-- Optional -->
@@ -229,8 +229,8 @@ Updates cached tile appearance and state (persisted locally so the overlay opens
 | `enabled` | `Boolean` | Optional clickable state (`false` dims and disables the tile). |
 | `icon_res` | `Int` | Optional `@drawable` res ID in your package (`0` resets to manifest icon). |
 | `pixel_icon_res` | `Int` | Optional Retroid Pixel `@drawable` res ID (`0` resets). |
-| `toast` | `String` | Optional short feedback toast on the bottom overlay (max 160 chars). |
-| `dismiss_overlay` | `Boolean` | Optional; if `true`, closes the overlay immediately. |
+| `toast` | `String` | Optional short feedback toast on the bottom overlay (max 160 chars). Only emitted if the target tile is enabled and the overlay is open (or within 5 seconds of a user interaction). |
+| `dismiss_overlay` | `Boolean` | Optional; if `true`, closes the overlay immediately when the target tile is enabled, the overlay is open, and this plugin received a recent user interaction (click, long-click, or option selection within 5 seconds). |
 | `timer_base_ms` | `Long` | Optional epoch timestamp (ms) for a zero-IPC live chronometer rendered natively by BDSA while the overlay is open. Pass `0L` to clear/stop. For countdowns, pass the target finish epoch ms (`now + remainingMs`); for stopwatches, pass the effective start epoch ms (`now - elapsedMs`). |
 | `timer_count_down` | `Boolean` | `true` to count down to `timer_base_ms`, `false` to count up from `timer_base_ms`. When a countdown hits `00:00` while the overlay is open, BDSA fires a single `TILE_REFRESH`. |
 | `timer_format` | `String` | Optional format string containing `%s` (e.g. `"Timer\n%s"`). Defaults to the bare formatted duration (`MM:SS` or `H:MM:SS`). |
@@ -238,7 +238,7 @@ Updates cached tile appearance and state (persisted locally so the overlay opens
 | `refresh_interval_ms` | `Long` | Optional dynamic override for overlay-only periodic `TILE_REFRESH` broadcasts (`0L` = off, otherwise clamped to `1000`–`60000` ms). Stops immediately when the overlay closes. |
 
 ### `show_picker`
-Opens a native BDSA-styled modal option dialog inside the overlay (matching AYN Smooth / Retroid Pixel and D-pad navigation). Only accepted while the overlay is open and the tile is enabled.
+Opens a native BDSA-styled modal option dialog inside the overlay (matching AYN Smooth / Retroid Pixel and D-pad navigation). Only accepted while the overlay is open, the target tile is enabled, and this plugin received a recent user interaction (click, long-click, or option selection within 5 seconds).
 
 | Extra | Type | Notes |
 | :--- | :--- | :--- |
@@ -252,11 +252,11 @@ Opens a native BDSA-styled modal option dialog inside the overlay (matching AYN 
 | `dismiss_overlay_on_select` | `Boolean` | If `true`, closes the entire overlay after an option is picked. Default `false`. |
 
 ### `show_toast`
-Displays a short toast on the bottom screen (only accepted while the overlay is open or within 5 seconds of a tile click).
+Displays a short toast on the bottom screen (only accepted when at least one of the plugin's tiles is enabled and either the overlay is open or within 5 seconds of a user interaction).
 - `message: String` (max 160 chars)
 
 ### `dismiss_overlay`
-Closes the BDSA overlay if open. No extras required.
+Closes the BDSA overlay if open (only accepted when at least one of the plugin's tiles is enabled, the overlay is open, and this plugin received a recent user interaction within 5 seconds). No extras required.
 
 ### `get_host_info`
 Read-only query returning:
@@ -267,7 +267,7 @@ Read-only query returning:
 ## Icon, Label & Security Guidelines
 
 - **Icons**: Supply **monochrome vector drawables** (`24dp × 24dp`, solid single color on transparent background) or alpha-masked PNGs. BDSA tints all tile and picker icons dynamically for Light, Dark, Retroid Pixel, and custom Megingiard accent palettes. External bitmaps are capped at `128×128 px` to protect overlay memory.
-- **Labels**: Keep tile titles concise (1–2 short words fit cleanly inside the 2×4 quick-toggle grid). Use `@string/...` resources in your manifest/XML so BDSA resolves them in the user's selected language automatically.
+- **Labels**: Keep tile titles concise (1–2 short words fit cleanly inside the 2×4 quick-toggle grid). In XML configs (`@xml/bdsa_plugin`) use `@string/...`; in flat `<meta-data>` entries use `android:resource="@string/..."` (rather than `android:value="@string/..."`) so BDSA resolves strings dynamically in the user's selected language (`android:value="..."` works for literal strings).
 - **Display targeting**: To launch an Activity on the top screen, use `ActivityOptions.makeBasic().setLaunchDisplayId(topDisplayId)` from the broadcast extras.
 - **Rate limits & isolation**: Provider calls are capped at 20 calls/second per package. Plugins run strictly in their own Android sandbox and never inherit BDSA's privileged/root access.
 

@@ -1101,7 +1101,11 @@ fun TccOptionDialog(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
+                    modifier = Modifier.padding(
+                        start = rowHorizontalPad,
+                        end = rowHorizontalPad,
+                        bottom = dialogSpec.headerBottomPadding
+                    )
                 ) {
                     if (titleIconBitmap != null || titleIconRes != null) {
                         val headerPainter = if (titleIconBitmap != null) {
@@ -1122,7 +1126,9 @@ fun TccOptionDialog(
                         color = colors.primary,
                         fontSize = dialogSpec.titleFontSize,
                         style = labelStyle,
-                        fontWeight = FontWeight.Normal
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Box(
@@ -1148,7 +1154,14 @@ fun TccOptionDialog(
                     fontSize = dialogSpec.titleFontSize,
                     style = labelStyle,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(
+                        start = rowHorizontalPad,
+                        end = rowHorizontalPad,
+                        bottom = dialogSpec.headerBottomPadding
+                    )
                 )
             }
 
@@ -1169,7 +1182,7 @@ fun TccOptionDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(dialogSpec.rowHeight)
+                            .heightIn(min = dialogSpec.rowHeight)
                             .background(if (isRowFocused) colors.panelBackgroundSelected else Color.Transparent)
                             .focusRequester(optionFocusRequesters[index])
                             .onFocusChanged { isRowFocused = it.isFocused }
@@ -1184,7 +1197,10 @@ fun TccOptionDialog(
                                 }
                             }
                             .clickable { onSelectOption(option.id) }
-                            .padding(horizontal = rowHorizontalPad),
+                            .padding(
+                                horizontal = rowHorizontalPad,
+                                vertical = if (!option.subtitle.isNullOrBlank()) 6.dp else 0.dp
+                            ),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {

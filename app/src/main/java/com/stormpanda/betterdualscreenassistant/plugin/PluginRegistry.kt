@@ -53,6 +53,9 @@ class PluginRegistry private constructor(private val context: Context) {
         private const val RATE_LIMIT_WINDOW_MS = 1_000L
         private const val RATE_LIMIT_MAX_CALLS = 20
         private const val RECENT_INTERACTION_WINDOW_MS = 5_000L
+        private const val UNKNOWN_PACKAGE_SCAN_COOLDOWN_MS = 10_000L
+
+        private data class RateWindow(val windowStartMs: Long, val count: Int)
 
         @Volatile
         private var instance: PluginRegistry? = null
@@ -115,7 +118,8 @@ class PluginRegistry private constructor(private val context: Context) {
         private set
 
     private val lastInteractionByPackageMs = ConcurrentHashMap<String, Long>()
-    private val rateWindowByPackage = ConcurrentHashMap<String, Pair<Long, Int>>()
+    private val rateWindowByPackage = ConcurrentHashMap<String, RateWindow>()
+    private val lastUnknownPackageScanMs = ConcurrentHashMap<String, Long>()
 
     /** Optional hook invoked when a plugin is actually uninstalled (not updated) so tile order can prune dead keys. */
     @Volatile
@@ -136,8 +140,13 @@ class PluginRegistry private constructor(private val context: Context) {
         }
     }
 
-    fun clearActivePicker() {
-        _activePickerRequest.value = null
+    fun clearActivePicker(expectedRequestId: Long? = null) {
+        synchronized(lock) {
+            val active = _activePickerRequest.value ?: return
+            if (expectedRequestId == null || active.requestId == expectedRequestId) {
+                _activePickerRequest.value = null
+            }
+        }
     }
 
     /**
@@ -173,17 +182,22 @@ class PluginRegistry private constructor(private val context: Context) {
     fun onPackageChanged(action: String?, packageName: String?, isReplacing: Boolean) {
         if (packageName.isNullOrBlank() || packageName == context.packageName) return
         PluginIconLoader.evictPackage(packageName)
+        lastUnknownPackageScanMs.remove(packageName)
+
+        if (action == Intent.ACTION_PACKAGE_REMOVED && isReplacing) {
+            return
+        }
 
         if (action == Intent.ACTION_PACKAGE_REMOVED && !isReplacing) {
+            rateWindowByPackage.remove(packageName)
+            lastInteractionByPackageMs.remove(packageName)
             val removedKeys = prunePersistedStateForPackage(packageName)
             if (removedKeys.isNotEmpty()) {
                 onPluginTilesRemovedListener?.invoke(removedKeys)
             }
         }
         refreshPlugins()
-        if (action == Intent.ACTION_PACKAGE_REMOVED && !isReplacing) {
-            onPluginTileEnablementChangedListener?.invoke()
-        }
+        onPluginTileEnablementChangedListener?.invoke()
     }
 
     fun setPluginEnabled(packageName: String, enabled: Boolean) {
@@ -212,7 +226,11 @@ class PluginRegistry private constructor(private val context: Context) {
         onPluginTileEnablementChangedListener?.invoke()
     }
 
-    fun setPluginTileEnabled(tileKey: String, enabled: Boolean): Boolean {
+    fun setPluginTileEnabled(
+        tileKey: String,
+        enabled: Boolean,
+        isDarkTheme: Boolean = false
+    ): Boolean {
         val parsed = BdsaPluginContract.parsePluginTileKey(tileKey) ?: return false
         val tileDef = findTileDefinition(tileKey) ?: return false
         val plugin = _plugins.value.firstOrNull { it.packageName == parsed.first } ?: return false
@@ -226,12 +244,15 @@ class PluginRegistry private constructor(private val context: Context) {
                 updated.add(tileKey)
             } else {
                 updated.remove(tileKey)
+                if (_activePickerRequest.value?.tileKey == tileKey) {
+                    _activePickerRequest.value = null
+                }
             }
             _enabledPluginTileKeys.value = updated.toSet()
             saveEnabledTiles(updated)
         }
         if (enabled) {
-            dispatchRefreshTile(tileDef, isDarkTheme = false)
+            dispatchRefreshTile(tileDef, isDarkTheme = isDarkTheme)
         }
         onPluginTileEnablementChangedListener?.invoke()
         return true
@@ -239,6 +260,7 @@ class PluginRegistry private constructor(private val context: Context) {
 
     fun disableAllPluginTiles() {
         synchronized(lock) {
+            _activePickerRequest.value = null
             if (_enabledPluginTileKeys.value.isEmpty()) return
             _enabledPluginTileKeys.value = emptySet()
             saveEnabledTiles(emptySet())
@@ -393,27 +415,32 @@ class PluginRegistry private constructor(private val context: Context) {
         method: String,
         extras: Bundle?
     ): Bundle {
-        if (callingPackage.isNullOrBlank()) {
-            return errorBundle("missing_caller")
-        }
-        if (!allowRateLimitedCall(callingPackage)) {
-            return errorBundle("rate_limited")
-        }
+        return try {
+            if (callingPackage.isNullOrBlank()) {
+                return errorBundle("missing_caller")
+            }
+            if (!allowRateLimitedCall(callingPackage)) {
+                return errorBundle("rate_limited")
+            }
 
-        // Allow get_host_info even if the plugin is disabled (returns is_plugin_enabled = false).
-        if (method == BdsaPluginContract.METHOD_GET_HOST_INFO) {
-            return handleGetHostInfo(callingPackage)
-        }
+            // Allow get_host_info even if the plugin is disabled (returns is_plugin_enabled = false).
+            if (method == BdsaPluginContract.METHOD_GET_HOST_INFO) {
+                return handleGetHostInfo(callingPackage)
+            }
 
-        val plugin = verifyActiveCallerPlugin(callingPackage)
-            ?: return errorBundle("plugin_not_registered_or_disabled")
+            val plugin = verifyActiveCallerPlugin(callingPackage)
+                ?: return errorBundle("plugin_not_registered_or_disabled")
 
-        return when (method) {
-            BdsaPluginContract.METHOD_UPDATE_TILE -> handleUpdateTile(plugin, extras)
-            BdsaPluginContract.METHOD_SHOW_PICKER -> handleShowPicker(plugin, extras)
-            BdsaPluginContract.METHOD_SHOW_TOAST -> handleShowToast(plugin, extras)
-            BdsaPluginContract.METHOD_DISMISS_OVERLAY -> handleDismissOverlay(plugin)
-            else -> errorBundle("unknown_method")
+            when (method) {
+                BdsaPluginContract.METHOD_UPDATE_TILE -> handleUpdateTile(plugin, extras)
+                BdsaPluginContract.METHOD_SHOW_PICKER -> handleShowPicker(plugin, extras)
+                BdsaPluginContract.METHOD_SHOW_TOAST -> handleShowToast(plugin, extras)
+                BdsaPluginContract.METHOD_DISMISS_OVERLAY -> handleDismissOverlay(plugin)
+                else -> errorBundle("unknown_method")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Invalid plugin provider call ($method) from $callingPackage", t)
+            errorBundle("invalid_extras")
         }
     }
 
@@ -532,14 +559,19 @@ class PluginRegistry private constructor(private val context: Context) {
             saveRuntimeStates(currentMap)
         }
 
+        val isTileEnabled = tileKey in _enabledPluginTileKeys.value
         val toast = clampString(
             extras.getString(BdsaPluginContract.EXTRA_TOAST),
             BdsaPluginContract.MAX_TOAST_LENGTH
         )
-        if (toast.isNotEmpty() && isInteractionWindowActive(plugin.packageName)) {
+        if (toast.isNotEmpty() && isTileEnabled && (isOverlayShowing || hasRecentInteraction(plugin.packageName))) {
             _toastEvents.tryEmit(PluginToastEvent(eventIdGen.incrementAndGet(), toast))
         }
-        if (extras.getBoolean(BdsaPluginContract.EXTRA_DISMISS_OVERLAY, false) && isOverlayShowing) {
+        if (extras.getBoolean(BdsaPluginContract.EXTRA_DISMISS_OVERLAY, false) &&
+            isTileEnabled &&
+            isOverlayShowing &&
+            hasRecentInteraction(plugin.packageName)
+        ) {
             _dismissOverlayEvents.tryEmit(PluginDismissEvent(eventIdGen.incrementAndGet()))
         }
         return okBundle()
@@ -554,6 +586,9 @@ class PluginRegistry private constructor(private val context: Context) {
             ?: return errorBundle("unknown_tile_id")
         if (tileDef.tileKey !in _enabledPluginTileKeys.value) {
             return errorBundle("tile_not_enabled")
+        }
+        if (!hasRecentInteraction(plugin.packageName)) {
+            return errorBundle("no_recent_interaction")
         }
 
         val ids = extras.getStringArrayList(BdsaPluginContract.EXTRA_OPTION_IDS)
@@ -599,22 +634,35 @@ class PluginRegistry private constructor(private val context: Context) {
         val dismissOverlayOnSelect =
             extras.getBoolean(BdsaPluginContract.EXTRA_DISMISS_OVERLAY_ON_SELECT, false)
 
-        _activePickerRequest.value = PluginPickerRequest(
-            requestId = eventIdGen.incrementAndGet(),
-            tileKey = tileDef.tileKey,
-            packageName = plugin.packageName,
-            tileId = tileDef.tileId,
-            title = title,
-            titleIconResId = tileDef.iconResId,
-            options = options,
-            selectedOptionId = selectedOptionId,
-            dismissOverlayOnSelect = dismissOverlayOnSelect
-        )
+        synchronized(lock) {
+            val active = _activePickerRequest.value
+            if (active != null && active.packageName != plugin.packageName) {
+                val callerInteraction = lastInteractionByPackageMs[plugin.packageName] ?: 0L
+                val activeInteraction = lastInteractionByPackageMs[active.packageName] ?: 0L
+                if (activeInteraction > callerInteraction) {
+                    return errorBundle("picker_busy")
+                }
+            }
+            _activePickerRequest.value = PluginPickerRequest(
+                requestId = eventIdGen.incrementAndGet(),
+                tileKey = tileDef.tileKey,
+                packageName = plugin.packageName,
+                tileId = tileDef.tileId,
+                title = title,
+                titleIconResId = tileDef.iconResId,
+                options = options,
+                selectedOptionId = selectedOptionId,
+                dismissOverlayOnSelect = dismissOverlayOnSelect
+            )
+        }
         return okBundle()
     }
 
     private fun handleShowToast(plugin: RegisteredPlugin, extras: Bundle?): Bundle {
-        if (!isInteractionWindowActive(plugin.packageName)) {
+        if (!hasAnyEnabledTile(plugin)) {
+            return errorBundle("tile_not_enabled")
+        }
+        if (!isOverlayShowing && !hasRecentInteraction(plugin.packageName)) {
             return errorBundle("overlay_not_active")
         }
         val msg = clampString(
@@ -628,8 +676,14 @@ class PluginRegistry private constructor(private val context: Context) {
     }
 
     private fun handleDismissOverlay(plugin: RegisteredPlugin): Bundle {
-        if (!isOverlayShowing && !isInteractionWindowActive(plugin.packageName)) {
+        if (!hasAnyEnabledTile(plugin)) {
+            return errorBundle("tile_not_enabled")
+        }
+        if (!isOverlayShowing) {
             return errorBundle("overlay_not_showing")
+        }
+        if (!hasRecentInteraction(plugin.packageName)) {
+            return errorBundle("no_recent_interaction")
         }
         _dismissOverlayEvents.tryEmit(PluginDismissEvent(eventIdGen.incrementAndGet()))
         return okBundle()
@@ -638,33 +692,48 @@ class PluginRegistry private constructor(private val context: Context) {
     private fun verifyActiveCallerPlugin(callingPackage: String): RegisteredPlugin? {
         var plugin = findPluginForPackage(callingPackage)
         if (plugin == null) {
-            // Package might have been installed moments ago before broadcast arrived; do one fresh scan.
-            refreshPlugins()
-            plugin = findPluginForPackage(callingPackage)
+            // Package might have been installed moments ago before broadcast arrived; throttle rescans.
+            val now = SystemClock.elapsedRealtime()
+            val lastScanMs = lastUnknownPackageScanMs[callingPackage]
+            if (lastScanMs == null || (now - lastScanMs) >= UNKNOWN_PACKAGE_SCAN_COOLDOWN_MS) {
+                lastUnknownPackageScanMs[callingPackage] = now
+                refreshPlugins()
+                plugin = findPluginForPackage(callingPackage)
+                if (plugin != null) {
+                    lastUnknownPackageScanMs.remove(callingPackage)
+                }
+            }
         }
         if (plugin == null || !plugin.isApiCompatible || !plugin.isPluginEnabled) return null
         return plugin
     }
 
-    private fun isInteractionWindowActive(packageName: String): Boolean {
-        if (isOverlayShowing) return true
+    private fun hasAnyEnabledTile(plugin: RegisteredPlugin): Boolean {
+        val enabledKeys = _enabledPluginTileKeys.value
+        return plugin.tiles.any { it.tileKey in enabledKeys }
+    }
+
+    private fun hasRecentInteraction(packageName: String): Boolean {
         val lastMs = lastInteractionByPackageMs[packageName] ?: return false
         return (SystemClock.elapsedRealtime() - lastMs) <= RECENT_INTERACTION_WINDOW_MS
     }
 
     private fun allowRateLimitedCall(packageName: String): Boolean {
         val now = SystemClock.elapsedRealtime()
-        val prev = rateWindowByPackage[packageName]
-        return if (prev == null || (now - prev.first) >= RATE_LIMIT_WINDOW_MS) {
-            rateWindowByPackage[packageName] = now to 1
-            true
-        } else if (prev.second < RATE_LIMIT_MAX_CALLS) {
-            rateWindowByPackage[packageName] = prev.first to (prev.second + 1)
-            true
-        } else {
+        val updated = rateWindowByPackage.compute(packageName) { _, prev ->
+            if (prev == null || (now - prev.windowStartMs) >= RATE_LIMIT_WINDOW_MS) {
+                RateWindow(now, 1)
+            } else if (prev.count <= RATE_LIMIT_MAX_CALLS) {
+                prev.copy(count = prev.count + 1)
+            } else {
+                prev
+            }
+        }!!
+        val allowed = updated.count <= RATE_LIMIT_MAX_CALLS
+        if (!allowed) {
             Log.w(TAG, "Rate-limited plugin provider call from $packageName")
-            false
         }
+        return allowed
     }
 
     private fun okBundle(): Bundle = Bundle().apply {
@@ -800,7 +869,8 @@ class PluginRegistry private constructor(private val context: Context) {
         )
     }
 
-    private fun parseXmlPluginConfig(
+    @VisibleForTesting
+    internal fun parseXmlPluginConfig(
         packageName: String,
         appName: String,
         versionName: String,
@@ -1070,16 +1140,27 @@ class PluginRegistry private constructor(private val context: Context) {
         }
     }
 
-    private fun readMetaString(metaData: Bundle, pkgRes: Resources?, key: String): String? {
+    @VisibleForTesting
+    internal fun readMetaString(metaData: Bundle, pkgRes: Resources?, key: String): String? {
         if (!metaData.containsKey(key)) return null
-        val resId = metaData.getInt(key, 0)
-        if (resId != 0 && pkgRes != null) {
-            try {
-                return pkgRes.getString(resId)
-            } catch (_: Throwable) {
+        @Suppress("DEPRECATION")
+        val raw = metaData.get(key) ?: return null
+        return when (raw) {
+            is Int -> {
+                if (raw != 0 && pkgRes != null) {
+                    try {
+                        pkgRes.getString(raw)
+                    } catch (_: Throwable) {
+                        raw.toString()
+                    }
+                } else {
+                    raw.toString()
+                }
             }
+            is CharSequence -> raw.toString()
+            is Number, is Boolean -> raw.toString()
+            else -> null
         }
-        return metaData.getString(key)
     }
 
     private fun readXmlStringAttr(

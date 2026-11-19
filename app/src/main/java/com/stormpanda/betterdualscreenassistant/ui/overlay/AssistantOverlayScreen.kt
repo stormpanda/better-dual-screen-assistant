@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -81,12 +82,14 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -220,11 +223,12 @@ fun AssistantOverlayScreen(
                             (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
                                 event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_B)
                         ) {
+                            val pickerToClear = activePluginPicker
                             if (activeDialog != ActiveDialog.NONE) {
                                 activeDialog = ActiveDialog.NONE
                                 true
-                            } else if (activePluginPicker != null) {
-                                pluginRegistry.clearActivePicker()
+                            } else if (pickerToClear != null) {
+                                pluginRegistry.clearActivePicker(expectedRequestId = pickerToClear.requestId)
                                 true
                             } else {
                                 onDismissOverlayRequest()
@@ -334,7 +338,9 @@ fun AssistantOverlayScreen(
                         request = currentPluginPicker,
                         pluginRegistry = pluginRegistry,
                         coroutineScope = coroutineScope,
-                        onDismiss = { pluginRegistry.clearActivePicker() }
+                        onDismiss = {
+                            pluginRegistry.clearActivePicker(expectedRequestId = currentPluginPicker.requestId)
+                        }
                     )
                 }
             }
@@ -667,20 +673,98 @@ private fun buildQuickSettingTileModels(
         pluginRegistry.activePluginTilesMap(profile)
     }
 
-    val hasActivePluginTimer = activePluginTiles.keys.any { key ->
-        (pluginRuntimeStates[key]?.timerBaseMs ?: 0L) > 0L
+    val timerTrackingEntries = remember(activePluginTiles, pluginRuntimeStates) {
+        activePluginTiles.keys.mapNotNull { key ->
+            val state = pluginRuntimeStates[key] ?: return@mapNotNull null
+            if (state.timerBaseMs > 0L) Triple(key, state.timerBaseMs, state.timerCountDown) else null
+        }
     }
     var pluginTimerNowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(hasActivePluginTimer) {
-        if (!hasActivePluginTimer) return@LaunchedEffect
+    LaunchedEffect(timerTrackingEntries) {
+        if (timerTrackingEntries.isEmpty()) return@LaunchedEffect
         while (isActive) {
-            pluginTimerNowMs = System.currentTimeMillis()
+            val now = System.currentTimeMillis()
+            pluginTimerNowMs = now
+            val needsMoreTicks = timerTrackingEntries.any { (_, baseMs, countDown) ->
+                !countDown || baseMs > now
+            }
+            if (!needsMoreTicks) break
             delay(500L)
         }
     }
 
     // Track countdown tiles that already triggered a single expiry refresh while this overlay is open.
     val notifiedExpiredTimers = remember { mutableMapOf<String, Long>() }
+    LaunchedEffect(activePluginTiles, pluginRuntimeStates, pluginTimerNowMs, isDarkTheme) {
+        for ((key, pair) in activePluginTiles) {
+            val runtimeState = pluginRuntimeStates[key]
+            if (runtimeState == null || runtimeState.timerBaseMs <= 0L || !runtimeState.timerCountDown) {
+                notifiedExpiredTimers.remove(key)
+                continue
+            }
+            val effectiveNow = maxOf(pluginTimerNowMs, runtimeState.updatedAtMs)
+            val (_, finished) = BdsaPluginContract.resolveLiveTimerLabel(runtimeState, effectiveNow)
+            if (finished && notifiedExpiredTimers[key] != runtimeState.timerBaseMs) {
+                notifiedExpiredTimers[key] = runtimeState.timerBaseMs
+                pluginRegistry.dispatchRefreshTile(pair.second, isDarkTheme)
+            }
+        }
+    }
+
+    val desiredPluginIconRequests = remember(activePluginTiles, pluginRuntimeStates, isRetroidLook) {
+        buildMap {
+            for ((key, pair) in activePluginTiles) {
+                val (plugin, tileDef) = pair
+                val runtimeState = pluginRuntimeStates[key]
+                val desiredResId = if (isRetroidLook) {
+                    (runtimeState?.pixelIconResId?.takeIf { it != 0 })
+                        ?: tileDef.pixelIconResId.takeIf { it != 0 }
+                        ?: (runtimeState?.iconResId?.takeIf { it != 0 })
+                        ?: tileDef.iconResId
+                } else {
+                    (runtimeState?.iconResId?.takeIf { it != 0 })
+                        ?: tileDef.iconResId
+                }
+                if (desiredResId != 0) {
+                    put(key, Triple(plugin.packageName, plugin.versionCode, desiredResId))
+                }
+            }
+        }
+    }
+    val initialCachedPluginIcons = remember(desiredPluginIconRequests) {
+        buildMap {
+            for ((key, req) in desiredPluginIconRequests) {
+                PluginIconLoader.getCachedIconBitmap(req.first, req.second, req.third)?.let {
+                    put(key, it)
+                }
+            }
+        }
+    }
+    val pluginIconBitmaps by produceState(
+        initialValue = initialCachedPluginIcons,
+        desiredPluginIconRequests
+    ) {
+        val allCached = desiredPluginIconRequests.values.all { req ->
+            PluginIconLoader.isCached(req.first, req.second, req.third)
+        }
+        if (allCached) {
+            value = initialCachedPluginIcons
+            return@produceState
+        }
+        val loaded = withContext(Dispatchers.IO) {
+            buildMap {
+                for ((key, req) in desiredPluginIconRequests) {
+                    PluginIconLoader.loadIconBitmap(
+                        context = context,
+                        packageName = req.first,
+                        versionCode = req.second,
+                        resId = req.third
+                    )?.let { put(key, it) }
+                }
+            }
+        }
+        value = loaded
+    }
 
     // Overlay-only periodic refresh for tiles that explicitly opt into refresh_interval_ms (>= 1000ms).
     val periodicRefreshSchedule = remember(activePluginTiles, pluginRuntimeStates) {
@@ -730,42 +814,18 @@ private fun buildQuickSettingTileModels(
     return buildList {
         for (rawKey in orderedKeys) {
             if (BdsaPluginContract.isPluginTileKey(rawKey)) {
-                val (plugin, tileDef) = activePluginTiles[rawKey] ?: continue
+                val (_, tileDef) = activePluginTiles[rawKey] ?: continue
                 val runtimeState = pluginRuntimeStates[rawKey]
                 val liveTimerResult = if (runtimeState != null && runtimeState.timerBaseMs > 0L) {
-                    BdsaPluginContract.resolveLiveTimerLabel(runtimeState, pluginTimerNowMs)
+                    val effectiveNowMs = maxOf(pluginTimerNowMs, runtimeState.updatedAtMs)
+                    BdsaPluginContract.resolveLiveTimerLabel(runtimeState, effectiveNowMs)
                 } else {
                     null to false
-                }
-                if (liveTimerResult.second && runtimeState != null && runtimeState.timerBaseMs > 0L) {
-                    val alreadyNotifiedBase = notifiedExpiredTimers[rawKey]
-                    if (alreadyNotifiedBase != runtimeState.timerBaseMs) {
-                        notifiedExpiredTimers[rawKey] = runtimeState.timerBaseMs
-                        LaunchedEffect(rawKey, runtimeState.timerBaseMs) {
-                            pluginRegistry.dispatchRefreshTile(tileDef, isDarkTheme)
-                        }
-                    }
                 }
                 val effectiveLabel = liveTimerResult.first ?: runtimeState?.label ?: tileDef.gridTitle
                 val effectiveSelected = runtimeState?.selected ?: false
                 val effectiveEnabled = runtimeState?.enabled ?: true
-                val desiredResId = if (isRetroidLook) {
-                    (runtimeState?.pixelIconResId?.takeIf { it != 0 })
-                        ?: tileDef.pixelIconResId.takeIf { it != 0 }
-                        ?: (runtimeState?.iconResId?.takeIf { it != 0 })
-                        ?: tileDef.iconResId
-                } else {
-                    (runtimeState?.iconResId?.takeIf { it != 0 })
-                        ?: tileDef.iconResId
-                }
-                val iconBitmap = remember(plugin.packageName, plugin.versionCode, desiredResId) {
-                    PluginIconLoader.loadIconBitmap(
-                        context = context,
-                        packageName = plugin.packageName,
-                        versionCode = plugin.versionCode,
-                        resId = desiredResId
-                    )
-                }
+                val iconBitmap = pluginIconBitmaps[rawKey]
                 add(
                     QuickSettingTileModel(
                         label = effectiveLabel,

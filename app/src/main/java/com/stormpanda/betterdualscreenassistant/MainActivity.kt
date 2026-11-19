@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -106,8 +107,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -585,6 +588,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val profile = remember(context) { DeviceProfile.current(context) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val isOverlayDark = LocalTccColors.current.isDark
 
     val themeModeId by repo.themeMode.collectAsState()
     val uiLookMode by repo.uiLookMode.collectAsState()
@@ -963,10 +967,12 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onRescanPlugins = {
                                                     pluginRegistry.refreshPlugins()
+                                                    val count = pluginRegistry.plugins.value.size
                                                     DialogToastManager.show(
-                                                        context.getString(
-                                                            R.string.settings_plugins_rescan_toast,
-                                                            pluginRegistry.plugins.value.size
+                                                        context.resources.getQuantityString(
+                                                            R.plurals.settings_plugins_rescan_toast,
+                                                            count,
+                                                            count
                                                         )
                                                     )
                                                 }
@@ -1061,7 +1067,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                             repo.setQuickTileEnabled(tile, enabled, activePluginCount)
                                         },
                                         onSetPluginTileEnabled = { tileKey, enabled ->
-                                            if (pluginRegistry.setPluginTileEnabled(tileKey, enabled) && enabled) {
+                                            if (pluginRegistry.setPluginTileEnabled(tileKey, enabled, isDarkTheme = isOverlayDark) && enabled) {
                                                 repo.ensureQuickTileKeyInOrder(tileKey)
                                             }
                                             val activePluginCount = pluginRegistry.activePluginTilesMap(profile).size
@@ -1373,8 +1379,7 @@ private data class ReorderTileItem(
     val title: String,
     val gridTitle: String,
     val iconRes: Int,
-    val iconBitmap: ImageBitmap? = null,
-    val isThirdParty: Boolean = false
+    val iconBitmap: ImageBitmap? = null
 )
 
 @Composable
@@ -1417,12 +1422,61 @@ private fun QuickTogglesSettingsTabContent(
         }
     }
 
+    val desiredPluginIconRequests = remember(activePluginTilesByKey, isRetroidLook) {
+        buildMap {
+            for ((key, pair) in activePluginTilesByKey) {
+                val (plugin, tileDef) = pair
+                val desiredRes = if (isRetroidLook && tileDef.pixelIconResId != 0) {
+                    tileDef.pixelIconResId
+                } else {
+                    tileDef.iconResId
+                }
+                if (desiredRes != 0) {
+                    put(key, Triple(plugin.packageName, plugin.versionCode, desiredRes))
+                }
+            }
+        }
+    }
+    val initialCachedPluginIcons = remember(desiredPluginIconRequests) {
+        buildMap {
+            for ((key, req) in desiredPluginIconRequests) {
+                PluginIconLoader.getCachedIconBitmap(req.first, req.second, req.third)?.let {
+                    put(key, it)
+                }
+            }
+        }
+    }
+    val pluginIconBitmaps by produceState(
+        initialValue = initialCachedPluginIcons,
+        desiredPluginIconRequests
+    ) {
+        val allCached = desiredPluginIconRequests.values.all { req ->
+            PluginIconLoader.isCached(req.first, req.second, req.third)
+        }
+        if (allCached) {
+            value = initialCachedPluginIcons
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            buildMap {
+                for ((key, req) in desiredPluginIconRequests) {
+                    PluginIconLoader.loadIconBitmap(
+                        context = context,
+                        packageName = req.first,
+                        versionCode = req.second,
+                        resId = req.third
+                    )?.let { put(key, it) }
+                }
+            }
+        }
+    }
+
     val activeTiles: List<ReorderTileItem> = remember(
         unifiedQuickTileOrder,
         disabledQuickTiles,
         supportedBuiltInSet,
         activePluginTilesByKey,
-        isRetroidLook
+        pluginIconBitmaps
     ) {
         val orderedKeys = unifiedQuickTileOrder.toMutableList()
         for (pluginKey in activePluginTilesByKey.keys) {
@@ -1431,26 +1485,14 @@ private fun QuickTogglesSettingsTabContent(
         buildList {
             for (key in orderedKeys) {
                 if (BdsaPluginContract.isPluginTileKey(key)) {
-                    val (plugin, tileDef) = activePluginTilesByKey[key] ?: continue
-                    val desiredRes = if (isRetroidLook && tileDef.pixelIconResId != 0) {
-                        tileDef.pixelIconResId
-                    } else {
-                        tileDef.iconResId
-                    }
-                    val bitmap = PluginIconLoader.loadIconBitmap(
-                        context = context,
-                        packageName = plugin.packageName,
-                        versionCode = plugin.versionCode,
-                        resId = desiredRes
-                    )
+                    val (_, tileDef) = activePluginTilesByKey[key] ?: continue
                     add(
                         ReorderTileItem(
                             key = tileDef.tileKey,
                             title = tileDef.listTitle,
                             gridTitle = tileDef.gridTitle,
                             iconRes = R.drawable.ic_qs_plugin_default,
-                            iconBitmap = bitmap,
-                            isThirdParty = true
+                            iconBitmap = pluginIconBitmaps[key]
                         )
                     )
                 } else {
@@ -1560,6 +1602,8 @@ private fun QuickTogglesVisualReorderCard(
     val appColors = LocalAppColors.current
     val tccColors = LocalTccColors.current
     val coroutineScope = rememberCoroutineScope()
+    val latestOnMoveActiveTile by rememberUpdatedState(onMoveActiveTile)
+    val latestActiveTiles by rememberUpdatedState(activeTiles)
 
     var isGridActive by remember { mutableStateOf(false) }
     var cursorIndex by remember { mutableIntStateOf(0) }
@@ -1608,9 +1652,9 @@ private fun QuickTogglesVisualReorderCard(
                     BumperDirection.PREV -> {
                         if (pagerState.currentPage > 0) {
                             val newPage = pagerState.currentPage - 1
-                            val targetIdx = (newPage * 8 + (cursorIndex % 8)).coerceAtMost(activeTiles.lastIndex)
+                            val targetIdx = (newPage * 8 + (cursorIndex % 8)).coerceAtMost(latestActiveTiles.lastIndex)
                             if (isGrabbed) {
-                                onMoveActiveTile(cursorIndex, targetIdx)
+                                latestOnMoveActiveTile(cursorIndex, targetIdx)
                             }
                             cursorIndex = targetIdx
                         }
@@ -1618,9 +1662,9 @@ private fun QuickTogglesVisualReorderCard(
                     BumperDirection.NEXT -> {
                         if (pagerState.currentPage < pageCount - 1) {
                             val newPage = pagerState.currentPage + 1
-                            val targetIdx = (newPage * 8 + (cursorIndex % 8)).coerceAtMost(activeTiles.lastIndex)
+                            val targetIdx = (newPage * 8 + (cursorIndex % 8)).coerceAtMost(latestActiveTiles.lastIndex)
                             if (isGrabbed) {
-                                onMoveActiveTile(cursorIndex, targetIdx)
+                                latestOnMoveActiveTile(cursorIndex, targetIdx)
                             }
                             cursorIndex = targetIdx
                         }
@@ -2316,8 +2360,9 @@ private fun PluginsSettingsTabContent(
         val tileSummary = if (supportedTiles.isEmpty()) {
             stringResource(R.string.settings_plugins_meta_no_supported_tiles, profile.displayName)
         } else {
-            stringResource(
-                R.string.settings_plugins_meta_tiles_count,
+            pluralStringResource(
+                R.plurals.settings_plugins_meta_tiles_count,
+                supportedTiles.size,
                 supportedTiles.size,
                 supportedTiles.joinToString(", ") { it.listTitle }
             )
@@ -2386,7 +2431,9 @@ private fun launchPluginSettingsOnPrimaryDisplay(
         val options = ActivityOptions.makeBasic()
         options.setLaunchDisplayId(Display.DEFAULT_DISPLAY)
         context.startActivity(intent, options.toBundle())
-    } catch (_: Throwable) {
+    } catch (t: Throwable) {
+        Log.w("MainActivity", "Failed to launch plugin settings $componentName", t)
+        DialogToastManager.show(context.getString(R.string.settings_plugins_configure_failed))
     }
 }
 
