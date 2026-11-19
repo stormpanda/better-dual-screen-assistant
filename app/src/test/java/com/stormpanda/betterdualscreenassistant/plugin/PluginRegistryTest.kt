@@ -362,4 +362,61 @@ class PluginRegistryTest {
         assertTrue(registry.enabledPluginTileKeys.value.isEmpty())
         assertEquals(QuickSettingTileId.defaultOrder, repo.quickTileOrder.value)
     }
+
+    @Test
+    fun `native live timer fields and overlay refresh interval persist and clamp cleanly`() {
+        installFakeFlatPlugin(packageName = "com.example.timer", tileId = "session_timer")
+        val registry = PluginRegistry.getInstance(context)
+        val tileKey = BdsaPluginContract.pluginTileKey("com.example.timer", "session_timer")
+        assertTrue(registry.setPluginTileEnabled(tileKey, true))
+
+        val nowMs = 1_000_000L
+        val targetFinishMs = nowMs + 95_000L // 1m 35s
+        val reply = registry.handleProviderCall(
+            callingPackage = "com.example.timer",
+            method = BdsaPluginContract.METHOD_UPDATE_TILE,
+            extras = Bundle().apply {
+                putString(BdsaPluginContract.EXTRA_TILE_ID, "session_timer")
+                putBoolean(BdsaPluginContract.EXTRA_SELECTED, true)
+                putLong(BdsaPluginContract.EXTRA_TIMER_BASE_MS, targetFinishMs)
+                putBoolean(BdsaPluginContract.EXTRA_TIMER_COUNT_DOWN, true)
+                putString(BdsaPluginContract.EXTRA_TIMER_FORMAT, "Timer\n%s")
+                putString(BdsaPluginContract.EXTRA_TIMER_FINISHED_LABEL, "Time's Up!")
+                putLong(BdsaPluginContract.EXTRA_REFRESH_INTERVAL_MS, 250L) // should clamp up to 1000ms
+            }
+        )
+        assertTrue(reply.getBoolean(BdsaPluginContract.EXTRA_OK))
+
+        val state = registry.tileRuntimeStates.value[tileKey]!!
+        assertEquals(targetFinishMs, state.timerBaseMs)
+        assertTrue(state.timerCountDown)
+        assertEquals("Timer\n%s", state.timerFormat)
+        assertEquals("Time's Up!", state.timerFinishedLabel)
+        assertEquals(BdsaPluginContract.MIN_REFRESH_INTERVAL_MS, state.refreshIntervalMs)
+
+        // Mid-countdown formatting
+        val (midLabel, midFinished) = BdsaPluginContract.resolveLiveTimerLabel(state, nowMs)
+        assertEquals("Timer\n01:35", midLabel)
+        assertFalse(midFinished)
+
+        // Finished countdown formatting
+        val (doneLabel, doneFinished) = BdsaPluginContract.resolveLiveTimerLabel(state, targetFinishMs + 500L)
+        assertEquals("Time's Up!", doneLabel)
+        assertTrue(doneFinished)
+
+        // Clearing timer_base_ms = 0 clears chronometer cleanly
+        registry.handleProviderCall(
+            callingPackage = "com.example.timer",
+            method = BdsaPluginContract.METHOD_UPDATE_TILE,
+            extras = Bundle().apply {
+                putString(BdsaPluginContract.EXTRA_TILE_ID, "session_timer")
+                putLong(BdsaPluginContract.EXTRA_TIMER_BASE_MS, 0L)
+                putLong(BdsaPluginContract.EXTRA_REFRESH_INTERVAL_MS, 0L)
+            }
+        )
+        val cleared = registry.tileRuntimeStates.value[tileKey]!!
+        assertEquals(0L, cleared.timerBaseMs)
+        assertEquals(0L, cleared.refreshIntervalMs)
+        assertEquals(null to false, BdsaPluginContract.resolveLiveTimerLabel(cleared, nowMs))
+    }
 }

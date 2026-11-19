@@ -183,6 +183,7 @@ To expose multiple tiles from one APK (up to **16 tiles**), point `META_CONFIG` 
 | `dismissOnClick` / `DISMISS_ON_CLICK` | `boolean` | No | Auto-close BDSA overlay immediately on tap. Default `false`. |
 | `dismissOnLongClick` / `DISMISS_ON_LONG_CLICK` | `boolean` | No | Auto-close BDSA overlay immediately on long-press. Default `false`. |
 | `supportedDevices` / `SUPPORTED_DEVICES` | `string` | No | Comma-separated: `all` (default), `ayn_thor`, `retroid_pocket_duo`. |
+| `refreshIntervalMs` / `REFRESH_INTERVAL_MS` | `int` | No | Optional periodic `TILE_REFRESH` cadence while the overlay is open (`0` = off; clamped to `1000`–`60000` ms). Stops immediately when overlay closes. |
 
 ---
 
@@ -230,6 +231,11 @@ Updates cached tile appearance and state (persisted locally so the overlay opens
 | `pixel_icon_res` | `Int` | Optional Retroid Pixel `@drawable` res ID (`0` resets). |
 | `toast` | `String` | Optional short feedback toast on the bottom overlay (max 160 chars). |
 | `dismiss_overlay` | `Boolean` | Optional; if `true`, closes the overlay immediately. |
+| `timer_base_ms` | `Long` | Optional epoch timestamp (ms) for a zero-IPC live chronometer rendered natively by BDSA while the overlay is open. Pass `0L` to clear/stop. For countdowns, pass the target finish epoch ms (`now + remainingMs`); for stopwatches, pass the effective start epoch ms (`now - elapsedMs`). |
+| `timer_count_down` | `Boolean` | `true` to count down to `timer_base_ms`, `false` to count up from `timer_base_ms`. When a countdown hits `00:00` while the overlay is open, BDSA fires a single `TILE_REFRESH`. |
+| `timer_format` | `String` | Optional format string containing `%s` (e.g. `"Timer\n%s"`). Defaults to the bare formatted duration (`MM:SS` or `H:MM:SS`). |
+| `timer_finished_label` | `String` | Optional label displayed once a countdown reaches `00:00` (e.g. `"Time's Up!"`). |
+| `refresh_interval_ms` | `Long` | Optional dynamic override for overlay-only periodic `TILE_REFRESH` broadcasts (`0L` = off, otherwise clamped to `1000`–`60000` ms). Stops immediately when the overlay closes. |
 
 ### `show_picker`
 Opens a native BDSA-styled modal option dialog inside the overlay (matching AYN Smooth / Retroid Pixel and D-pad navigation). Only accepted while the overlay is open and the tile is enabled.

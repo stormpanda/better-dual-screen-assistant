@@ -60,6 +60,11 @@ object BdsaPluginContract {
     const val EXTRA_PIXEL_ICON_RES = "pixel_icon_res"
     const val EXTRA_TOAST = "toast"
     const val EXTRA_DISMISS_OVERLAY = "dismiss_overlay"
+    const val EXTRA_TIMER_BASE_MS = "timer_base_ms"
+    const val EXTRA_TIMER_COUNT_DOWN = "timer_count_down"
+    const val EXTRA_TIMER_FORMAT = "timer_format"
+    const val EXTRA_TIMER_FINISHED_LABEL = "timer_finished_label"
+    const val EXTRA_REFRESH_INTERVAL_MS = "refresh_interval_ms"
 
     // show_picker Bundle keys
     const val EXTRA_DIALOG_TITLE = "dialog_title"
@@ -94,6 +99,7 @@ object BdsaPluginContract {
     const val META_DISMISS_ON_CLICK = "com.stormpanda.betterdualscreenassistant.plugin.DISMISS_ON_CLICK"
     const val META_DISMISS_ON_LONG_CLICK = "com.stormpanda.betterdualscreenassistant.plugin.DISMISS_ON_LONG_CLICK"
     const val META_SUPPORTED_DEVICES = "com.stormpanda.betterdualscreenassistant.plugin.SUPPORTED_DEVICES"
+    const val META_REFRESH_INTERVAL_MS = "com.stormpanda.betterdualscreenassistant.plugin.REFRESH_INTERVAL_MS"
 
     // XML manifest tags & attributes (for multi-tile META_CONFIG resources)
     const val XML_TAG_PLUGIN = "bdsa-plugin"
@@ -110,6 +116,7 @@ object BdsaPluginContract {
     const val XML_ATTR_DISMISS_ON_CLICK = "dismissOnClick"
     const val XML_ATTR_DISMISS_ON_LONG_CLICK = "dismissOnLongClick"
     const val XML_ATTR_SUPPORTED_DEVICES = "supportedDevices"
+    const val XML_ATTR_REFRESH_INTERVAL_MS = "refreshIntervalMs"
 
     // Device filter tokens
     const val DEVICE_ALL = "all"
@@ -129,8 +136,67 @@ object BdsaPluginContract {
     const val MAX_PICKER_OPTIONS = 12
     const val MAX_TILES_PER_PLUGIN = 16
     const val MAX_ICON_SIZE_PX = 128
+    const val MIN_REFRESH_INTERVAL_MS = 1_000L
+    const val MAX_REFRESH_INTERVAL_MS = 60_000L
 
     private val TILE_ID_REGEX = Regex("^[a-zA-Z0-9._-]{1,$MAX_TILE_ID_LENGTH}$")
+
+    fun clampRefreshIntervalMs(rawMs: Long): Long =
+        if (rawMs <= 0L) 0L else rawMs.coerceIn(MIN_REFRESH_INTERVAL_MS, MAX_REFRESH_INTERVAL_MS)
+
+    /**
+     * Formats a live chronometer duration for a plugin tile without any IPC while the overlay is open.
+     * Countdowns round up to the nearest second (matching standard timers) and stop at `00:00`.
+     */
+    fun formatLiveTimerDuration(
+        baseMs: Long,
+        countDown: Boolean,
+        nowMs: Long
+    ): Pair<String, Boolean> {
+        val (displayMs, finished) = if (countDown) {
+            val remaining = (baseMs - nowMs).coerceAtLeast(0L)
+            remaining to (remaining == 0L)
+        } else {
+            val elapsed = (nowMs - baseMs).coerceAtLeast(0L)
+            elapsed to false
+        }
+        val totalSeconds = if (countDown) {
+            (displayMs + 999L) / 1000L
+        } else {
+            displayMs / 1000L
+        }
+        val hours = totalSeconds / 3600L
+        val mins = (totalSeconds % 3600L) / 60L
+        val secs = totalSeconds % 60L
+        val formatted = if (hours > 0L) {
+            String.format(java.util.Locale.US, "%d:%02d:%02d", hours, mins, secs)
+        } else {
+            String.format(java.util.Locale.US, "%02d:%02d", mins, secs)
+        }
+        return formatted to finished
+    }
+
+    fun resolveLiveTimerLabel(
+        state: PluginTileRuntimeState,
+        nowMs: Long
+    ): Pair<String?, Boolean> {
+        if (state.timerBaseMs <= 0L) return null to false
+        val (durationText, finished) = formatLiveTimerDuration(
+            baseMs = state.timerBaseMs,
+            countDown = state.timerCountDown,
+            nowMs = nowMs
+        )
+        if (finished && !state.timerFinishedLabel.isNullOrBlank()) {
+            return state.timerFinishedLabel to true
+        }
+        val format = state.timerFormat
+        val label = if (!format.isNullOrBlank() && "%s" in format) {
+            format.replace("%s", durationText).take(MAX_LABEL_LENGTH)
+        } else {
+            durationText
+        }
+        return label to finished
+    }
 
     fun isValidTileId(tileId: String): Boolean = TILE_ID_REGEX.matches(tileId)
 

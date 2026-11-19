@@ -666,6 +666,55 @@ private fun buildQuickSettingTileModels(
     val activePluginTiles = remember(plugins, enabledPluginTileKeys, profile) {
         pluginRegistry.activePluginTilesMap(profile)
     }
+
+    val hasActivePluginTimer = activePluginTiles.keys.any { key ->
+        (pluginRuntimeStates[key]?.timerBaseMs ?: 0L) > 0L
+    }
+    var pluginTimerNowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(hasActivePluginTimer) {
+        if (!hasActivePluginTimer) return@LaunchedEffect
+        while (isActive) {
+            pluginTimerNowMs = System.currentTimeMillis()
+            delay(500L)
+        }
+    }
+
+    // Track countdown tiles that already triggered a single expiry refresh while this overlay is open.
+    val notifiedExpiredTimers = remember { mutableMapOf<String, Long>() }
+
+    // Overlay-only periodic refresh for tiles that explicitly opt into refresh_interval_ms (>= 1000ms).
+    val periodicRefreshSchedule = remember(activePluginTiles, pluginRuntimeStates) {
+        activePluginTiles.entries.mapNotNull { (key, pair) ->
+            val tileDef = pair.second
+            val interval = pluginRuntimeStates[key]?.refreshIntervalMs ?: tileDef.refreshIntervalMs
+            if (interval >= BdsaPluginContract.MIN_REFRESH_INTERVAL_MS) {
+                tileDef to interval
+            } else {
+                null
+            }
+        }
+    }
+    LaunchedEffect(periodicRefreshSchedule, isDarkTheme) {
+        if (periodicRefreshSchedule.isEmpty()) return@LaunchedEffect
+        val lastFiredMs = HashMap<String, Long>()
+        val startMs = SystemClock.elapsedRealtime()
+        for ((tileDef, _) in periodicRefreshSchedule) {
+            lastFiredMs[tileDef.tileKey] = startMs
+        }
+        while (isActive) {
+            val minStep = periodicRefreshSchedule.minOf { it.second }.coerceAtLeast(BdsaPluginContract.MIN_REFRESH_INTERVAL_MS)
+            delay(minStep.coerceAtMost(1_000L))
+            val nowElapsed = SystemClock.elapsedRealtime()
+            for ((tileDef, intervalMs) in periodicRefreshSchedule) {
+                val prev = lastFiredMs[tileDef.tileKey] ?: startMs
+                if (nowElapsed - prev >= intervalMs) {
+                    lastFiredMs[tileDef.tileKey] = nowElapsed
+                    pluginRegistry.dispatchRefreshTile(tileDef, isDarkTheme)
+                }
+            }
+        }
+    }
+
     val orderedKeys = remember(unifiedQuickTileOrder, activePluginTiles) {
         val list = unifiedQuickTileOrder.toMutableList()
         for (pluginKey in activePluginTiles.keys) {
@@ -683,7 +732,21 @@ private fun buildQuickSettingTileModels(
             if (BdsaPluginContract.isPluginTileKey(rawKey)) {
                 val (plugin, tileDef) = activePluginTiles[rawKey] ?: continue
                 val runtimeState = pluginRuntimeStates[rawKey]
-                val effectiveLabel = runtimeState?.label ?: tileDef.gridTitle
+                val liveTimerResult = if (runtimeState != null && runtimeState.timerBaseMs > 0L) {
+                    BdsaPluginContract.resolveLiveTimerLabel(runtimeState, pluginTimerNowMs)
+                } else {
+                    null to false
+                }
+                if (liveTimerResult.second && runtimeState != null && runtimeState.timerBaseMs > 0L) {
+                    val alreadyNotifiedBase = notifiedExpiredTimers[rawKey]
+                    if (alreadyNotifiedBase != runtimeState.timerBaseMs) {
+                        notifiedExpiredTimers[rawKey] = runtimeState.timerBaseMs
+                        LaunchedEffect(rawKey, runtimeState.timerBaseMs) {
+                            pluginRegistry.dispatchRefreshTile(tileDef, isDarkTheme)
+                        }
+                    }
+                }
+                val effectiveLabel = liveTimerResult.first ?: runtimeState?.label ?: tileDef.gridTitle
                 val effectiveSelected = runtimeState?.selected ?: false
                 val effectiveEnabled = runtimeState?.enabled ?: true
                 val desiredResId = if (isRetroidLook) {

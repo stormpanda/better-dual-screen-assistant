@@ -481,6 +481,39 @@ class PluginRegistry private constructor(private val context: Context) {
             } else {
                 prev.pixelIconResId
             }
+            val nextTimerBaseMs = if (extras.containsKey(BdsaPluginContract.EXTRA_TIMER_BASE_MS)) {
+                extras.getLong(BdsaPluginContract.EXTRA_TIMER_BASE_MS, 0L).coerceAtLeast(0L)
+            } else {
+                prev.timerBaseMs
+            }
+            val nextTimerCountDown = if (extras.containsKey(BdsaPluginContract.EXTRA_TIMER_COUNT_DOWN)) {
+                extras.getBoolean(BdsaPluginContract.EXTRA_TIMER_COUNT_DOWN, prev.timerCountDown)
+            } else if (nextTimerBaseMs == 0L) {
+                false
+            } else {
+                prev.timerCountDown
+            }
+            val nextTimerFormat = if (extras.containsKey(BdsaPluginContract.EXTRA_TIMER_FORMAT)) {
+                clampGridLabel(extras.getString(BdsaPluginContract.EXTRA_TIMER_FORMAT)).ifEmpty { null }
+            } else if (nextTimerBaseMs == 0L) {
+                null
+            } else {
+                prev.timerFormat
+            }
+            val nextTimerFinishedLabel = if (extras.containsKey(BdsaPluginContract.EXTRA_TIMER_FINISHED_LABEL)) {
+                clampGridLabel(extras.getString(BdsaPluginContract.EXTRA_TIMER_FINISHED_LABEL)).ifEmpty { null }
+            } else if (nextTimerBaseMs == 0L) {
+                null
+            } else {
+                prev.timerFinishedLabel
+            }
+            val nextRefreshIntervalMs = if (extras.containsKey(BdsaPluginContract.EXTRA_REFRESH_INTERVAL_MS)) {
+                BdsaPluginContract.clampRefreshIntervalMs(
+                    extras.getLong(BdsaPluginContract.EXTRA_REFRESH_INTERVAL_MS, 0L)
+                )
+            } else {
+                prev.refreshIntervalMs
+            }
 
             currentMap[tileKey] = PluginTileRuntimeState(
                 label = nextLabel,
@@ -488,6 +521,11 @@ class PluginRegistry private constructor(private val context: Context) {
                 enabled = nextEnabled,
                 iconResId = nextIconRes,
                 pixelIconResId = nextPixelIconRes,
+                timerBaseMs = nextTimerBaseMs,
+                timerCountDown = nextTimerCountDown,
+                timerFormat = nextTimerFormat,
+                timerFinishedLabel = nextTimerFinishedLabel,
+                refreshIntervalMs = nextRefreshIntervalMs,
                 updatedAtMs = System.currentTimeMillis()
             )
             _tileRuntimeStates.value = currentMap.toMap()
@@ -872,6 +910,13 @@ class PluginRegistry private constructor(private val context: Context) {
                                             BdsaPluginContract.XML_ATTR_SUPPORTED_DEVICES
                                         )
                                     )
+                                    val refreshIntervalMs = BdsaPluginContract.clampRefreshIntervalMs(
+                                        readXmlIntAttr(
+                                            parser,
+                                            BdsaPluginContract.XML_ATTR_REFRESH_INTERVAL_MS,
+                                            0
+                                        ).toLong()
+                                    )
                                     tiles.add(
                                         PluginTileDefinition(
                                             packageName = packageName,
@@ -885,7 +930,8 @@ class PluginRegistry private constructor(private val context: Context) {
                                             supportsLongPress = supportsLongPress,
                                             dismissOnClick = dismissOnClick,
                                             dismissOnLongClick = dismissOnLongClick,
-                                            supportedDevices = devices
+                                            supportedDevices = devices,
+                                            refreshIntervalMs = refreshIntervalMs
                                         )
                                     )
                                 }
@@ -967,6 +1013,9 @@ class PluginRegistry private constructor(private val context: Context) {
         val supportedDevices = BdsaPluginContract.parseSupportedDevices(
             metaData.getString(BdsaPluginContract.META_SUPPORTED_DEVICES)
         )
+        val refreshIntervalMs = BdsaPluginContract.clampRefreshIntervalMs(
+            metaData.getInt(BdsaPluginContract.META_REFRESH_INTERVAL_MS, 0).toLong()
+        )
 
         val tile = PluginTileDefinition(
             packageName = packageName,
@@ -980,7 +1029,8 @@ class PluginRegistry private constructor(private val context: Context) {
             supportsLongPress = supportsLongPress,
             dismissOnClick = dismissOnClick,
             dismissOnLongClick = dismissOnLongClick,
-            supportedDevices = supportedDevices
+            supportedDevices = supportedDevices,
+            refreshIntervalMs = refreshIntervalMs
         )
 
         return RegisteredPlugin(
@@ -1143,12 +1193,32 @@ class PluginRegistry private constructor(private val context: Context) {
                 } else {
                     null
                 }
+                val timerFormat = if (obj.has("timerFormat") && !obj.isNull("timerFormat")) {
+                    clampGridLabel(obj.optString("timerFormat")).ifEmpty { null }
+                } else {
+                    null
+                }
+                val timerFinishedLabel = if (obj.has("timerFinishedLabel") && !obj.isNull("timerFinishedLabel")) {
+                    clampGridLabel(obj.optString("timerFinishedLabel")).ifEmpty { null }
+                } else {
+                    null
+                }
+                val refreshIntervalMs = if (obj.has("refreshIntervalMs") && !obj.isNull("refreshIntervalMs")) {
+                    BdsaPluginContract.clampRefreshIntervalMs(obj.optLong("refreshIntervalMs", 0L))
+                } else {
+                    null
+                }
                 result[key] = PluginTileRuntimeState(
                     label = label,
                     selected = obj.optBoolean("selected", false),
                     enabled = obj.optBoolean("enabled", true),
                     iconResId = obj.optInt("iconResId", 0).takeIf { it != 0 },
                     pixelIconResId = obj.optInt("pixelIconResId", 0).takeIf { it != 0 },
+                    timerBaseMs = obj.optLong("timerBaseMs", 0L).coerceAtLeast(0L),
+                    timerCountDown = obj.optBoolean("timerCountDown", false),
+                    timerFormat = timerFormat,
+                    timerFinishedLabel = timerFinishedLabel,
+                    refreshIntervalMs = refreshIntervalMs,
                     updatedAtMs = obj.optLong("updatedAtMs", 0L)
                 )
             }
@@ -1169,6 +1239,13 @@ class PluginRegistry private constructor(private val context: Context) {
                     put("enabled", state.enabled)
                     if (state.iconResId != null) put("iconResId", state.iconResId)
                     if (state.pixelIconResId != null) put("pixelIconResId", state.pixelIconResId)
+                    if (state.timerBaseMs > 0L) {
+                        put("timerBaseMs", state.timerBaseMs)
+                        put("timerCountDown", state.timerCountDown)
+                        if (state.timerFormat != null) put("timerFormat", state.timerFormat)
+                        if (state.timerFinishedLabel != null) put("timerFinishedLabel", state.timerFinishedLabel)
+                    }
+                    if (state.refreshIntervalMs != null) put("refreshIntervalMs", state.refreshIntervalMs)
                     put("updatedAtMs", state.updatedAtMs)
                 }
                 root.put(key, obj)

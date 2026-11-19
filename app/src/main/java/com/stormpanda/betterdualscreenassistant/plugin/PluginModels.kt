@@ -19,7 +19,8 @@ data class PluginTileDefinition(
     val supportsLongPress: Boolean = false,
     val dismissOnClick: Boolean = false,
     val dismissOnLongClick: Boolean = false,
-    val supportedDevices: Set<String> = setOf(BdsaPluginContract.DEVICE_ALL)
+    val supportedDevices: Set<String> = setOf(BdsaPluginContract.DEVICE_ALL),
+    val refreshIntervalMs: Long = 0L
 ) {
     val tileKey: String
         get() = BdsaPluginContract.pluginTileKey(packageName, tileId)
@@ -66,6 +67,11 @@ data class PluginTileRuntimeState(
     val enabled: Boolean = true,
     val iconResId: Int? = null,
     val pixelIconResId: Int? = null,
+    val timerBaseMs: Long = 0L,
+    val timerCountDown: Boolean = false,
+    val timerFormat: String? = null,
+    val timerFinishedLabel: String? = null,
+    val refreshIntervalMs: Long? = null,
     val updatedAtMs: Long = 0L
 )
 
