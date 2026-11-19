@@ -1,6 +1,9 @@
 package com.stormpanda.betterdualscreenassistant.ui.theme
 
+import android.content.Context
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -12,6 +15,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -20,6 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
+import java.util.Locale
 
 private const val LUMINANCE_CONTRAST_THRESHOLD = 0.45f
 private val DEFAULT_CONTRAST_DARK_TEXT = Color(0xFF121212)
@@ -34,12 +39,14 @@ enum class TccUiLook {
 
 enum class TccUiLookPreference(
     val id: Int,
-    val displayName: String,
-    val shortLabel: String
+    @get:VisibleForTesting val displayName: String,
+    @get:VisibleForTesting val shortLabel: String,
+    @param:StringRes val displayNameRes: Int,
+    @param:StringRes val shortLabelRes: Int
 ) {
-    AUTO(0, "Auto", "Auto"),
-    AYN(1, "AYN Smooth", "AYN"),
-    RETROID(2, "Retroid Pixel", "Retroid");
+    AUTO(0, "Auto", "Auto", R.string.ui_look_auto, R.string.ui_look_auto),
+    AYN(1, "AYN Smooth", "AYN", R.string.ui_look_ayn_smooth, R.string.ui_look_ayn_short),
+    RETROID(2, "Retroid Pixel", "Retroid", R.string.ui_look_retroid_pixel, R.string.ui_look_retroid_short);
 
     fun resolve(profile: DeviceProfile): TccUiLook = when (this) {
         AUTO -> when (profile.defaultUiLookPreferenceId) {
@@ -50,6 +57,7 @@ enum class TccUiLookPreference(
         RETROID -> TccUiLook.RETROID
     }
 
+    @VisibleForTesting
     fun displayNameFor(profile: DeviceProfile): String = when (this) {
         AUTO -> {
             val nativePref = if (profile.defaultUiLookPreferenceId == RETROID.id) RETROID else AYN
@@ -57,6 +65,16 @@ enum class TccUiLookPreference(
         }
         else -> displayName
     }
+
+    fun displayNameFor(context: Context, profile: DeviceProfile): String = when (this) {
+        AUTO -> {
+            val nativePref = if (profile.defaultUiLookPreferenceId == RETROID.id) RETROID else AYN
+            context.getString(R.string.ui_look_auto_with_native, context.getString(nativePref.displayNameRes))
+        }
+        else -> context.getString(displayNameRes)
+    }
+
+    fun shortLabel(context: Context): String = context.getString(shortLabelRes)
 
     companion object {
         fun fromId(id: Int): TccUiLookPreference =
@@ -80,9 +98,54 @@ val TccPixelLabelFontFamily: FontFamily = FontFamily(
     Font(R.font.tcc_pixel_label, FontWeight.Bold)
 )
 
+private val NON_LATIN_PIXEL_FALLBACK_LANGUAGES: Set<String> = setOf(
+    "zh", "ja", "ko",
+    "ru", "uk", "be", "bg", "sr", "mk", "kk", "mn",
+    "el", "ar", "fa", "ur", "he", "iw",
+    "th", "lo", "my", "km",
+    "hi", "bn", "ta", "te", "ml", "kn", "mr", "gu", "pa", "si", "ne",
+    "ka", "hy", "am", "ti"
+)
+
+/**
+ * Latin-script languages whose core diacritics are absent from the bundled 504-glyph
+ * `tcc_pixel_label.ttf` subset (e.g., Polish `ąęłś`, Turkish `ıİşŞ`, Czech/Slovak `ďřšťů`,
+ * Romanian `șț`, Vietnamese tonal vowels). Fall back to the system font to avoid mixed-font
+ * baseline jitter until a broader subset is bundled.
+ */
+private val UNSUPPORTED_LATIN_PIXEL_LANGUAGES: Set<String> = setOf(
+    "pl", "tr", "vi", "cs", "sk", "ro"
+)
+
+/**
+ * Returns `true` when [locale] uses a Latin script covered by the bundled
+ * `tcc_pixel_label.ttf` subset (ASCII + Western European Latin-1 + Hungarian).
+ * Non-Latin locales (CJK, Cyrillic, Arabic, Greek, Indic, Thai, etc.) and Latin locales whose
+ * core diacritics are missing from the font subset fall back cleanly to the Android system font
+ * to avoid missing-glyph boxes and mixed-font baseline jitter.
+ */
+internal fun supportsRetroidPixelLabelFont(locale: Locale): Boolean {
+    val language = locale.language.lowercase(Locale.ROOT)
+    if (language in UNSUPPORTED_LATIN_PIXEL_LANGUAGES) {
+        return false
+    }
+    val script = locale.script
+    if (script.isNotEmpty()) {
+        return script.equals("Latn", ignoreCase = true)
+    }
+    return language !in NON_LATIN_PIXEL_FALLBACK_LANGUAGES
+}
+
+@Composable
+private fun shouldUseRetroidPixelLabelFont(): Boolean {
+    if (LocalTccUiLook.current != TccUiLook.RETROID) return false
+    val activeLocale = LocalConfiguration.current.locales.get(0) ?: Locale.getDefault()
+    return supportsRetroidPixelLabelFont(activeLocale)
+}
+
 @Composable
 fun tccFontFamily(): FontFamily? =
-    if (LocalTccUiLook.current == TccUiLook.RETROID) TccPixelLabelFontFamily else null
+    if (shouldUseRetroidPixelLabelFont()) TccPixelLabelFontFamily else null
 
 @Composable
 fun tccDisplayFontFamily(): FontFamily? =
@@ -90,13 +153,15 @@ fun tccDisplayFontFamily(): FontFamily? =
 
 @Composable
 fun tccTextStyle(): TextStyle =
-    if (LocalTccUiLook.current == TccUiLook.RETROID) {
-        TextStyle(
+    when {
+        shouldUseRetroidPixelLabelFont() -> TextStyle(
             fontFamily = TccPixelLabelFontFamily,
             platformStyle = PlatformTextStyle(includeFontPadding = false)
         )
-    } else {
-        TextStyle.Default
+        LocalTccUiLook.current == TccUiLook.RETROID -> TextStyle(
+            platformStyle = PlatformTextStyle(includeFontPadding = false)
+        )
+        else -> TextStyle.Default
     }
 
 @Composable
@@ -139,8 +204,10 @@ val MegingiardAccentPresets: List<Color> = listOf(
 
 enum class AppThemeOption(
     val id: Int,
-    val displayName: String,
-    val shortTileLabel: String,
+    @get:VisibleForTesting val displayName: String,
+    @get:VisibleForTesting val shortTileLabel: String,
+    @param:StringRes val displayNameRes: Int,
+    @param:StringRes val shortTileLabelRes: Int,
     val isMegingiardStyle: Boolean,
     val supportsCustomAccent: Boolean = false,
     val megingiardIpcName: String? = null,
@@ -152,6 +219,8 @@ enum class AppThemeOption(
         id = 1,
         displayName = "Follow System (Stock)",
         shortTileLabel = "Follow System",
+        displayNameRes = R.string.theme_stock_system,
+        shortTileLabelRes = R.string.theme_stock_system_short,
         isMegingiardStyle = false,
         previewBackground = Color.Black,
         previewSurface = Color(0xFF161616),
@@ -161,6 +230,8 @@ enum class AppThemeOption(
         id = 3,
         displayName = "Light (Stock)",
         shortTileLabel = "Light",
+        displayNameRes = R.string.theme_stock_light,
+        shortTileLabelRes = R.string.theme_stock_light_short,
         isMegingiardStyle = false,
         previewBackground = Color(0xFFDEDBDB),
         previewSurface = Color(0xFFE7E5E5),
@@ -170,6 +241,8 @@ enum class AppThemeOption(
         id = 4,
         displayName = "Dark (Stock)",
         shortTileLabel = "Dark",
+        displayNameRes = R.string.theme_stock_dark,
+        shortTileLabelRes = R.string.theme_stock_dark_short,
         isMegingiardStyle = false,
         previewBackground = Color.Black,
         previewSurface = Color(0xFF161616),
@@ -179,6 +252,8 @@ enum class AppThemeOption(
         id = 100,
         displayName = "Sync with Megingiard",
         shortTileLabel = "Megingiard Sync",
+        displayNameRes = R.string.theme_sync_megingiard,
+        shortTileLabelRes = R.string.theme_sync_megingiard_short,
         isMegingiardStyle = true,
         previewBackground = Color(0xFF040C08),
         previewSurface = Color(0xFF06140C),
@@ -188,6 +263,8 @@ enum class AppThemeOption(
         id = 101,
         displayName = "Dark",
         shortTileLabel = "Dark",
+        displayNameRes = R.string.theme_megingiard_dark,
+        shortTileLabelRes = R.string.theme_megingiard_dark,
         isMegingiardStyle = true,
         supportsCustomAccent = true,
         megingiardIpcName = "DARK",
@@ -199,6 +276,8 @@ enum class AppThemeOption(
         id = 102,
         displayName = "Dark OLED",
         shortTileLabel = "Dark OLED",
+        displayNameRes = R.string.theme_megingiard_dark_oled,
+        shortTileLabelRes = R.string.theme_megingiard_dark_oled,
         isMegingiardStyle = true,
         supportsCustomAccent = true,
         megingiardIpcName = "DARK_OLED",
@@ -210,6 +289,8 @@ enum class AppThemeOption(
         id = 103,
         displayName = "Norse Forest",
         shortTileLabel = "Norse Forest",
+        displayNameRes = R.string.theme_norse_forest,
+        shortTileLabelRes = R.string.theme_norse_forest,
         isMegingiardStyle = true,
         megingiardIpcName = "MEGINGIARD",
         previewBackground = Color(0xFF040C08),
@@ -220,6 +301,8 @@ enum class AppThemeOption(
         id = 104,
         displayName = "Mjölnir Steel",
         shortTileLabel = "Mjölnir",
+        displayNameRes = R.string.theme_mjolnir_steel,
+        shortTileLabelRes = R.string.theme_mjolnir_short,
         isMegingiardStyle = true,
         megingiardIpcName = "MJOLNIR",
         previewBackground = Color(0xFF101418),
@@ -230,6 +313,8 @@ enum class AppThemeOption(
         id = 105,
         displayName = "Valhalla Sunset",
         shortTileLabel = "Valhalla",
+        displayNameRes = R.string.theme_valhalla_sunset,
+        shortTileLabelRes = R.string.theme_valhalla_short,
         isMegingiardStyle = true,
         megingiardIpcName = "VALHALLA",
         previewBackground = Color(0xFF140E0A),
@@ -240,6 +325,8 @@ enum class AppThemeOption(
         id = 106,
         displayName = "Aurora Borealis",
         shortTileLabel = "Aurora",
+        displayNameRes = R.string.theme_aurora_borealis,
+        shortTileLabelRes = R.string.theme_aurora_short,
         isMegingiardStyle = true,
         megingiardIpcName = "AURORA",
         previewBackground = Color(0xFF0A0A14),
@@ -250,6 +337,8 @@ enum class AppThemeOption(
         id = 107,
         displayName = "Retro Phosphor",
         shortTileLabel = "Retro Phosphor",
+        displayNameRes = R.string.theme_retro_phosphor,
+        shortTileLabelRes = R.string.theme_retro_phosphor,
         isMegingiardStyle = true,
         megingiardIpcName = "RETRO_PHOSPHOR",
         previewBackground = Color(0xFF141712),
@@ -260,12 +349,18 @@ enum class AppThemeOption(
         id = 108,
         displayName = "Royal Asgard",
         shortTileLabel = "Royal Asgard",
+        displayNameRes = R.string.theme_royal_asgard,
+        shortTileLabelRes = R.string.theme_royal_asgard,
         isMegingiardStyle = true,
         megingiardIpcName = "ROYAL_ASGARD",
         previewBackground = Color.Black,
         previewSurface = Color(0xFF12110E),
         previewAccent = Color(0xFFFFD700)
     );
+
+    fun displayName(context: Context): String = context.getString(displayNameRes)
+
+    fun shortTileLabel(context: Context): String = context.getString(shortTileLabelRes)
 
     companion object {
         fun fromId(id: Int): AppThemeOption {

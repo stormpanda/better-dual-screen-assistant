@@ -54,8 +54,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,8 +66,10 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccColors
 import com.stormpanda.betterdualscreenassistant.ui.theme.LocalTccLookSpec
 import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.aynSp
+import com.stormpanda.betterdualscreenassistant.ui.theme.supportsRetroidPixelLabelFont
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDisplayTextStyle
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
+import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
@@ -109,10 +113,21 @@ fun StatusBarRow(
     val isRetroid = lookSpec.isRetroid
     val spec = lookSpec.statusBar
     val displayStyle = tccDisplayTextStyle()
+    val labelStyle = tccTextStyle()
+    val activeLocale = LocalConfiguration.current.locales.get(0) ?: Locale.getDefault()
     val statusFontSize = spec.fontSize
     val statusFontWeight = if (isRetroid) FontWeight.Normal else FontWeight.Bold
 
-    var timeText by remember { mutableStateOf(formatCurrentTime(context)) }
+    var timeText by remember(context, activeLocale) { mutableStateOf(formatCurrentTime(context, activeLocale)) }
+    val timeTextStyle = if (
+        isRetroid &&
+        !DateFormat.is24HourFormat(context) &&
+        (!supportsRetroidPixelLabelFont(activeLocale) || timeText.any { it.code > 127 })
+    ) {
+        labelStyle
+    } else {
+        displayStyle
+    }
     var batteryLevel by remember { mutableIntStateOf(100) }
     var isCharging by remember { mutableStateOf(false) }
     var wifiSignalLevel by remember { mutableIntStateOf(-1) }
@@ -120,14 +135,14 @@ fun StatusBarRow(
     var netSpeedText by remember { mutableStateOf("0.0KB/S") }
     var isBluetoothConnected by remember { mutableStateOf(checkBluetoothConnected(context)) }
 
-    DisposableEffect(context) {
+    DisposableEffect(context, activeLocale) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 when (intent?.action) {
                     Intent.ACTION_TIME_TICK,
                     Intent.ACTION_TIME_CHANGED,
                     Intent.ACTION_TIMEZONE_CHANGED -> {
-                        timeText = formatCurrentTime(context)
+                        timeText = formatCurrentTime(context, activeLocale)
                     }
                     Intent.ACTION_BATTERY_CHANGED -> {
                         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
@@ -256,7 +271,7 @@ fun StatusBarRow(
                 text = timeText,
                 color = colors.primary,
                 fontSize = statusFontSize,
-                style = displayStyle,
+                style = timeTextStyle,
                 fontWeight = statusFontWeight,
                 modifier = Modifier
                     .padding(horizontal = spec.timeHorizontalPadding)
@@ -310,7 +325,7 @@ fun StatusBarRow(
             if (isBluetoothConnected) {
                 Image(
                     painter = painterResource(id = tccDrawable(R.drawable.ic_bluetooth)),
-                    contentDescription = "Bluetooth",
+                    contentDescription = stringResource(R.string.status_cd_bluetooth),
                     colorFilter = ColorFilter.tint(colors.primary),
                     modifier = Modifier.size(spec.bluetoothIconSize)
                 )
@@ -335,7 +350,7 @@ fun StatusBarRow(
                 }
                 Image(
                     painter = painterResource(id = tccDrawable(wifiRes)),
-                    contentDescription = "Wi-Fi",
+                    contentDescription = stringResource(R.string.status_cd_wifi),
                     colorFilter = if (isRetroid) {
                         ColorFilter.tint(colors.primary)
                     } else {
@@ -514,10 +529,10 @@ private fun BatteryIconCanvas(
     }
 }
 
-private fun formatCurrentTime(context: Context): String {
+private fun formatCurrentTime(context: Context, locale: Locale): String {
     val is24 = DateFormat.is24HourFormat(context)
     val pattern = if (is24) "HH:mm" else "h:mm a"
-    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date())
+    return SimpleDateFormat(pattern, locale).format(Date())
 }
 
 private fun readWifiSignalLevel(context: Context): Int {

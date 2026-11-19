@@ -522,4 +522,30 @@ class AssistantForegroundServiceTest {
             unmockkAll()
         }
     }
+
+    @Test
+    fun `onConfigurationChanged notifies overlayManager only when locale tags change`() {
+        every { mockRepository.promotedToManager } returns MutableStateFlow(false)
+        every { mockRepository.screenRecordingState } returns MutableStateFlow(ScreenRecordingState())
+
+        val initialConfig = android.content.res.Configuration(context.resources.configuration).apply {
+            setLocales(android.os.LocaleList.forLanguageTags("en"))
+        }
+        setServiceField("lastLocaleTags", initialConfig.locales.toLanguageTags())
+
+        // Same locale -> no overlay recreation
+        service.onConfigurationChanged(initialConfig)
+        verify(exactly = 0) { mockOverlayManager.onLocaleChanged() }
+
+        // Different locale -> overlayManager.onLocaleChanged() invoked once
+        val updatedConfig = android.content.res.Configuration(context.resources.configuration).apply {
+            setLocales(android.os.LocaleList.forLanguageTags("zh-TW"))
+        }
+        service.onConfigurationChanged(updatedConfig)
+        verify(exactly = 1) { mockOverlayManager.onLocaleChanged() }
+
+        // Repeating the same updated locale -> still invoked only once
+        service.onConfigurationChanged(updatedConfig)
+        verify(exactly = 1) { mockOverlayManager.onLocaleChanged() }
+    }
 }

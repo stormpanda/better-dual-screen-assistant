@@ -1,114 +1,437 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- App Names -->
     <string name="app_name">Better Dual Screen Assistant</string>
     <string name="app_name_manager">Better Dual Screen Manager</string>
-    <string name="battery_level_text">%1$d%%</string>
-    <string name="current_device_does_not_support_120hz">The current device does not support 120HZ</string>
+    <string name="app_wordmark_assistant" translatable="false">BetterDualScreenAssistant</string>
+    <string name="app_wordmark_manager" translatable="false">BetterDualScreenManager</string>
+
+    <!-- Language Settings -->
+    <string name="language_system_default">System Default</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_desc">Override the app language independently of the Android system language</string>
+
+    <!-- Foreground Service & Notifications -->
+    <string name="notification_channel_assistant_name">Dual Screen Assistant Service</string>
+    <string name="notification_channel_manager_name">Dual Screen Manager Service</string>
+    <string name="notification_channel_desc">Keeps the dual-screen overlay and TCC button handler ready</string>
+    <string name="notification_ready_text">Ready for TCC button &amp; dual-screen controls</string>
+    <string name="notification_recording_top_text">Recording Top screen — tap Stop to save</string>
+    <string name="notification_recording_bottom_text">Recording Bottom screen — tap Stop to save</string>
+    <string name="notification_recording_both_text">Recording Both screens — tap Stop to save</string>
+    <string name="notification_action_stop_recording">Stop Recording</string>
+
+    <!-- Device Profiles -->
+    <string name="controller_standard_label_odin">Odin</string>
+    <string name="controller_standard_label_retro">Retro</string>
+    <string name="tip_content_text">When the secondary screen is turned off, you can press the AYN key to wake up the screen.</string>
+    <string name="tip_content_text_retroid">When the secondary screen is turned off, you can long press or press the Dual Screen key to wake up the screen.</string>
+
+    <!-- Overlay Screen Control, Sliders, Telemetry & Navigation -->
     <string name="current_frame_rate_tip">CURRENT FPS</string>
-    <string name="dualscreen_asynchronous_display">Dual Screen</string>
-    <string name="fan_option_disable">Ban On Use</string>
-    <string name="fan_option_odin_style">Standard Style</string>
-    <string name="fan_option_xbox_style">XBox Style</string>
-    <string name="force_landscape_mode_text">Force Landscape</string>
-    <string name="frame_rate_calibration_is_currently_underway">Currently undergoing frame rate calibration</string>
-    <string name="frame_rate_mode_120">120 HZ MODE</string>
-    <string name="frame_rate_mode_60">60 HZ MODE</string>
-    <string name="frame_rate_mode_90">90 HZ MODE</string>
-    <string name="frame_rate_mode_select">Frame Rate Mode</string>
     <string name="frame_rate_mode_text">%1$d HZ MODE</string>
-    <string name="frame_rate_switch_failed">Frame rate switching failed</string>
-    <string name="key_focus_mode_lock_on_lower_screen">Bottom screen</string>
-    <string name="key_focus_mode_lock_on_upper_screen">Top screen</string>
-    <string name="key_focus_mode_title_text">Focus Mode</string>
-    <string name="key_focus_mode_touch_switchable">Auto-lock</string>
-    <string name="navigation_app_manage_text">Application</string>
-    <string name="navigation_edit_text">Edit</string>
-    <string name="navigation_screen_control_text">Mode</string>
-    <string name="navigation_system_set_text">Settings</string>
-    <string name="navigation_task_manage_text">Tasks</string>
-    <string name="only_following_screen_displayed">Bottom only</string>
+    <string name="dualscreen_asynchronous_display">Dual Screen</string>
     <string name="only_theupper_screen_displayed">Top only</string>
+    <string name="only_following_screen_displayed">Bottom only</string>
     <string name="swap_screens_mode_text">Swap Screens</string>
     <string name="sliding_dual_screen">Dual Screen</string>
     <string name="sliding_main_screen">Top Screen</string>
     <string name="sliding_secondary_screen">Bottom Screen</string>
     <string name="sliding_stick_led">Stick LED</string>
-    <string name="sliding_volume_text">Volume</string>
-    <string name="text_charging_separation_title">Direct Power Supply</string>
-    <string name="text_clear_memory_title">Clean Memory</string>
-    <string name="text_dark_theme">Dark Theme</string>
-    <string name="text_fan_control_custom">Custom</string>
-    <string name="text_fan_control_low_speed">Quiet Mode</string>
-    <string name="text_fan_control_medium_speed">Sports Mode</string>
-    <string name="text_fan_control_off">Turned Off</string>
-    <string name="text_fan_control_smart">Smart Mode</string>
-    <string name="text_fan_control_title">Fan Control</string>
-    <string name="text_handle_lights">Handle Lights</string>
-    <string name="text_handle_style_title">Handle Style</string>
-    <string name="text_joystick_lights">Joystick Lights</string>
-    <string name="text_led_lights_close_title">Ambient LED</string>
-    <string name="text_led_lights_open_title">Ambient LED</string>
-    <string name="text_light_theme">Light Theme</string>
-    <string name="text_performance_mode_height_performance">High Performance</string>
+    <string name="navigation_screen_control_text">Mode</string>
+    <string name="navigation_task_manage_text">Tasks</string>
+    <string name="navigation_system_set_text">Settings</string>
+    <string name="navigation_edit_text">Edit</string>
+    <string name="hardware_label_temp">TEMP</string>
+    <string name="hardware_label_fan">FAN</string>
+    <string name="hardware_label_cpu">CPU</string>
+    <string name="hardware_label_gpu">GPU</string>
+    <string name="hardware_label_pwr">PWR</string>
+    <string name="hardware_label_ram">RAM</string>
+    <string name="status_cd_bluetooth">Bluetooth</string>
+    <string name="status_cd_wifi">Wi-Fi</string>
+
+    <!-- Overlay Stock Quick Toggles & Dialogs -->
+    <string name="key_focus_mode_title_text">Focus Mode</string>
+    <string name="key_focus_mode_touch_switchable">Auto-lock</string>
+    <string name="key_focus_mode_lock_on_upper_screen">Top screen</string>
+    <string name="key_focus_mode_lock_on_lower_screen">Bottom screen</string>
+    <string name="text_performance_mode_title">Performance Mode</string>
     <string name="text_performance_mode_normal">Standard Performance</string>
     <string name="text_performance_mode_performance">Medium Performance</string>
-    <string name="text_performance_mode_title">Performance Mode</string>
-    <string name="text_pure_black_theme">Pure Black Theme</string>
-    <string name="text_system_theme">System Theme</string>
-    <string name="text_theme_mode_title">Theme Mode</string>
-    <string name="text_vibration_close_title">Vibration</string>
+    <string name="text_performance_mode_height_performance">High Performance</string>
+    <string name="text_fan_control_title">Fan Control</string>
+    <string name="text_fan_control_off">Turned Off</string>
+    <string name="text_fan_control_low_speed">Quiet Mode</string>
+    <string name="text_fan_control_smart">Smart Mode</string>
+    <string name="text_fan_control_medium_speed">Sports Mode</string>
+    <string name="text_fan_control_custom">Custom</string>
+    <string name="text_handle_style_title">Handle Style</string>
+    <string name="fan_option_xbox_style">XBox Style</string>
+    <string name="fan_option_odin_style">Standard Style</string>
+    <string name="fan_option_retro_style">Retro</string>
+    <string name="fan_option_disable">Ban On Use</string>
+    <string name="text_clear_memory_title">Clean Memory</string>
+    <string name="text_charging_separation_title">Direct Power Supply</string>
     <string name="text_vibration_open_title">Vibration</string>
-    <string name="tip_content_text">When the secondary screen is turned off, you can press the AYN key to wake up the screen.</string>
-    <string name="tip_dialog_cb_text_no_more_tip">Do not show again</string>
+    <string name="text_led_lights_open_title">Ambient LED</string>
+    <string name="force_landscape_mode_text">Force Landscape</string>
+    <string name="text_theme_mode_title">Theme Mode</string>
+    <string name="text_system_theme">System Theme</string>
+    <string name="text_light_theme">Light Theme</string>
+    <string name="text_dark_theme">Dark Theme</string>
     <string name="tip_title_text">Tip</string>
-    <string name="toast_clean_process_result">Cleaned %1$d processes, remaining memory %2$s</string>
-    <string name="toast_clean_process_successful">Cleanup successful</string>
-    <string name="virtual_keyboard_text">Keyboard</string>
-
-    <!-- Overlay UI String Keys -->
-    <string name="dual_screen_display">Dual Screen</string>
-    <string name="just_screen_above">Top only</string>
-    <string name="just_screen_below">Bottom only</string>
-    <string name="close_screen">Close bottom\nscreen</string>
-    <string name="dual_screen_brightness">Dual Screen\nBrightness</string>
-    <string name="screen_above_brightness">Top Screen\nBrightness</string>
-    <string name="screen_below_brightness">Bottom Screen\nBrightness</string>
-    <string name="master_volume">Main\nVolume</string>
-    <string name="sub_volume">Secondary\nVolume</string>
-    <string name="screen_focus_lock_switchable">Focus Mode\nAuto-lock</string>
-    <string name="screen_focus_lock_upper">Focus Mode\nTop screen</string>
-    <string name="screen_focus_lock_lower">Focus Mode\nBottom screen</string>
-    <string name="normal_mode">Standard\nPerformance</string>
-    <string name="performance_mode">Medium\nPerformance</string>
-    <string name="height_performance_mode">High\nPerformance</string>
-    <string name="close">Turned Off</string>
-    <string name="fan_off_mode">Fan Control\nTurned Off</string>
-    <string name="fan_quiet_mode">Quiet Mode</string>
-    <string name="fan_smart_mode">Smart Mode</string>
-    <string name="fan_sport_mode">Sports Mode</string>
-    <string name="fan_custom_mode">Custom</string>
-    <string name="ban_on_use">Handle Style\nBan On Use</string>
-    <string name="controller_xbox_style">XBox Style</string>
-    <string name="controller_odin_style">Standard Style</string>
-    <string name="charging_separation">Direct Power\nSupply</string>
-    <string name="vibrate">Vibration</string>
-    <string name="clean_acceleration">Clean\nMemory</string>
-    <string name="ambient_light">Ambient\nLED</string>
-    <string name="force_landscape">Force\nLandscape</string>
-    <string name="system_theme_mode">System\nTheme</string>
-    <string name="pure_black_theme_mode">Pure Black\nTheme</string>
-    <string name="light_theme_mode">Light\nTheme</string>
-    <string name="dark_theme_mode">Dark\nTheme</string>
-    <string name="screen_control">Mode</string>
-    <string name="task_manage">Tasks</string>
-    <string name="system_set">Settings</string>
-    <string name="tip">Tip</string>
-    <string name="wake_up_screen_tip">When the secondary screen is turned off, you can press the AYN key to wake up the screen.</string>
-    <string name="no_more_tip">Do not show again</string>
+    <string name="tip_dialog_cb_text_no_more_tip">Do not show again</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
-    <string name="Cleaned_up_memory">Cleaned %1$d processes, remaining memory %2$s</string>
-    <string name="Cleaned_best">Cleanup successful</string>
+
+    <!-- Overlay Extended Quick Toggle Labels & Dialogs -->
+    <string name="qs_label_screen_cast_casting">Casting</string>
+    <string name="qs_label_screen_cast_connecting">Connecting…</string>
+    <string name="qs_label_touch_locked">Touch Locked</string>
+    <string name="qs_label_screenshot_top">Screenshot: Top</string>
+    <string name="qs_label_screenshot_bottom">Screenshot: Bottom</string>
+    <string name="qs_label_screenshot_both">Screenshot: Both</string>
+    <string name="qs_label_screen_record_stop">Stop (%1$s)</string>
+    <string name="qs_label_trigger_analog">Trigger: Analog</string>
+    <string name="qs_label_trigger_digital">Trigger: Digital</string>
+    <string name="qs_label_trigger_both">Trigger: Both</string>
+    <string name="dialog_theme_stock_format">%1$s (Stock)</string>
+    <string name="dialog_theme_sync_format">%1$s (%2$s)</string>
+    <string name="dialog_trigger_mode_title">L2 / R2 Trigger Mode</string>
+    <string name="dialog_trigger_mode_both">Both (Analog + Digital)</string>
+    <string name="dialog_trigger_mode_analog">Analog Only</string>
+    <string name="dialog_trigger_mode_digital">Digital Only</string>
+    <string name="dialog_screenshot_title">Capture Screenshot</string>
+    <string name="dialog_screen_target_top">Top Screen</string>
+    <string name="dialog_screen_target_bottom">Bottom Screen</string>
+    <string name="dialog_screen_target_both">Both Screens</string>
+    <string name="dialog_screenshot_set_as_default">Set as default</string>
+    <string name="dialog_screen_record_title">Record Screen</string>
+    <string name="dialog_screen_record_internal_audio">Internal Game Audio</string>
+    <string name="dialog_screen_record_microphone">Microphone</string>
+    <string name="dialog_screen_record_frame_rate">Frame Rate</string>
+    <string name="dialog_screen_record_fps_option">%1$d FPS</string>
+    <string name="dialog_theme_inject_os_colors">Inject Theme Colors into OS</string>
+    <string name="dialog_fan_speed_cd">Fan Speed</string>
+
+    <!-- Overlay Toasts -->
+    <plurals name="toast_clean_process_result">
+        <item quantity="one">Cleaned %1$d process, remaining memory %2$s</item>
+        <item quantity="other">Cleaned %1$d processes, remaining memory %2$s</item>
+    </plurals>
+    <string name="toast_clean_process_successful">Cleanup successful</string>
+    <plurals name="toast_cleared_recent_apps">
+        <item quantity="one">Cleared %1$d recent app</item>
+        <item quantity="other">Cleared %1$d recent apps</item>
+    </plurals>
+    <string name="toast_cleared_recent_apps_zero">Cleared recent apps</string>
+    <string name="toast_clear_recent_apps_failed">Failed to clear recent apps</string>
+    <string name="toast_swapped_screens">Swapped apps between screens</string>
+    <string name="toast_swap_screens_none">No movable foreground apps to swap</string>
+    <string name="toast_touch_lock_enabled_assistant">Bottom screen touch locked (open Assistant to unlock)</string>
+    <string name="toast_touch_lock_enabled_manager">Bottom screen touch locked (open Manager to unlock)</string>
+    <string name="toast_touch_lock_disabled">Bottom screen touch unlocked</string>
+    <string name="toast_screenshot_top_saved">Saved Top screen screenshot to Pictures/Screenshots</string>
+    <string name="toast_screenshot_bottom_saved">Saved Bottom screen screenshot to Pictures/Screenshots</string>
+    <string name="toast_screenshot_both_saved">Saved Both screens screenshot to Pictures/Screenshots</string>
+    <string name="toast_screenshot_top_failed">Failed to capture Top screen screenshot</string>
+    <string name="toast_screenshot_bottom_failed">Failed to capture Bottom screen screenshot</string>
+    <string name="toast_screenshot_both_failed">Failed to capture Both screens screenshot</string>
+    <string name="toast_recording_low_storage_start">Insufficient storage (&lt;250 MB) to start recording</string>
+    <string name="toast_recording_start_failed">Failed to start screen recording</string>
+    <string name="toast_recording_saved_to_movies">Saved recording to Movies/ScreenRecordings</string>
+    <string name="toast_recording_saved_low_storage">Recording saved (stopped: low storage)</string>
+    <string name="toast_recording_stopped">Screen recording stopped</string>
+    <string name="toast_cast_settings_unavailable">Cast settings unavailable on this device</string>
+    <string name="toast_cast_choose_on_top">Choose a Cast device on Top Screen</string>
+    <string name="toast_screen_cast_disconnect_failed">Unable to disconnect screen cast</string>
+    <string name="toast_screen_cast_disconnected_device">Disconnected from %1$s</string>
+    <string name="toast_screen_cast_disconnected">Disconnected screen cast</string>
+    <string name="toast_clustertune_not_installed">ClusterTune is not installed</string>
+    <string name="toast_clustertune_top_screen_off">Top screen is off — switch to Dual or Top screen first</string>
+    <string name="toast_clustertune_overlay_permission_denied">Enable overlay permission in ClusterTune first</string>
+    <string name="toast_clustertune_open_failed">Failed to open ClusterTune</string>
+
+    <!-- Quick Setting Categories & Tiles Metadata -->
+    <string name="qs_cat_stock_title">Stock %1$s Toggles</string>
+    <string name="qs_cat_stock_desc">Built-in %1$s Dual Screen Assistant quick settings (on by default)</string>
+    <string name="qs_cat_android_system_title">Android System Toggles</string>
+    <string name="qs_cat_android_system_desc">Standard Android radio, notification, and display controls (off by default)</string>
+    <string name="qs_cat_tools_title">Tools</string>
+    <string name="qs_cat_tools_desc">Dual-screen multi-tasking utilities and %1$s hardware tools (off by default)</string>
+
+    <string name="qs_tile_focus_lock_title">Key Focus Lock</string>
+    <string name="qs_tile_focus_lock_desc">Switch gamepad focus between top screen, bottom screen, or touch-switchable mode</string>
+    <string name="qs_tile_performance_mode_title">Performance Mode</string>
+    <string name="qs_tile_performance_mode_desc">Switch between Normal, Performance, and High Performance profiles</string>
+    <string name="qs_tile_fan_control_title">Fan Control</string>
+    <string name="qs_tile_fan_control_desc">Configure cooling fan profile or custom fan speed</string>
+    <string name="qs_tile_clear_memory_title">Clear Memory</string>
+    <string name="qs_tile_clear_memory_desc">Free background RAM and close non-essential background processes</string>
+    <string name="qs_tile_controller_style_title">Controller Style</string>
+    <string name="qs_tile_controller_style_desc">Switch between Xbox, %1$s, or Disabled gamepad button layout</string>
+    <string name="qs_tile_charging_separation_title">Charging Separation</string>
+    <string name="qs_tile_charging_separation_desc">Bypass battery charging and power the device directly from USB-C</string>
+    <string name="qs_tile_vibration_title">Vibration</string>
+    <string name="qs_tile_vibration_desc">Toggle system haptic feedback and vibration</string>
+    <string name="qs_tile_ambient_light_title">LED Lights</string>
+    <string name="qs_tile_ambient_light_desc">Toggle joystick and side ambient RGB lighting</string>
+    <string name="qs_tile_force_landscape_title">Force Landscape</string>
+    <string name="qs_tile_force_landscape_desc">Force bottom-screen apps into landscape orientation</string>
+    <string name="qs_tile_theme_mode_title">Theme Mode</string>
+    <string name="qs_tile_theme_mode_desc">Switch assistant overlay and system theme palette</string>
+    <string name="qs_tile_theme_mode_desc_manager">Switch manager overlay and system theme palette</string>
+    <string name="qs_tile_wifi_title">Wi-Fi</string>
+    <string name="qs_tile_wifi_desc">Toggle Wi-Fi wireless network connection</string>
+    <string name="qs_tile_bluetooth_title">Bluetooth</string>
+    <string name="qs_tile_bluetooth_desc">Toggle Bluetooth adapter state</string>
+    <string name="qs_tile_dnd_title">Do Not Disturb</string>
+    <string name="qs_tile_dnd_desc">Silence notifications and alerts while gaming</string>
+    <string name="qs_tile_airplane_mode_title">Airplane Mode</string>
+    <string name="qs_tile_airplane_mode_desc">Disable all wireless radios to save battery</string>
+    <string name="qs_tile_screen_cast_title">Screen Cast</string>
+    <string name="qs_tile_screen_cast_desc">Cast screen wirelessly via Chromecast or Miracast, or disconnect active cast</string>
+    <string name="qs_tile_touch_lock_title">Touch Lock</string>
+    <string name="qs_tile_touch_lock_desc">Disable bottom-screen touch input while keeping the display visible</string>
+    <string name="qs_tile_screenshot_title">Screenshot</string>
+    <string name="qs_tile_screenshot_desc">Capture a screenshot of the Top, Bottom, or Both screens</string>
+    <string name="qs_tile_screen_record_title">Screen Record</string>
+    <string name="qs_tile_screen_record_desc">Record video and audio of the Top, Bottom, or Both screens</string>
+    <string name="qs_tile_trigger_mode_title">Trigger Mode</string>
+    <string name="qs_tile_trigger_mode_desc">Switch L2/R2 trigger input mode between Analog, Digital, and Both</string>
+    <string name="qs_tile_charge_limit_80_title" formatted="false">80% Charge Limit</string>
+    <string name="qs_tile_charge_limit_80_desc" formatted="false">Cap battery charging at 80% to preserve long-term battery health</string>
+    <string name="qs_tile_gamepad_mouse_mode_title">Mouse Mode</string>
+    <string name="qs_tile_gamepad_mouse_mode_desc">Toggle virtual gamepad-to-mouse cursor mode</string>
+    <string name="qs_tile_key_mapper_title">Key Mapper</string>
+    <string name="qs_tile_key_mapper_desc">Toggle %1$s screen key mapping (Key Adapter)</string>
+    <string name="qs_tile_keep_screen_on_title">Keep Screen On</string>
+    <string name="qs_tile_keep_screen_on_desc">Prevent screens from sleeping due to inactivity</string>
+    <string name="qs_tile_prevent_accidental_home_title">Home Lock</string>
+    <string name="qs_tile_prevent_accidental_home_desc">Prevent accidental Home button presses during gameplay</string>
+    <string name="qs_tile_clear_all_tasks_title">Clear All Tasks</string>
+    <string name="qs_tile_clear_all_tasks_desc">Close all recent app tasks cleanly without killing background services</string>
+    <string name="qs_tile_cluster_tune_title" translatable="false">ClusterTune</string>
+    <string name="qs_tile_cluster_tune_desc">Open ClusterTune profile picker popup on the top screen</string>
+
+    <!-- Themes & UI Look -->
+    <string name="ui_look_auto">Auto</string>
+    <string name="ui_look_auto_with_native">Auto (%1$s)</string>
+    <string name="ui_look_ayn_smooth">AYN Smooth</string>
+    <string name="ui_look_ayn_short">AYN</string>
+    <string name="ui_look_retroid_pixel">Retroid Pixel</string>
+    <string name="ui_look_retroid_short">Retroid</string>
+
+    <string name="theme_stock_system">Follow System (Stock)</string>
+    <string name="theme_stock_system_short">Follow System</string>
+    <string name="theme_stock_light">Light (Stock)</string>
+    <string name="theme_stock_light_short">Light</string>
+    <string name="theme_stock_dark">Dark (Stock)</string>
+    <string name="theme_stock_dark_short">Dark</string>
+    <string name="theme_sync_megingiard">Sync with Megingiard</string>
+    <string name="theme_sync_megingiard_short">Megingiard Sync</string>
+    <string name="theme_megingiard_dark">Dark</string>
+    <string name="theme_megingiard_dark_oled">Dark OLED</string>
+    <string name="theme_norse_forest">Norse Forest</string>
+    <string name="theme_mjolnir_steel">Mjölnir Steel</string>
+    <string name="theme_mjolnir_short">Mjölnir</string>
+    <string name="theme_valhalla_sunset">Valhalla Sunset</string>
+    <string name="theme_valhalla_short">Valhalla</string>
+    <string name="theme_aurora_borealis">Aurora Borealis</string>
+    <string name="theme_aurora_short">Aurora</string>
+    <string name="theme_retro_phosphor">Retro Phosphor</string>
+    <string name="theme_royal_asgard">Royal Asgard</string>
+    <string name="theme_source_stock">Stock</string>
+    <string name="theme_source_sync_megingiard">Sync with Megingiard</string>
+    <string name="theme_source_custom_palette">Custom Palette</string>
+
+    <!-- Companion Settings Categories & Sub-pages -->
+    <string name="settings_cat_general">General</string>
+    <string name="settings_cat_quick_toggles">Quick Toggles</string>
+    <string name="settings_cat_appearance">Appearance</string>
+    <string name="settings_cat_updates">Updates</string>
+    <string name="settings_cat_diagnostics">Diagnostics</string>
+    <string name="settings_subpage_custom_color">Custom Color</string>
+    <string name="settings_subpage_enable_disable">Enable / Disable</string>
+    <string name="settings_subpage_licenses">Licenses &amp; Notices</string>
+    <string name="settings_subpage_license_app">App License</string>
+    <string name="settings_subpage_license_fusion_pixel" translatable="false">Fusion Pixel</string>
+    <string name="settings_subpage_license_dosiyagi" translatable="false">DOSIyagiBoldface</string>
+    <string name="settings_subpage_license_androidx">AndroidX &amp; Compose</string>
+    <string name="settings_subpage_license_kotlin">Kotlin &amp; Coroutines</string>
+
+    <!-- Companion Settings: General -->
+    <string name="settings_replace_stock_title">Replace Stock Assistant</string>
+    <string name="settings_replace_stock_desc_active_ayn">Stock DualScreenAssistant is suppressed; physical AYN button opens %1$s</string>
+    <string name="settings_replace_stock_desc_active_retroid">Stock DualScreenAssistant is suppressed; physical Dual Screen button opens %1$s</string>
+    <string name="settings_replace_stock_desc_inactive_ayn">Stock DualScreenAssistant is currently active; enable to take over the physical AYN button</string>
+    <string name="settings_replace_stock_desc_inactive_retroid">Stock DualScreenAssistant is currently active; enable to take over the physical Dual Screen button</string>
+    <string name="settings_accurate_game_fps_title">Accurate Game FPS Counter</string>
+    <string name="settings_accurate_game_fps_desc">Measure real foreground game/app frame rate on the active display instead of the stock global SurfaceFlinger page-flip counter</string>
+    <string name="settings_cpu_max_speed_mode_title">CPU Max Speed Mode</string>
+    <string name="settings_cpu_max_speed_mode_desc">Show the chip\'s true hardware maximum (AYN Thor style) or the active Performance Mode speed limit (Retroid Duo style)</string>
+    <string name="settings_cpu_max_speed_perf_limit">Performance Mode Limit</string>
+    <string name="settings_cpu_max_speed_hardware_max">Hardware Maximum</string>
+    <string name="settings_temp_unit_title">Temperature Unit</string>
+    <string name="settings_temp_unit_desc">Display the overlay CPU temperature readout in Celsius (°C) or Fahrenheit (°F) — or tap the TEMP card directly</string>
+    <string name="settings_temp_unit_celsius">Celsius (°C)</string>
+    <string name="settings_temp_unit_fahrenheit">Fahrenheit (°F)</string>
+    <string name="settings_screenshot_display_title">Screenshot Display</string>
+    <string name="settings_screenshot_display_desc">Choose which display the Screenshot quick toggle captures immediately, or Ask Every Time to pick on each tap (long-press the toggle anytime to choose)</string>
+    <string name="settings_screenshot_ask_every_time">Ask Every Time</string>
+    <string name="settings_screenshot_top">Top Screen</string>
+    <string name="settings_screenshot_bottom">Bottom Screen</string>
+    <string name="settings_screenshot_both">Both Screens</string>
+    <string name="settings_show_edit_button_title">Show Edit Button in Overlay</string>
+    <string name="settings_show_edit_button_desc">Show an Edit button in the bottom navigation row that opens settings on the top screen while keeping the overlay open</string>
+    <string name="settings_remember_last_tab_title">Remember Last Open Tab</string>
+    <string name="settings_remember_last_tab_desc_assistant">Keep the last open overlay tab (Mode or Settings) in memory when reopening the assistant</string>
+    <string name="settings_remember_last_tab_desc_manager">Keep the last open overlay tab (Mode or Settings) in memory when reopening the manager</string>
+    <string name="settings_remember_last_qs_page_title">Remember Last Quick Toggle Panel</string>
+    <string name="settings_remember_last_qs_page_desc_assistant">Keep the last open quick toggle page in memory when switching tabs or reopening the assistant</string>
+    <string name="settings_remember_last_qs_page_desc_manager">Keep the last open quick toggle page in memory when switching tabs or reopening the manager</string>
+    <string name="settings_show_swap_screens_title">Show Swap Screens Button</string>
+    <string name="settings_show_swap_screens_desc">Display a 4th button in the Mode tab\'s screen control card to swap active foreground apps between Top and Bottom screens</string>
+    <string name="settings_show_led_slider_title">Show Stick LED Brightness Slider</string>
+    <string name="settings_show_led_slider_desc">Add a 4th brightness slider in the Mode tab to control joystick &amp; ambient LED brightness</string>
+    <string name="settings_confirm_close_bottom_title">Confirm Before Turning Off Bottom Screen</string>
+    <string name="settings_confirm_close_bottom_desc">Show the wake-up reminder dialog before blanking the bottom screen</string>
+    <string name="settings_promote_manager_title">Good job, assistant! You get a promotion!</string>
+    <string name="settings_promote_manager_desc_promoted">Promoted to Better Dual Screen Manager (toggle off to demote)</string>
+    <string name="settings_promote_manager_desc_unpromoted">Promote the app to Better Dual Screen Manager</string>
+    <string name="settings_toast_promoted">Congratulations on the promotion!</string>
+    <string name="settings_toast_demoted">Back to Assistant duty.</string>
+    <string name="settings_licenses_title">Licenses &amp; Third-Party Notices</string>
+    <string name="settings_licenses_desc">Source-Available app license and credits for bundled third-party fonts &amp; libraries</string>
+    <string name="settings_action_view">View</string>
+
+    <!-- Companion Settings: Quick Toggles -->
+    <string name="settings_qs_layout_title">Quick Settings Layout</string>
+    <string name="settings_qs_reorder_idle">Press A to reorder with D-pad, or tap a tile then tap a target slot to move</string>
+    <string name="settings_qs_reorder_moving">Moving \"%1$s\" — D-pad to reposition, A or B to drop</string>
+    <string name="settings_qs_reorder_selected">Selected #%1$d \"%2$s\" — A to grab &amp; move, B to exit</string>
+    <string name="settings_qs_reorder_fallback">Use D-pad to select a toggle, A to grab &amp; move, or B to exit</string>
+    <string name="settings_qs_pill_moving">Moving #%1$d</string>
+    <string name="settings_qs_pill_slot">Slot #%1$d</string>
+    <string name="settings_qs_pill_reorder">Reorder</string>
+    <string name="settings_qs_enable_disable_title">Enable / Disable Toggles</string>
+    <string name="settings_qs_enable_disable_desc">Configure %1$s, Android System toggles, and Tools</string>
+    <plurals name="settings_qs_active_count_pill">
+        <item quantity="one">%1$d / %2$d Active</item>
+        <item quantity="other">%1$d / %2$d Active</item>
+    </plurals>
+    <string name="settings_qs_reset_title">Reset Quick Toggles</string>
+    <string name="settings_qs_reset_confirm_title">Confirm Reset to Default</string>
+    <string name="settings_qs_reset_desc_modified">Restore default toggle order and category visibility</string>
+    <string name="settings_qs_reset_desc_default">All toggles are currently in their default order and visibility</string>
+    <string name="settings_qs_reset_confirm_desc">Press A again to reset toggle order and visibility, or B to cancel</string>
+    <string name="settings_action_reset">Reset</string>
+    <string name="settings_action_confirm_reset">Confirm Reset</string>
+    <plurals name="settings_qs_visibility_header">
+        <item quantity="one">Toggle Visibility (%1$d of %2$d Active)</item>
+        <item quantity="other">Toggle Visibility (%1$d of %2$d Active)</item>
+    </plurals>
+    <string name="settings_qs_visibility_desc">%1$s are enabled by default; Android System toggles and Tools are disabled by default. At least 1 toggle must remain enabled.</string>
+    <string name="settings_qs_category_count_header">%1$s (%2$d / %3$d)</string>
+    <string name="settings_qs_min_one_required">%1$s (At least 1 toggle must stay enabled)</string>
+
+    <!-- Companion Settings: Appearance -->
+    <string name="settings_theme_source_title">Theme Source</string>
+    <string name="settings_theme_source_desc_with_sync">Choose between Stock themes, live Megingiard sync, or standalone custom palettes</string>
+    <string name="settings_theme_source_desc_no_sync">Choose between Stock themes or standalone custom palettes</string>
+    <string name="settings_stock_theme_title">Stock Theme Mode</string>
+    <string name="settings_stock_theme_desc">Select the built-in %1$s Dual Screen Assistant appearance</string>
+    <string name="settings_megingiard_sync_title">Live Megingiard Theme Sync</string>
+    <string name="settings_megingiard_sync_desc">Synchronized with Megingiard (%1$s)</string>
+    <string name="settings_megingiard_sync_pill">SYNCED</string>
+    <string name="settings_custom_palette_title">Custom Palette</string>
+    <string name="settings_custom_palette_desc_assistant">Color scheme for launcher &amp; assistant overlay surfaces</string>
+    <string name="settings_custom_palette_desc_manager">Color scheme for launcher &amp; manager overlay surfaces</string>
+    <string name="settings_accent_color_title">Accent Color</string>
+    <string name="settings_accent_color_desc">Choose a preset highlight color for %1$s</string>
+    <string name="settings_custom_color_title">Custom Color</string>
+    <string name="settings_custom_color_desc">Fine-tune Hue, Saturation, and Brightness for a custom accent color</string>
+    <string name="settings_ui_look_title">Overlay UI Look</string>
+    <string name="settings_ui_look_desc">Use either the smooth AYN style or pixel-art Retroid style across all themes</string>
+    <string name="settings_retroid_readability_title">Improve Retroid Readability</string>
+    <string name="settings_retroid_readability_desc">Increase pixel font sizes across overlay tiles, sliders, telemetry readouts, and dialogs when using the Retroid UI look</string>
+    <string name="settings_inject_os_theme_title">Inject Theme Colors into OS</string>
+    <string name="settings_inject_os_theme_desc">Push active theme palette to Android SystemUI and Settings app via theme_customization_overlay_packages</string>
+
+    <!-- Companion Settings: Custom Color Sub-page -->
+    <string name="settings_color_hue_title">Hue</string>
+    <string name="settings_color_hue_desc">Base color angle on the color wheel</string>
+    <string name="settings_color_saturation_title">Saturation</string>
+    <string name="settings_color_saturation_desc">Color intensity from neutral gray to pure vivid color</string>
+    <string name="settings_color_brightness_title">Brightness</string>
+    <string name="settings_color_brightness_desc">Lightness of the accent color</string>
+    <string name="settings_color_undo_title">Undo Color Changes</string>
+    <string name="settings_color_undo_desc_changed">Revert from %1$s back to %2$s</string>
+    <string name="settings_color_undo_desc_unchanged">No unsaved color adjustments (%1$s)</string>
+    <string name="settings_color_action_undo">Undo</string>
+    <string name="settings_color_save_title">Save Color</string>
+    <string name="settings_color_save_desc">Apply %1$s as the custom accent color</string>
+
+    <!-- Companion Settings: Licenses & Notices -->
+    <string name="licenses_section_app">APPLICATION LICENSE</string>
+    <string name="licenses_app_desc">© 2026 Maik Thomalla / Stormpanda • Proprietary source-available license (free for personal, non-commercial use — not open-source)</string>
+    <string name="licenses_app_pill">Source-Available v1.0</string>
+    <string name="licenses_section_fonts">THIRD-PARTY OPEN-SOURCE FONTS</string>
+    <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
+    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Bundled pixel UI label font (res/font/tcc_pixel_label.ttf)</string>
+    <string name="licenses_fusion_pixel_action" translatable="false">SIL OFL 1.1</string>
+    <string name="licenses_dosiyagi_title">DOSIyagiBoldface</string>
+    <string name="licenses_dosiyagi_desc">© 2022 Damheo Lee • Bundled pixel readout font (res/font/tcc_pixel_display.ttf)</string>
+    <string name="licenses_dosiyagi_action">MIT (Font Only)</string>
+    <string name="licenses_section_libraries">THIRD-PARTY OPEN-SOURCE LIBRARIES</string>
+    <string name="licenses_androidx_title">AndroidX &amp; Jetpack Compose</string>
+    <string name="licenses_androidx_desc">© The Android Open Source Project • Android Jetpack &amp; Compose UI runtime (androidx.*)</string>
+    <string name="licenses_kotlin_title">Kotlin Standard Library &amp; Coroutines</string>
+    <string name="licenses_kotlin_desc">© 2010–2025 JetBrains s.r.o. &amp; contributors • Kotlin runtime &amp; coroutines (org.jetbrains.*)</string>
+    <string name="licenses_apache_action" translatable="false">Apache 2.0</string>
+    <string name="licenses_detail_app_title">Better Dual Screen Assistant Source-Available License v1.0</string>
+    <string name="licenses_detail_app_scope">Governs Better Dual Screen Assistant source code and APK builds (free for personal, non-commercial use).</string>
+    <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL Open Font License 1.1</string>
+    <string name="licenses_detail_fusion_pixel_scope">Font License Scope — Fusion Pixel Only: applies solely to bundled font res/font/tcc_pixel_label.ttf by TakWolf.</string>
+    <string name="licenses_detail_dosiyagi_title">DOSIyagiBoldface — MIT License (Font File Only)</string>
+    <string name="licenses_detail_dosiyagi_scope">Font License Scope — DOSIyagiBoldface Only: applies solely to res/font/tcc_pixel_display.ttf by Damheo Lee, NOT to Better Dual Screen Assistant.</string>
+    <string name="licenses_detail_androidx_title">AndroidX &amp; Jetpack Compose — Apache License 2.0</string>
+    <string name="licenses_detail_androidx_scope">Applies solely to unmodified Android Jetpack &amp; Jetpack Compose runtime libraries (androidx.*).</string>
+    <string name="licenses_detail_kotlin_title">Kotlin Standard Library &amp; Coroutines — Apache License 2.0</string>
+    <string name="licenses_detail_kotlin_scope">Applies solely to unmodified Kotlin Standard Library &amp; Kotlinx Coroutines runtime libraries (org.jetbrains.*).</string>
+    <string name="licenses_detail_default_title">License Notice</string>
+    <string name="licenses_link_github" translatable="false">GitHub ↗</string>
+    <string name="licenses_link_apache" translatable="false">Apache.org ↗</string>
+    <string name="licenses_link_open">Open ↗</string>
+    <string name="licenses_link_focused">A • %1$s</string>
+
+    <!-- Companion Settings: Diagnostics (Debug) -->
+    <string name="diag_privileged_helper_title">Privileged Helper (UID 0)</string>
+    <string name="diag_privileged_helper_desc">In-memory root Binder daemon handling display blanking, brightness, and uninstall recovery</string>
+    <string name="diag_status_connected">CONNECTED</string>
+    <string name="diag_status_disconnected">DISCONNECTED</string>
+    <string name="diag_pserver_title">PServerBinder Root Service</string>
+    <string name="diag_pserver_desc">%1$s firmware root command execution service in ServiceManager</string>
+    <string name="diag_status_available">AVAILABLE</string>
+    <string name="diag_status_unavailable">UNAVAILABLE</string>
+    <string name="diag_stock_process_title">Stock DualScreenAssistant Process</string>
+    <string name="diag_stock_process_desc">Ephemeral SIGSTOP suppression of %1$s</string>
+    <string name="diag_status_suppressed">SUPPRESSED</string>
+    <string name="diag_status_active">ACTIVE</string>
+    <string name="diag_megingiard_title">Megingiard Theme Provider</string>
+    <string name="diag_megingiard_desc">Connected to Megingiard theme provider (%1$s)</string>
+    <string name="diag_status_detected">DETECTED</string>
+    <string name="diag_reconnect_title">Reconnect Privileged Bridge</string>
+    <string name="diag_reconnect_desc">Re-establish UID 0 helper connection, re-grant permissions, and refresh status</string>
+    <string name="diag_action_refreshing">Refreshing…</string>
+    <string name="diag_action_reconnect">Reconnect</string>
+    <string name="diag_section_device_build">DEVICE &amp; BUILD</string>
+    <string name="diag_topology_title">%1$s Display Topology</string>
+    <string name="diag_topology_desc" tools:ignore="PluralsCandidate">Top Screen (displayId = %1$d): 1920×1080 • Bottom Screen (displayId = %2$d): %3$d×%4$d (%5$d dpi)</string>
+    <string name="diag_app_version_title">Application Version</string>
+    <string name="diag_font_credits_title">Third-Party Font Credits</string>
+    <string name="diag_font_credits_desc">Fusion Pixel © 2022 TakWolf (SIL OFL 1.1 — font only) • DOSIyagiBoldface © 2022 Damheo Lee (MIT License — font only)</string>
 
     <!-- Common Gamepad and Dialog Strings (Megingiard shared/ui) -->
     <string name="settings_close">Close</string>
@@ -137,8 +460,6 @@
     <string name="gamepad_reorder_empty">No items to reorder</string>
 
     <!-- Updates Settings (Megingiard parity) -->
-    <string name="settings_jump_updates">Updates</string>
-    <string name="settings_update_available_short">Update Available</string>
     <string name="settings_up_to_date">You are up-to-date!</string>
     <string name="settings_check_failed">Check Failed</string>
     <string name="settings_auto_update_check">Automatic Update Checks</string>
@@ -152,6 +473,5 @@
     <string name="help_settings_auto_update_desc">Check GitHub Releases once per session for newer app versions</string>
     <string name="help_settings_add_to_obtainium_desc">Open Obtainium to track and install Better Dual Screen Assistant updates automatically from GitHub</string>
     <string name="help_settings_add_to_obtainium_manager_desc">Open Obtainium to track and install Better Dual Screen Manager updates automatically from GitHub</string>
-    <string name="gamepad_action_check">Check</string>
     <string name="gamepad_action_checking">Checking</string>
 </resources>

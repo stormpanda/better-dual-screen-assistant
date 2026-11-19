@@ -14,6 +14,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -66,6 +67,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
@@ -127,9 +129,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -143,6 +147,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.AppLanguage
+import com.stormpanda.betterdualscreenassistant.system.LocaleHelper
 import com.stormpanda.betterdualscreenassistant.service.AssistantForegroundService
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingCategory
@@ -508,36 +514,36 @@ private fun resolveMegingiardAppColors(
 }
 
 private enum class LauncherCategory(
-    val title: String,
+    @param:StringRes val titleRes: Int,
     val icon: ImageVector
 ) {
-    GENERAL("General", Icons.Rounded.Tune),
-    QUICK_TOGGLES("Quick Toggles", Icons.Rounded.GridView),
-    APPEARANCE("Appearance", Icons.Rounded.Palette),
-    UPDATES("Updates", Icons.Rounded.SystemUpdate),
-    DIAGNOSTICS("Diagnostics", Icons.Rounded.HealthAndSafety)
+    GENERAL(R.string.settings_cat_general, Icons.Rounded.Tune),
+    QUICK_TOGGLES(R.string.settings_cat_quick_toggles, Icons.Rounded.GridView),
+    APPEARANCE(R.string.settings_cat_appearance, Icons.Rounded.Palette),
+    UPDATES(R.string.settings_cat_updates, Icons.Rounded.SystemUpdate),
+    DIAGNOSTICS(R.string.settings_cat_diagnostics, Icons.Rounded.HealthAndSafety)
 }
 
 private enum class LauncherSubPage(
     val parentCategory: LauncherCategory,
-    val breadcrumbTitle: String
+    @param:StringRes val breadcrumbTitleRes: Int
 ) {
-    CUSTOM_ACCENT(LauncherCategory.APPEARANCE, "Custom Color"),
-    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES, "Enable / Disable"),
-    LICENSES_OVERVIEW(LauncherCategory.GENERAL, "Licenses & Notices"),
-    LICENSE_APP(LauncherCategory.GENERAL, "App License"),
-    LICENSE_FUSION_PIXEL(LauncherCategory.GENERAL, "Fusion Pixel"),
-    LICENSE_DOSIYAGI(LauncherCategory.GENERAL, "DOSIyagiBoldface"),
-    LICENSE_ANDROIDX(LauncherCategory.GENERAL, "AndroidX & Compose"),
-    LICENSE_KOTLIN(LauncherCategory.GENERAL, "Kotlin & Coroutines")
+    CUSTOM_ACCENT(LauncherCategory.APPEARANCE, R.string.settings_subpage_custom_color),
+    ENABLE_DISABLE_TOGGLES(LauncherCategory.QUICK_TOGGLES, R.string.settings_subpage_enable_disable),
+    LICENSES_OVERVIEW(LauncherCategory.GENERAL, R.string.settings_subpage_licenses),
+    LICENSE_APP(LauncherCategory.GENERAL, R.string.settings_subpage_license_app),
+    LICENSE_FUSION_PIXEL(LauncherCategory.GENERAL, R.string.settings_subpage_license_fusion_pixel),
+    LICENSE_DOSIYAGI(LauncherCategory.GENERAL, R.string.settings_subpage_license_dosiyagi),
+    LICENSE_ANDROIDX(LauncherCategory.GENERAL, R.string.settings_subpage_license_androidx),
+    LICENSE_KOTLIN(LauncherCategory.GENERAL, R.string.settings_subpage_license_kotlin)
 }
 
 private enum class ThemeSourceOption(
-    val displayName: String
+    @param:StringRes val displayNameRes: Int
 ) {
-    STOCK("Stock"),
-    SYNC_MEGINGIARD("Sync with Megingiard"),
-    CUSTOM_PALETTE("Custom Palette")
+    STOCK(R.string.theme_source_stock),
+    SYNC_MEGINGIARD(R.string.theme_source_sync_megingiard),
+    CUSTOM_PALETTE(R.string.theme_source_custom_palette)
 }
 
 private val StockThemeOptions = listOf(
@@ -717,7 +723,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
             Spacer(modifier = Modifier.width(10.dp))
 
             Text(
-                text = if (promotedToManager) "BetterDualScreenManager" else "BetterDualScreenAssistant",
+                text = stringResource(
+                    if (promotedToManager) R.string.app_wordmark_manager else R.string.app_wordmark_assistant
+                ),
                 color = colors.onSurface,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -771,7 +779,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                 sidebarContent = {
                     categoryList.forEach { category ->
                         GamepadCategoryTile(
-                            title = category.title,
+                            title = stringResource(category.titleRes),
                             icon = category.icon,
                             selected = (currentSubPage?.parentCategory ?: selectedCategory) == category,
                             onClick = {
@@ -798,7 +806,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                             val subPage = stack.lastOrNull()
                             when (subPage) {
                                 null -> {
-                                GamepadDeck(title = selectedCategory.title) {
+                                GamepadDeck(title = stringResource(selectedCategory.titleRes)) {
                                     when (selectedCategory) {
                                         LauncherCategory.GENERAL -> {
                                             GeneralSettingsTabContent(
@@ -857,11 +865,13 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 onTogglePromotedToManager = { promoted ->
                                                     repo.setPromotedToManager(promoted)
                                                     DialogToastManager.show(
-                                                        if (promoted) {
-                                                            "Congratulations on the promotion!"
-                                                        } else {
-                                                            "Back to Assistant duty."
-                                                        }
+                                                        context.getString(
+                                                            if (promoted) {
+                                                                R.string.settings_toast_promoted
+                                                            } else {
+                                                                R.string.settings_toast_demoted
+                                                            }
+                                                        )
                                                     )
                                                 },
                                                 onOpenLicenses = {
@@ -968,8 +978,8 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                             LauncherSubPage.CUSTOM_ACCENT -> {
                                 GamepadDeck(
                                     breadcrumbs = listOf(
-                                        LauncherCategory.APPEARANCE.title,
-                                        "Custom Color"
+                                        stringResource(LauncherCategory.APPEARANCE.titleRes),
+                                        stringResource(LauncherSubPage.CUSTOM_ACCENT.breadcrumbTitleRes)
                                     )
                                 ) {
                                     CustomAccentSubPageContent(
@@ -987,8 +997,8 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                             LauncherSubPage.ENABLE_DISABLE_TOGGLES -> {
                                 GamepadDeck(
                                     breadcrumbs = listOf(
-                                        LauncherCategory.QUICK_TOGGLES.title,
-                                        "Enable / Disable"
+                                        stringResource(LauncherCategory.QUICK_TOGGLES.titleRes),
+                                        stringResource(LauncherSubPage.ENABLE_DISABLE_TOGGLES.breadcrumbTitleRes)
                                     )
                                 ) {
                                     EnableDisableTogglesSubPageContent(
@@ -1007,8 +1017,8 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                             LauncherSubPage.LICENSES_OVERVIEW -> {
                                 GamepadDeck(
                                     breadcrumbs = listOf(
-                                        LauncherCategory.GENERAL.title,
-                                        LauncherSubPage.LICENSES_OVERVIEW.breadcrumbTitle
+                                        stringResource(LauncherCategory.GENERAL.titleRes),
+                                        stringResource(LauncherSubPage.LICENSES_OVERVIEW.breadcrumbTitleRes)
                                     )
                                 ) {
                                     LicensesOverviewSubPageContent(
@@ -1026,9 +1036,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                             LauncherSubPage.LICENSE_KOTLIN -> {
                                 GamepadDeck(
                                     breadcrumbs = listOf(
-                                        LauncherCategory.GENERAL.title,
-                                        LauncherSubPage.LICENSES_OVERVIEW.breadcrumbTitle,
-                                        subPage.breadcrumbTitle
+                                        stringResource(LauncherCategory.GENERAL.titleRes),
+                                        stringResource(LauncherSubPage.LICENSES_OVERVIEW.breadcrumbTitleRes),
+                                        stringResource(subPage.breadcrumbTitleRes)
                                     ),
                                     scrollable = false
                                 ) {
@@ -1102,8 +1112,6 @@ private fun GeneralSettingsTabContent(
     val appDisplayName = stringResource(
         if (promotedToManager) R.string.app_name_manager else R.string.app_name
     )
-    val roleLower = if (promotedToManager) "manager" else "assistant"
-    val physicalButtonLabel = profile.physicalButtonLabel
 
     if (updateAvailable && latestReleaseInfo != null) {
         GamepadActionCard(
@@ -1118,11 +1126,11 @@ private fun GeneralSettingsTabContent(
     }
 
     GamepadToggleCard(
-        title = "Replace Stock Assistant",
+        title = stringResource(R.string.settings_replace_stock_title),
         description = if (stockDisabled) {
-            "Stock DualScreenAssistant is suppressed; $physicalButtonLabel opens $appDisplayName"
+            stringResource(profile.replaceStockDescActiveRes, appDisplayName)
         } else {
-            "Stock DualScreenAssistant is currently active; enable to take over the $physicalButtonLabel"
+            stringResource(profile.replaceStockDescInactiveRes)
         },
         checked = stockDisabled,
         icon = Icons.Rounded.Layers,
@@ -1130,46 +1138,81 @@ private fun GeneralSettingsTabContent(
         modifier = Modifier.firstDeckItem(isFirst = !updateAvailable || latestReleaseInfo == null)
     )
 
+    if (AppLanguage.hasSelectableTranslations) {
+        val configuration = LocalConfiguration.current
+        val languages = AppLanguage.entries
+        var selectedLanguage by remember(context, configuration) {
+            mutableStateOf(LocaleHelper.currentLanguage(context))
+        }
+        GamepadChoiceCard(
+            title = stringResource(R.string.settings_language),
+            description = stringResource(R.string.settings_language_desc),
+            selectedText = selectedLanguage.displayLabel(context),
+            icon = Icons.Rounded.Language,
+            itemKey = "settings_language",
+            onPrevious = {
+                val prev = languages.cycle(selectedLanguage, BumperDirection.PREV)
+                selectedLanguage = prev
+                LocaleHelper.applyLanguage(context, prev)
+            },
+            onNext = {
+                val next = languages.cycle(selectedLanguage, BumperDirection.NEXT)
+                selectedLanguage = next
+                LocaleHelper.applyLanguage(context, next)
+            }
+        )
+    }
+
     GamepadToggleCard(
-        title = "Accurate Game FPS Counter",
-        description = "Measure real foreground game/app frame rate on the active display instead of the stock global SurfaceFlinger page-flip counter",
+        title = stringResource(R.string.settings_accurate_game_fps_title),
+        description = stringResource(R.string.settings_accurate_game_fps_desc),
         checked = accurateGameFps,
         icon = Icons.Rounded.Speed,
         onCheckedChange = onToggleAccurateGameFps
     )
 
     GamepadChoiceCard(
-        title = "CPU Max Speed Mode",
-        description = "Show the chip's true hardware maximum (AYN Thor style) or the active Performance Mode speed limit (Retroid Duo style)",
-        selectedText = if (cpuFreqScalingMode) "Performance Mode Limit" else "Hardware Maximum",
+        title = stringResource(R.string.settings_cpu_max_speed_mode_title),
+        description = stringResource(R.string.settings_cpu_max_speed_mode_desc),
+        selectedText = stringResource(
+            if (cpuFreqScalingMode) {
+                R.string.settings_cpu_max_speed_perf_limit
+            } else {
+                R.string.settings_cpu_max_speed_hardware_max
+            }
+        ),
         icon = Icons.Rounded.DeveloperBoard,
         onPrevious = { onSetCpuFreqScalingMode(!cpuFreqScalingMode) },
         onNext = { onSetCpuFreqScalingMode(!cpuFreqScalingMode) }
     )
 
     GamepadChoiceCard(
-        title = "Temperature Unit",
-        description = "Display the overlay CPU temperature readout in Celsius (°C) or Fahrenheit (°F) — or tap the TEMP card directly",
-        selectedText = if (tempFahrenheit) "Fahrenheit (°F)" else "Celsius (°C)",
+        title = stringResource(R.string.settings_temp_unit_title),
+        description = stringResource(R.string.settings_temp_unit_desc),
+        selectedText = stringResource(
+            if (tempFahrenheit) {
+                R.string.settings_temp_unit_fahrenheit
+            } else {
+                R.string.settings_temp_unit_celsius
+            }
+        ),
         icon = Icons.Rounded.Thermostat,
         onPrevious = { onSetTempFahrenheit(!tempFahrenheit) },
         onNext = { onSetTempFahrenheit(!tempFahrenheit) }
     )
 
-    val screenshotTargetModes = remember {
-        listOf(
-            SystemSettingsRepository.SCREENSHOT_TARGET_ASK to "Ask Every Time",
-            SystemSettingsRepository.SCREENSHOT_TARGET_TOP to "Top Screen",
-            SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM to "Bottom Screen",
-            SystemSettingsRepository.SCREENSHOT_TARGET_BOTH to "Both Screens"
-        )
-    }
+    val screenshotTargetModes = listOf(
+        SystemSettingsRepository.SCREENSHOT_TARGET_ASK to stringResource(R.string.settings_screenshot_ask_every_time),
+        SystemSettingsRepository.SCREENSHOT_TARGET_TOP to stringResource(R.string.settings_screenshot_top),
+        SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM to stringResource(R.string.settings_screenshot_bottom),
+        SystemSettingsRepository.SCREENSHOT_TARGET_BOTH to stringResource(R.string.settings_screenshot_both)
+    )
     val currentScreenshotIndex = screenshotTargetModes
         .indexOfFirst { it.first == screenshotTargetMode }
         .coerceAtLeast(0)
     GamepadChoiceCard(
-        title = "Screenshot Display",
-        description = "Choose which display the Screenshot quick toggle captures immediately, or Ask Every Time to pick on each tap (long-press the toggle anytime to choose)",
+        title = stringResource(R.string.settings_screenshot_display_title),
+        description = stringResource(R.string.settings_screenshot_display_desc),
         selectedText = screenshotTargetModes[currentScreenshotIndex].second,
         icon = Icons.Rounded.Screenshot,
         onPrevious = {
@@ -1183,32 +1226,44 @@ private fun GeneralSettingsTabContent(
     )
 
     GamepadToggleCard(
-        title = "Show Edit Button in Overlay",
-        description = "Show an Edit button in the bottom navigation row that opens settings on the top screen while keeping the overlay open",
+        title = stringResource(R.string.settings_show_edit_button_title),
+        description = stringResource(R.string.settings_show_edit_button_desc),
         checked = showEditButton,
         icon = Icons.Rounded.Edit,
         onCheckedChange = onToggleShowEditButton
     )
 
     GamepadToggleCard(
-        title = "Remember Last Open Tab",
-        description = "Keep the last open overlay tab (Mode or Settings) in memory when reopening the $roleLower",
+        title = stringResource(R.string.settings_remember_last_tab_title),
+        description = stringResource(
+            if (promotedToManager) {
+                R.string.settings_remember_last_tab_desc_manager
+            } else {
+                R.string.settings_remember_last_tab_desc_assistant
+            }
+        ),
         checked = rememberLastTab,
         icon = Icons.Rounded.Tab,
         onCheckedChange = onToggleRememberLastTab
     )
 
     GamepadToggleCard(
-        title = "Remember Last Quick Toggle Panel",
-        description = "Keep the last open quick toggle page in memory when switching tabs or reopening the $roleLower",
+        title = stringResource(R.string.settings_remember_last_qs_page_title),
+        description = stringResource(
+            if (promotedToManager) {
+                R.string.settings_remember_last_qs_page_desc_manager
+            } else {
+                R.string.settings_remember_last_qs_page_desc_assistant
+            }
+        ),
         checked = rememberLastQuickTogglePage,
         icon = Icons.Rounded.GridView,
         onCheckedChange = onToggleRememberLastQuickTogglePage
     )
 
     GamepadToggleCard(
-        title = "Show Swap Screens Button",
-        description = "Display a 4th button in the Mode tab's screen control card to swap active foreground apps between Top and Bottom screens",
+        title = stringResource(R.string.settings_show_swap_screens_title),
+        description = stringResource(R.string.settings_show_swap_screens_desc),
         checked = showSwapScreensButton,
         icon = Icons.Rounded.Sync,
         onCheckedChange = onToggleShowSwapScreensButton
@@ -1216,8 +1271,8 @@ private fun GeneralSettingsTabContent(
 
     if (profile.supportsAmbientLight) {
         GamepadToggleCard(
-            title = "Show Stick LED Brightness Slider",
-            description = "Add a 4th brightness slider in the Mode tab to control joystick & ambient LED brightness",
+            title = stringResource(R.string.settings_show_led_slider_title),
+            description = stringResource(R.string.settings_show_led_slider_desc),
             checked = showLedBrightnessSlider,
             icon = Icons.Rounded.Tune,
             onCheckedChange = onToggleShowLedBrightnessSlider
@@ -1225,30 +1280,32 @@ private fun GeneralSettingsTabContent(
     }
 
     GamepadToggleCard(
-        title = "Confirm Before Turning Off Bottom Screen",
-        description = "Show the wake-up reminder dialog before blanking the bottom screen",
+        title = stringResource(R.string.settings_confirm_close_bottom_title),
+        description = stringResource(R.string.settings_confirm_close_bottom_desc),
         checked = showCloseBottomScreenTip,
         icon = Icons.Rounded.NotificationsActive,
         onCheckedChange = onToggleCloseBottomScreenTip
     )
 
     GamepadToggleCard(
-        title = "Good job, assistant! You get a promotion!",
-        description = if (promotedToManager) {
-            "Promoted to Better Dual Screen Manager (toggle off to demote)"
-        } else {
-            "Promote the app to Better Dual Screen Manager"
-        },
+        title = stringResource(R.string.settings_promote_manager_title),
+        description = stringResource(
+            if (promotedToManager) {
+                R.string.settings_promote_manager_desc_promoted
+            } else {
+                R.string.settings_promote_manager_desc_unpromoted
+            }
+        ),
         checked = promotedToManager,
         icon = Icons.Rounded.WorkspacePremium,
         onCheckedChange = onTogglePromotedToManager
     )
 
     GamepadActionCard(
-        title = "Licenses & Third-Party Notices",
-        description = "Source-Available app license and credits for bundled third-party fonts & libraries",
+        title = stringResource(R.string.settings_licenses_title),
+        description = stringResource(R.string.settings_licenses_desc),
         icon = Icons.Rounded.Gavel,
-        actionText = "View",
+        actionText = stringResource(R.string.settings_action_view),
         itemKey = "licenses_and_notices",
         onClick = onOpenLicenses
     )
@@ -1296,6 +1353,7 @@ private fun QuickTogglesSettingsTabContent(
             supportedDisabled != supportedDefaultDisabled
     }
 
+    val context = LocalContext.current
     QuickTogglesVisualReorderCard(
         activeTiles = activeTiles,
         onMoveActiveTile = onMoveActiveTile,
@@ -1304,12 +1362,20 @@ private fun QuickTogglesSettingsTabContent(
     )
 
     GamepadActionCard(
-        title = "Enable / Disable Toggles",
-        description = "Configure ${QuickSettingCategory.STOCK_AYN.titleFor(profile)}, Android System toggles, and Tools",
+        title = stringResource(R.string.settings_qs_enable_disable_title),
+        description = stringResource(
+            R.string.settings_qs_enable_disable_desc,
+            QuickSettingCategory.STOCK_AYN.titleFor(context, profile)
+        ),
         icon = Icons.Rounded.Checklist,
         trailingContent = {
             GamepadPill(
-                text = "$activeCount / $totalCount Active",
+                text = pluralStringResource(
+                    R.plurals.settings_qs_active_count_pill,
+                    activeCount,
+                    activeCount,
+                    totalCount
+                ),
                 isAccent = supportedDisabled != supportedDefaultDisabled
             )
         },
@@ -1317,16 +1383,18 @@ private fun QuickTogglesSettingsTabContent(
     )
 
     GamepadTwoStepConfirmCard(
-        title = "Reset Quick Toggles",
-        confirmTitle = "Confirm Reset to Default",
-        description = if (isModified) {
-            "Restore default toggle order and category visibility"
-        } else {
-            "All toggles are currently in their default order and visibility"
-        },
-        confirmDescription = "Press A again to reset toggle order and visibility, or B to cancel",
-        actionText = "Reset",
-        confirmActionText = "Confirm Reset",
+        title = stringResource(R.string.settings_qs_reset_title),
+        confirmTitle = stringResource(R.string.settings_qs_reset_confirm_title),
+        description = stringResource(
+            if (isModified) {
+                R.string.settings_qs_reset_desc_modified
+            } else {
+                R.string.settings_qs_reset_desc_default
+            }
+        ),
+        confirmDescription = stringResource(R.string.settings_qs_reset_confirm_desc),
+        actionText = stringResource(R.string.settings_action_reset),
+        confirmActionText = stringResource(R.string.settings_action_confirm_reset),
         icon = Icons.Rounded.RestartAlt,
         enabled = isModified,
         isDestructive = true,
@@ -1442,17 +1510,20 @@ private fun QuickTogglesVisualReorderCard(
         handleBackStep()
     }
 
+    val context = LocalContext.current
     val currentTile = activeTiles.getOrNull(cursorIndex)
     val subtitle = when {
-        !isGridActive -> "Press A to reorder with D-pad, or tap a tile then tap a target slot to move"
-        isGrabbed && currentTile != null -> "Moving \"${currentTile.title}\" — D-pad to reposition, A or B to drop"
-        currentTile != null -> "Selected #${cursorIndex + 1} \"${currentTile.title}\" — A to grab & move, B to exit"
-        else -> "Use D-pad to select a toggle, A to grab & move, or B to exit"
+        !isGridActive -> stringResource(R.string.settings_qs_reorder_idle)
+        isGrabbed && currentTile != null ->
+            stringResource(R.string.settings_qs_reorder_moving, currentTile.title(context))
+        currentTile != null ->
+            stringResource(R.string.settings_qs_reorder_selected, cursorIndex + 1, currentTile.title(context))
+        else -> stringResource(R.string.settings_qs_reorder_fallback)
     }
     val pillText = when {
-        isGrabbed -> "Moving #${cursorIndex + 1}"
-        isGridActive -> "Slot #${cursorIndex + 1}"
-        else -> "Reorder"
+        isGrabbed -> stringResource(R.string.settings_qs_pill_moving, cursorIndex + 1)
+        isGridActive -> stringResource(R.string.settings_qs_pill_slot, cursorIndex + 1)
+        else -> stringResource(R.string.settings_qs_pill_reorder)
     }
 
     GamepadFocusCard(
@@ -1576,7 +1647,7 @@ private fun QuickTogglesVisualReorderCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             GamepadCardRow(
-                title = "Quick Settings Layout",
+                title = stringResource(R.string.settings_qs_layout_title),
                 description = subtitle,
                 icon = Icons.Rounded.GridView,
                 isFocused = isEffectivelyFocused || isGridActive,
@@ -1746,6 +1817,7 @@ private fun ReorderableTccTile(
     isGrabbed: Boolean,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val tccColors = LocalTccColors.current
     val appColors = LocalAppColors.current
     val lookSpec = LocalTccLookSpec.current
@@ -1825,7 +1897,7 @@ private fun ReorderableTccTile(
                 ) {
                     Image(
                         painter = painterResource(id = tccDrawable(tile.iconRes)),
-                        contentDescription = tile.title,
+                        contentDescription = tile.title(context),
                         colorFilter = ColorFilter.tint(iconTint),
                         modifier = Modifier.size(18.dp),
                         contentScale = ContentScale.Fit
@@ -1872,7 +1944,7 @@ private fun ReorderableTccTile(
                 contentAlignment = Alignment.TopCenter
             ) {
                 Text(
-                    text = tile.title,
+                    text = tile.gridTitle(context),
                     color = textColor,
                     fontSize = if (boost) 14.5.sp else 10.sp,
                     lineHeight = if (boost) 16.sp else 11.sp,
@@ -1900,6 +1972,7 @@ private fun EnableDisableTogglesSubPageContent(
     promotedToManager: Boolean,
     onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     val supportedTiles = remember(profile, isClusterTuneInstalled) {
         QuickSettingTileId.supportedEntries(profile, isClusterTuneInstalled)
     }
@@ -1908,8 +1981,16 @@ private fun EnableDisableTogglesSubPageContent(
     val enabledCount = supportedTiles.count { it !in disabledQuickTiles }
 
     GamepadInfoBox(
-        text = "Toggle Visibility ($enabledCount of $totalCount Active)",
-        description = "${QuickSettingCategory.STOCK_AYN.titleFor(profile)} are enabled by default; Android System toggles and Tools are disabled by default. At least 1 toggle must remain enabled."
+        text = pluralStringResource(
+            R.plurals.settings_qs_visibility_header,
+            enabledCount,
+            enabledCount,
+            totalCount
+        ),
+        description = stringResource(
+            R.string.settings_qs_visibility_desc,
+            QuickSettingCategory.STOCK_AYN.titleFor(context, profile)
+        )
     )
 
     var isFirstItem = true
@@ -1920,7 +2001,12 @@ private fun EnableDisableTogglesSubPageContent(
         val activeInCategory = categoryTiles.count { it !in disabledQuickTiles }
 
         GamepadSectionHeader(
-            text = "${category.titleFor(profile)} ($activeInCategory / ${categoryTiles.size})"
+            text = stringResource(
+                R.string.settings_qs_category_count_header,
+                category.titleFor(context, profile),
+                activeInCategory,
+                categoryTiles.size
+            )
         )
 
         categoryTiles.forEach { tile ->
@@ -1932,11 +2018,11 @@ private fun EnableDisableTogglesSubPageContent(
             } else {
                 Modifier
             }
-            val tileDescription = tile.descriptionFor(promotedToManager, profile)
+            val tileDescription = tile.descriptionFor(context, promotedToManager, profile)
             GamepadToggleCard(
-                title = tile.title,
+                title = tile.title(context),
                 description = if (!canToggle) {
-                    "$tileDescription (At least 1 toggle must stay enabled)"
+                    stringResource(R.string.settings_qs_min_one_required, tileDescription)
                 } else {
                     tileDescription
                 },
@@ -1971,6 +2057,7 @@ private fun AppearanceSettingsTabContent(
     onOpenCustomAccent: () -> Unit,
     onToggleInjectSystemTheme: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     val stockVendorName = profile.vendorName
     val selectedUiLookPref = TccUiLookPreference.fromId(uiLookMode)
     val isRetroidLookActive = selectedUiLookPref.resolve(profile) == TccUiLook.RETROID
@@ -2033,13 +2120,15 @@ private fun AppearanceSettingsTabContent(
     }
 
     GamepadChoiceCard(
-        title = "Theme Source",
-        description = if (isMegingiardAvailable) {
-            "Choose between Stock themes, live Megingiard sync, or standalone custom palettes"
-        } else {
-            "Choose between Stock themes or standalone custom palettes"
-        },
-        selectedText = activeSource.displayName,
+        title = stringResource(R.string.settings_theme_source_title),
+        description = stringResource(
+            if (isMegingiardAvailable) {
+                R.string.settings_theme_source_desc_with_sync
+            } else {
+                R.string.settings_theme_source_desc_no_sync
+            }
+        ),
+        selectedText = stringResource(activeSource.displayNameRes),
         icon = Icons.Rounded.Palette,
         onPrevious = {
             applyThemeSource(availableSources.cycle(activeSource, BumperDirection.PREV))
@@ -2053,9 +2142,9 @@ private fun AppearanceSettingsTabContent(
     when (activeSource) {
         ThemeSourceOption.STOCK -> {
             GamepadChoiceCard(
-                title = "Stock Theme Mode",
-                description = "Select the built-in $stockVendorName Dual Screen Assistant appearance",
-                selectedText = effectiveSelectedTheme.displayName,
+                title = stringResource(R.string.settings_stock_theme_title),
+                description = stringResource(R.string.settings_stock_theme_desc, stockVendorName),
+                selectedText = stringResource(effectiveSelectedTheme.displayNameRes),
                 icon = Icons.Rounded.ColorLens,
                 onPrevious = {
                     onSelectTheme(StockThemeOptions.cycle(effectiveSelectedTheme, BumperDirection.PREV))
@@ -2068,12 +2157,15 @@ private fun AppearanceSettingsTabContent(
 
         ThemeSourceOption.SYNC_MEGINGIARD -> {
             GamepadActionCard(
-                title = "Live Megingiard Theme Sync",
-                description = "Synchronized with Megingiard (${syncedMegingiardOption.displayName})",
+                title = stringResource(R.string.settings_megingiard_sync_title),
+                description = stringResource(
+                    R.string.settings_megingiard_sync_desc,
+                    stringResource(syncedMegingiardOption.displayNameRes)
+                ),
                 icon = Icons.Rounded.Sync,
                 trailingContent = {
                     GamepadPill(
-                        text = "SYNCED",
+                        text = stringResource(R.string.settings_megingiard_sync_pill),
                         isAccent = true
                     )
                 },
@@ -2082,11 +2174,16 @@ private fun AppearanceSettingsTabContent(
         }
 
         ThemeSourceOption.CUSTOM_PALETTE -> {
-            val roleLower = if (promotedToManager) "manager" else "assistant"
             GamepadChoiceCard(
-                title = "Custom Palette",
-                description = "Color scheme for launcher & $roleLower overlay surfaces",
-                selectedText = effectiveSelectedTheme.displayName,
+                title = stringResource(R.string.settings_custom_palette_title),
+                description = stringResource(
+                    if (promotedToManager) {
+                        R.string.settings_custom_palette_desc_manager
+                    } else {
+                        R.string.settings_custom_palette_desc_assistant
+                    }
+                ),
+                selectedText = stringResource(effectiveSelectedTheme.displayNameRes),
                 icon = Icons.Rounded.ColorLens,
                 onPrevious = {
                     onSelectTheme(MegingiardThemeOptions.cycle(effectiveSelectedTheme, BumperDirection.PREV))
@@ -2105,8 +2202,11 @@ private fun AppearanceSettingsTabContent(
             customAccentArgb == customSwatchColorArgb && accentColor !in MegingiardAccentPresets
 
         GamepadColorPaletteCard(
-            title = "Accent Color",
-            description = "Choose a preset highlight color for ${effectiveSelectedTheme.displayName}",
+            title = stringResource(R.string.settings_accent_color_title),
+            description = stringResource(
+                R.string.settings_accent_color_desc,
+                stringResource(effectiveSelectedTheme.displayNameRes)
+            ),
             icon = Icons.Rounded.FormatColorFill,
             paletteColors = MegingiardAccentPresets,
             selectedColor = accentColor,
@@ -2114,8 +2214,8 @@ private fun AppearanceSettingsTabContent(
         )
 
         GamepadActionCard(
-            title = "Custom Color",
-            description = "Fine-tune Hue, Saturation, and Brightness for a custom accent color",
+            title = stringResource(R.string.settings_custom_color_title),
+            description = stringResource(R.string.settings_custom_color_desc),
             icon = Icons.Rounded.Colorize,
             actionLeadingContent = {
                 GamepadColorSwatch(
@@ -2128,9 +2228,9 @@ private fun AppearanceSettingsTabContent(
     }
 
     GamepadChoiceCard(
-        title = "Overlay UI Look",
-        description = "Use either the smooth AYN style or pixel-art Retroid style across all themes",
-        selectedText = selectedUiLookPref.displayNameFor(profile),
+        title = stringResource(R.string.settings_ui_look_title),
+        description = stringResource(R.string.settings_ui_look_desc),
+        selectedText = selectedUiLookPref.displayNameFor(context, profile),
         icon = Icons.Rounded.Layers,
         onPrevious = {
             onSetUiLookMode(uiLookOptions.cycle(selectedUiLookPref, BumperDirection.PREV).id)
@@ -2141,8 +2241,8 @@ private fun AppearanceSettingsTabContent(
     )
 
     GamepadToggleCard(
-        title = "Improve Retroid Readability",
-        description = "Increase pixel font sizes across overlay tiles, sliders, telemetry readouts, and dialogs when using the Retroid UI look",
+        title = stringResource(R.string.settings_retroid_readability_title),
+        description = stringResource(R.string.settings_retroid_readability_desc),
         checked = retroidReadabilityBoost,
         enabled = isRetroidLookActive,
         icon = Icons.Rounded.Tune,
@@ -2150,8 +2250,8 @@ private fun AppearanceSettingsTabContent(
     )
 
     GamepadToggleCard(
-        title = "Inject Theme Colors into OS",
-        description = "Push active theme palette to Android SystemUI and Settings app via theme_customization_overlay_packages",
+        title = stringResource(R.string.settings_inject_os_theme_title),
+        description = stringResource(R.string.settings_inject_os_theme_desc),
         checked = injectSystemTheme,
         icon = Icons.Rounded.SettingsSuggest,
         onCheckedChange = onToggleInjectSystemTheme
@@ -2208,8 +2308,8 @@ private fun CustomAccentSubPageContent(
     }
 
     GamepadSliderCard(
-        title = "Hue",
-        description = "Base color angle on the color wheel",
+        title = stringResource(R.string.settings_color_hue_title),
+        description = stringResource(R.string.settings_color_hue_desc),
         value = hue,
         valueRange = 0f..360f,
         onValueChange = { hue = it },
@@ -2222,8 +2322,8 @@ private fun CustomAccentSubPageContent(
     )
 
     GamepadSliderCard(
-        title = "Saturation",
-        description = "Color intensity from neutral gray to pure vivid color",
+        title = stringResource(R.string.settings_color_saturation_title),
+        description = stringResource(R.string.settings_color_saturation_desc),
         value = sat,
         valueRange = 0f..1f,
         onValueChange = { sat = it },
@@ -2235,8 +2335,8 @@ private fun CustomAccentSubPageContent(
     )
 
     GamepadSliderCard(
-        title = "Brightness",
-        description = "Lightness of the accent color",
+        title = stringResource(R.string.settings_color_brightness_title),
+        description = stringResource(R.string.settings_color_brightness_desc),
         value = bri,
         valueRange = 0f..1f,
         onValueChange = { bri = it },
@@ -2248,11 +2348,11 @@ private fun CustomAccentSubPageContent(
     )
 
     GamepadActionCard(
-        title = "Undo Color Changes",
+        title = stringResource(R.string.settings_color_undo_title),
         description = if (hasChanges) {
-            "Revert from $workingHex back to $initialHex"
+            stringResource(R.string.settings_color_undo_desc_changed, workingHex, initialHex)
         } else {
-            "No unsaved color adjustments ($workingHex)"
+            stringResource(R.string.settings_color_undo_desc_unchanged, workingHex)
         },
         icon = Icons.AutoMirrored.Rounded.Undo,
         actionLeadingContent = {
@@ -2274,7 +2374,7 @@ private fun CustomAccentSubPageContent(
                 GamepadColorSwatch(color = initialColor, isSelected = true)
             }
         },
-        actionText = if (hasChanges) "Undo" else null,
+        actionText = if (hasChanges) stringResource(R.string.settings_color_action_undo) else null,
         enabled = hasChanges,
         onClick = {
             hue = initHsv[0]
@@ -2284,10 +2384,10 @@ private fun CustomAccentSubPageContent(
     )
 
     GamepadActionCard(
-        title = "Save Color",
-        description = "Apply $workingHex as the custom accent color",
+        title = stringResource(R.string.settings_color_save_title),
+        description = stringResource(R.string.settings_color_save_desc, workingHex),
         icon = Icons.Rounded.Save,
-        actionText = "Save",
+        actionText = stringResource(R.string.gamepad_action_save),
         onClick = { onSaveColor(workingColor) }
     )
 }
@@ -2384,15 +2484,15 @@ private fun UpdatesSettingsTabContent(
 private fun LicensesOverviewSubPageContent(
     onOpenLicenseDetail: (LauncherSubPage) -> Unit
 ) {
-    GamepadSectionHeader(text = "APPLICATION LICENSE")
+    GamepadSectionHeader(text = stringResource(R.string.licenses_section_app))
 
     GamepadActionCard(
-        title = "Better Dual Screen Assistant",
-        description = "© 2026 Maik Thomalla / Stormpanda • Proprietary source-available license (free for personal, non-commercial use — not open-source)",
+        title = stringResource(R.string.app_name),
+        description = stringResource(R.string.licenses_app_desc),
         icon = Icons.Rounded.Gavel,
         trailingContent = {
             GamepadPill(
-                text = "Source-Available v1.0",
+                text = stringResource(R.string.licenses_app_pill),
                 isAccent = true
             )
         },
@@ -2401,42 +2501,42 @@ private fun LicensesOverviewSubPageContent(
         onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_APP) }
     )
 
-    GamepadSectionHeader(text = "THIRD-PARTY OPEN-SOURCE FONTS")
+    GamepadSectionHeader(text = stringResource(R.string.licenses_section_fonts))
 
     GamepadActionCard(
-        title = "Fusion Pixel 12px Monospaced",
-        description = "© 2022 TakWolf • Bundled pixel UI label font (res/font/tcc_pixel_label.ttf)",
+        title = stringResource(R.string.licenses_fusion_pixel_title),
+        description = stringResource(R.string.licenses_fusion_pixel_desc),
         icon = Icons.Rounded.TextFields,
-        actionText = "SIL OFL 1.1",
+        actionText = stringResource(R.string.licenses_fusion_pixel_action),
         itemKey = "license_entry_fusion_pixel",
         onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_FUSION_PIXEL) }
     )
 
     GamepadActionCard(
-        title = "DOSIyagiBoldface",
-        description = "© 2022 Damheo Lee • Bundled pixel readout font (res/font/tcc_pixel_display.ttf)",
+        title = stringResource(R.string.licenses_dosiyagi_title),
+        description = stringResource(R.string.licenses_dosiyagi_desc),
         icon = Icons.Rounded.TextFields,
-        actionText = "MIT (Font Only)",
+        actionText = stringResource(R.string.licenses_dosiyagi_action),
         itemKey = "license_entry_dosiyagi",
         onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_DOSIYAGI) }
     )
 
-    GamepadSectionHeader(text = "THIRD-PARTY OPEN-SOURCE LIBRARIES")
+    GamepadSectionHeader(text = stringResource(R.string.licenses_section_libraries))
 
     GamepadActionCard(
-        title = "AndroidX & Jetpack Compose",
-        description = "© The Android Open Source Project • Android Jetpack & Compose UI runtime (androidx.*)",
+        title = stringResource(R.string.licenses_androidx_title),
+        description = stringResource(R.string.licenses_androidx_desc),
         icon = Icons.Rounded.Layers,
-        actionText = "Apache 2.0",
+        actionText = stringResource(R.string.licenses_apache_action),
         itemKey = "license_entry_androidx",
         onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_ANDROIDX) }
     )
 
     GamepadActionCard(
-        title = "Kotlin Standard Library & Coroutines",
-        description = "© 2010–2025 JetBrains s.r.o. & contributors • Kotlin runtime & coroutines (org.jetbrains.*)",
+        title = stringResource(R.string.licenses_kotlin_title),
+        description = stringResource(R.string.licenses_kotlin_desc),
         icon = Icons.Rounded.DeveloperBoard,
-        actionText = "Apache 2.0",
+        actionText = stringResource(R.string.licenses_apache_action),
         itemKey = "license_entry_kotlin",
         onClick = { onOpenLicenseDetail(LauncherSubPage.LICENSE_KOTLIN) }
     )
@@ -2488,9 +2588,9 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
                         "Free for personal, non-commercial use. See repository LICENSE for full terms."
                 )
                 LicenseDetailSpec(
-                    documentTitle = "Better Dual Screen Assistant Source-Available License v1.0",
-                    scopeBannerSummary = "Governs Better Dual Screen Assistant source code and APK builds (free for personal, non-commercial use).",
-                    linkActionLabel = "GitHub ↗",
+                    documentTitle = context.getString(R.string.licenses_detail_app_title),
+                    scopeBannerSummary = context.getString(R.string.licenses_detail_app_scope),
+                    linkActionLabel = context.getString(R.string.licenses_link_github),
                     linkUrl = "https://github.com/Stormpanda/better-dual-screen-assistant/blob/main/LICENSE",
                     fullBodyText = cleanLicenseDocumentText(appLicenseRaw)
                 )
@@ -2503,9 +2603,9 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
                 val oflText = extractThirdPartySection(noticesRaw, "=== SECTION: SIL_OFL_1_1 ===")
                     .ifEmpty { "SIL Open Font License, Version 1.1" }
                 LicenseDetailSpec(
-                    documentTitle = "Fusion Pixel 12px Monospaced — SIL Open Font License 1.1",
-                    scopeBannerSummary = "Font License Scope — Fusion Pixel Only: applies solely to bundled font res/font/tcc_pixel_label.ttf by TakWolf.",
-                    linkActionLabel = "GitHub ↗",
+                    documentTitle = context.getString(R.string.licenses_detail_fusion_pixel_title),
+                    scopeBannerSummary = context.getString(R.string.licenses_detail_fusion_pixel_scope),
+                    linkActionLabel = context.getString(R.string.licenses_link_github),
                     linkUrl = "https://github.com/TakWolf/fusion-pixel-font",
                     fullBodyText = "Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name \"Fusion Pixel\"\n" +
                         "Source: https://github.com/TakWolf/fusion-pixel-font\n\n" +
@@ -2520,9 +2620,9 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
                 val mitText = extractThirdPartySection(noticesRaw, "=== SECTION: DOSIYAGI_MIT ===")
                     .ifEmpty { "MIT License — Copyright (c) 2022 Damheo Lee (DOSIyagiBoldface font only)" }
                 LicenseDetailSpec(
-                    documentTitle = "DOSIyagiBoldface — MIT License (Font File Only)",
-                    scopeBannerSummary = "Font License Scope — DOSIyagiBoldface Only: applies solely to res/font/tcc_pixel_display.ttf by Damheo Lee, NOT to Better Dual Screen Assistant.",
-                    linkActionLabel = "GitHub ↗",
+                    documentTitle = context.getString(R.string.licenses_detail_dosiyagi_title),
+                    scopeBannerSummary = context.getString(R.string.licenses_detail_dosiyagi_scope),
+                    linkActionLabel = context.getString(R.string.licenses_link_github),
                     linkUrl = "https://github.com/leedheo/DOSIyagi",
                     fullBodyText = cleanLicenseDocumentText(mitText)
                 )
@@ -2530,9 +2630,9 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
 
             LauncherSubPage.LICENSE_ANDROIDX -> {
                 LicenseDetailSpec(
-                    documentTitle = "AndroidX & Jetpack Compose — Apache License 2.0",
-                    scopeBannerSummary = "Applies solely to unmodified Android Jetpack & Jetpack Compose runtime libraries (androidx.*).",
-                    linkActionLabel = "Apache.org ↗",
+                    documentTitle = context.getString(R.string.licenses_detail_androidx_title),
+                    scopeBannerSummary = context.getString(R.string.licenses_detail_androidx_scope),
+                    linkActionLabel = context.getString(R.string.licenses_link_apache),
                     linkUrl = "https://www.apache.org/licenses/LICENSE-2.0",
                     fullBodyText = "AndroidX & Jetpack Compose Runtime Libraries\n" +
                         "Copyright © The Android Open Source Project\n\n" +
@@ -2552,9 +2652,9 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
 
             LauncherSubPage.LICENSE_KOTLIN -> {
                 LicenseDetailSpec(
-                    documentTitle = "Kotlin Standard Library & Coroutines — Apache License 2.0",
-                    scopeBannerSummary = "Applies solely to unmodified Kotlin Standard Library & Kotlinx Coroutines runtime libraries (org.jetbrains.*).",
-                    linkActionLabel = "Apache.org ↗",
+                    documentTitle = context.getString(R.string.licenses_detail_kotlin_title),
+                    scopeBannerSummary = context.getString(R.string.licenses_detail_kotlin_scope),
+                    linkActionLabel = context.getString(R.string.licenses_link_apache),
                     linkUrl = "https://www.apache.org/licenses/LICENSE-2.0",
                     fullBodyText = "Kotlin Standard Library & Kotlinx Coroutines\n" +
                         "Copyright © 2010–2025 JetBrains s.r.o. and Kotlin Programming Language contributors\n\n" +
@@ -2570,9 +2670,9 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
 
             else -> {
                 LicenseDetailSpec(
-                    documentTitle = "License Notice",
+                    documentTitle = context.getString(R.string.licenses_detail_default_title),
                     scopeBannerSummary = "",
-                    linkActionLabel = "Open ↗",
+                    linkActionLabel = context.getString(R.string.licenses_link_open),
                     linkUrl = "https://github.com/Stormpanda/better-dual-screen-assistant",
                     fullBodyText = ""
                 )
@@ -2658,7 +2758,11 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
                 }
         ) {
             GamepadPill(
-                text = if (isFocused) "A • ${detailSpec.linkActionLabel}" else detailSpec.linkActionLabel,
+                text = if (isFocused) {
+                    stringResource(R.string.licenses_link_focused, detailSpec.linkActionLabel)
+                } else {
+                    detailSpec.linkActionLabel
+                },
                 isHighlighted = isFocused
             )
         }
@@ -2847,12 +2951,14 @@ private fun DiagnosticsSettingsTabContent(
     onReconnectAndRefresh: () -> Unit
 ) {
     GamepadActionCard(
-        title = "Privileged Helper (UID 0)",
-        description = "In-memory root Binder daemon handling display blanking, brightness, and uninstall recovery",
+        title = stringResource(R.string.diag_privileged_helper_title),
+        description = stringResource(R.string.diag_privileged_helper_desc),
         icon = Icons.Rounded.Security,
         trailingContent = {
             GamepadPill(
-                text = if (helperConnected) "CONNECTED" else "DISCONNECTED",
+                text = stringResource(
+                    if (helperConnected) R.string.diag_status_connected else R.string.diag_status_disconnected
+                ),
                 isAccent = helperConnected
             )
         },
@@ -2861,12 +2967,14 @@ private fun DiagnosticsSettingsTabContent(
     )
 
     GamepadActionCard(
-        title = "PServerBinder Root Service",
-        description = "${profile.displayName} firmware root command execution service in ServiceManager",
+        title = stringResource(R.string.diag_pserver_title),
+        description = stringResource(R.string.diag_pserver_desc, profile.displayName),
         icon = Icons.Rounded.DeveloperBoard,
         trailingContent = {
             GamepadPill(
-                text = if (pServerAvailable) "AVAILABLE" else "UNAVAILABLE",
+                text = stringResource(
+                    if (pServerAvailable) R.string.diag_status_available else R.string.diag_status_unavailable
+                ),
                 isAccent = pServerAvailable
             )
         },
@@ -2874,12 +2982,14 @@ private fun DiagnosticsSettingsTabContent(
     )
 
     GamepadActionCard(
-        title = "Stock DualScreenAssistant Process",
-        description = "Ephemeral SIGSTOP suppression of ${profile.stockAssistantPackage}",
+        title = stringResource(R.string.diag_stock_process_title),
+        description = stringResource(R.string.diag_stock_process_desc, profile.stockAssistantPackage),
         icon = Icons.Rounded.Layers,
         trailingContent = {
             GamepadPill(
-                text = if (stockDisabled) "SUPPRESSED" else "ACTIVE",
+                text = stringResource(
+                    if (stockDisabled) R.string.diag_status_suppressed else R.string.diag_status_active
+                ),
                 isAccent = stockDisabled
             )
         },
@@ -2888,12 +2998,15 @@ private fun DiagnosticsSettingsTabContent(
 
     if (isMegingiardAvailable) {
         GamepadActionCard(
-            title = "Megingiard Theme Provider",
-            description = "Connected to Megingiard theme provider (${syncedMegingiardOption.displayName})",
+            title = stringResource(R.string.diag_megingiard_title),
+            description = stringResource(
+                R.string.diag_megingiard_desc,
+                stringResource(syncedMegingiardOption.displayNameRes)
+            ),
             icon = Icons.Rounded.Hub,
             trailingContent = {
                 GamepadPill(
-                    text = "DETECTED",
+                    text = stringResource(R.string.diag_status_detected),
                     isAccent = true
                 )
             },
@@ -2902,23 +3015,32 @@ private fun DiagnosticsSettingsTabContent(
     }
 
     GamepadActionCard(
-        title = "Reconnect Privileged Bridge",
-        description = "Re-establish UID 0 helper connection, re-grant permissions, and refresh status",
+        title = stringResource(R.string.diag_reconnect_title),
+        description = stringResource(R.string.diag_reconnect_desc),
         icon = Icons.Rounded.Refresh,
-        actionText = if (isRefreshing) "Refreshing..." else "Reconnect",
+        actionText = stringResource(
+            if (isRefreshing) R.string.diag_action_refreshing else R.string.diag_action_reconnect
+        ),
         enabled = !isRefreshing,
         onClick = onReconnectAndRefresh
     )
 
-    GamepadSectionHeader(text = "DEVICE & BUILD")
+    GamepadSectionHeader(text = stringResource(R.string.diag_section_device_build))
 
     GamepadInfoBox(
-        text = "${profile.displayName} Display Topology",
-        description = "Top Screen (displayId = ${profile.topDisplayId}): 1920×1080 • Bottom Screen (displayId = ${profile.bottomDisplayId}): ${profile.bottomFallbackWidth}×${profile.bottomFallbackHeight} (${profile.bottomFallbackDensityDpi} dpi)"
+        text = stringResource(R.string.diag_topology_title, profile.displayName),
+        description = stringResource(
+            R.string.diag_topology_desc,
+            profile.topDisplayId,
+            profile.bottomDisplayId,
+            profile.bottomFallbackWidth,
+            profile.bottomFallbackHeight,
+            profile.bottomFallbackDensityDpi
+        )
     )
 
     GamepadActionCard(
-        title = "Application Version",
+        title = stringResource(R.string.diag_app_version_title),
         description = BuildConfig.APPLICATION_ID,
         icon = Icons.Rounded.Info,
         trailingContent = {
@@ -2931,7 +3053,7 @@ private fun DiagnosticsSettingsTabContent(
     )
 
     GamepadInfoBox(
-        text = "Third-Party Font Credits",
-        description = "Fusion Pixel © 2022 TakWolf (SIL OFL 1.1 — font only) • DOSIyagiBoldface © 2022 Damheo Lee (MIT License — font only)"
+        text = stringResource(R.string.diag_font_credits_title),
+        description = stringResource(R.string.diag_font_credits_desc)
     )
 }

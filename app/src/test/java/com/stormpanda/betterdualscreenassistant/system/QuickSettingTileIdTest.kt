@@ -1,5 +1,8 @@
 package com.stormpanda.betterdualscreenassistant.system
 
+import android.content.Context
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -117,5 +120,30 @@ class QuickSettingTileIdTest {
                 .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
                 .contains("Retroid")
         )
+    }
+
+    @Test
+    fun `title flattens grid newlines cleanly for both CJK and space-delimited scripts while gridTitle preserves them`() {
+        val mockCtx = mockk<Context>()
+        every { mockCtx.getString(QuickSettingTileId.FORCE_LANDSCAPE.titleRes) } returns "強制\n橫向"
+        every { mockCtx.getString(QuickSettingTileId.TOUCH_LOCK.titleRes) } returns "Verrouillage\ntactile"
+        every { mockCtx.getString(QuickSettingTileId.SCREENSHOT.titleRes) } returns "Captura de \npantalla"
+        every { mockCtx.getString(QuickSettingTileId.CHARGE_LIMIT_80.titleRes) } returns "80%-\nLadelimit"
+
+        assertEquals("強制橫向", QuickSettingTileId.FORCE_LANDSCAPE.title(mockCtx))
+        assertEquals("強制\n橫向", QuickSettingTileId.FORCE_LANDSCAPE.gridTitle(mockCtx))
+        assertEquals("Verrouillage tactile", QuickSettingTileId.TOUCH_LOCK.title(mockCtx))
+        assertEquals("Verrouillage\ntactile", QuickSettingTileId.TOUCH_LOCK.gridTitle(mockCtx))
+        assertEquals("Captura de pantalla", QuickSettingTileId.SCREENSHOT.title(mockCtx))
+        assertEquals("80%-Ladelimit", QuickSettingTileId.CHARGE_LIMIT_80.title(mockCtx))
+
+        QuickSettingTileId.entries.forEach { tile ->
+            assertTrue("Missing titleRes for $tile", tile.titleRes != 0)
+            assertTrue("Missing descriptionRes for $tile", tile.descriptionRes != 0)
+        }
+        QuickSettingCategory.entries.forEach { category ->
+            assertTrue("Missing titleRes for $category", category.titleRes != 0)
+            assertTrue("Missing descriptionRes for $category", category.descriptionRes != 0)
+        }
     }
 }

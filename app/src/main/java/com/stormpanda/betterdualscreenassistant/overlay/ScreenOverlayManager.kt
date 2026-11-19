@@ -217,6 +217,24 @@ class ScreenOverlayManager(
         }
     }
 
+    /**
+     * Recreates the assistant overlay view when the app locale changes while the overlay is open
+     * so all bottom-screen labels immediately reflect the updated locale resources without
+     * resetting the active tab/quick-toggle page or replaying the slide-up animation.
+     */
+    fun onLocaleChanged() {
+        mainHandler.post {
+            if (!isAssistantShowing) return@post
+            val currentTab = activeTabState.value
+            hideAssistantOverlay(immediate = true)
+            showAssistantOverlay(
+                initialTab = currentTab,
+                preserveQuickTogglePage = true,
+                animateEnter = false
+            )
+        }
+    }
+
     private fun cleanupExitingAssistant() {
         val oldView = exitingAssistantView
         val oldLifecycle = exitingAssistantLifecycle
@@ -233,14 +251,18 @@ class ScreenOverlayManager(
         oldLifecycle?.onDestroy()
     }
 
-    fun showAssistantOverlay(initialTab: Int? = null) {
+    fun showAssistantOverlay(
+        initialTab: Int? = null,
+        preserveQuickTogglePage: Boolean = false,
+        animateEnter: Boolean = true
+    ) {
         mainHandler.post {
             if (initialTab != null) {
                 activeTabState.value = initialTab.coerceIn(0, 1)
             } else if (!isAssistantShowing && !repository.rememberLastTab.value) {
                 activeTabState.value = 0
             }
-            if (!isAssistantShowing && !repository.rememberLastQuickTogglePage.value) {
+            if (!isAssistantShowing && !preserveQuickTogglePage && !repository.rememberLastQuickTogglePage.value) {
                 repository.setLastQuickTogglePage(0)
             }
             if (isAssistantShowing) return@post
@@ -284,8 +306,13 @@ class ScreenOverlayManager(
                 setViewTreeViewModelStoreOwner(lifecycleOwner)
                 setViewTreeSavedStateRegistryOwner(lifecycleOwner)
                 // Start at 90%p Y offset & 0 alpha to match pop_win_enter_anim.xml
-                translationY = realSize.y * 0.90f
-                alpha = 0f
+                if (animateEnter) {
+                    translationY = realSize.y * 0.90f
+                    alpha = 0f
+                } else {
+                    translationY = 0f
+                    alpha = 1f
+                }
                 setContent {
                     AssistantOverlayScreen(
                         repository = repository,
@@ -351,13 +378,15 @@ class ScreenOverlayManager(
                 }
                 addOverlayViewWithPrivilegeFallback(wm, composeView, lp)
                 composeView.requestFocus()
-                composeView.animate()
-                    .withLayer()
-                    .translationY(0f)
-                    .alpha(1f)
-                    .setDuration(FADE_DURATION_MS)
-                    .setInterpolator(DecelerateInterpolator())
-                    .start()
+                if (animateEnter) {
+                    composeView.animate()
+                        .withLayer()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(FADE_DURATION_MS)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                }
                 assistantView = composeView
                 assistantLifecycle = lifecycleOwner
                 isAssistantShowing = true
@@ -537,7 +566,12 @@ class ScreenOverlayManager(
         mainHandler.post {
             val (killedCount, availMemStr) = repository.cleanMemory()
             val message = if (killedCount > 0) {
-                context.getString(R.string.toast_clean_process_result, killedCount, availMemStr)
+                context.resources.getQuantityString(
+                    R.plurals.toast_clean_process_result,
+                    killedCount,
+                    killedCount,
+                    availMemStr
+                )
             } else {
                 context.getString(R.string.toast_clean_process_successful)
             }
@@ -552,10 +586,13 @@ class ScreenOverlayManager(
                 val clearedCount = repository.clearAllRecentTasks()
                 mainHandler.post {
                     val message = when {
-                        clearedCount > 1 -> "Cleared $clearedCount recent apps"
-                        clearedCount == 1 -> "Cleared 1 recent app"
-                        clearedCount == 0 -> "Cleared recent apps"
-                        else -> "Failed to clear recent apps"
+                        clearedCount > 0 -> context.resources.getQuantityString(
+                            R.plurals.toast_cleared_recent_apps,
+                            clearedCount,
+                            clearedCount
+                        )
+                        clearedCount == 0 -> context.getString(R.string.toast_cleared_recent_apps_zero)
+                        else -> context.getString(R.string.toast_clear_recent_apps_failed)
                     }
                     showBottomToast(message)
                 }
@@ -570,9 +607,9 @@ class ScreenOverlayManager(
                 val swapped = repository.swapScreens()
                 mainHandler.post {
                     if (swapped) {
-                        showBottomToast("Swapped apps between screens")
+                        showBottomToast(context.getString(R.string.toast_swapped_screens))
                     } else {
-                        showBottomToast("No movable foreground apps to swap")
+                        showBottomToast(context.getString(R.string.toast_swap_screens_none))
                     }
                 }
             }.start()
@@ -584,11 +621,15 @@ class ScreenOverlayManager(
             val locked = repository.toggleTouchLock()
             if (locked) {
                 hideAssistantOverlay()
-                val roleTitle = if (repository.promotedToManager.value) "Manager" else "Assistant"
-                showBottomToast("Bottom screen touch locked (open $roleTitle to unlock)")
+                val msgRes = if (repository.promotedToManager.value) {
+                    R.string.toast_touch_lock_enabled_manager
+                } else {
+                    R.string.toast_touch_lock_enabled_assistant
+                }
+                showBottomToast(context.getString(msgRes))
             } else {
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
-                showBottomToast("Bottom screen touch unlocked")
+                showBottomToast(context.getString(R.string.toast_touch_lock_disabled))
             }
         }
     }
@@ -598,17 +639,21 @@ class ScreenOverlayManager(
         mainHandler.postDelayed({
             Thread {
                 val ok = PrivilegedBridge.captureScreenshot(context, targetMode)
-                val targetName = when (targetMode) {
-                    0 -> "Top screen"
-                    1 -> "Bottom screen"
-                    else -> "Both screens"
+                val msgRes = if (ok) {
+                    when (targetMode) {
+                        0 -> R.string.toast_screenshot_top_saved
+                        1 -> R.string.toast_screenshot_bottom_saved
+                        else -> R.string.toast_screenshot_both_saved
+                    }
+                } else {
+                    when (targetMode) {
+                        0 -> R.string.toast_screenshot_top_failed
+                        1 -> R.string.toast_screenshot_bottom_failed
+                        else -> R.string.toast_screenshot_both_failed
+                    }
                 }
                 mainHandler.post {
-                    if (ok) {
-                        showBottomToast("Saved $targetName screenshot to Pictures/Screenshots")
-                    } else {
-                        showBottomToast("Failed to capture $targetName screenshot")
-                    }
+                    showBottomToast(context.getString(msgRes))
                 }
             }.start()
         }, 280L)
@@ -622,11 +667,12 @@ class ScreenOverlayManager(
                 if (!ok) {
                     val stopReason = repository.screenRecordingState.value.lastStopReason
                     mainHandler.post {
-                        if (stopReason == "low_storage") {
-                            showBottomToast("Insufficient storage (<250 MB) to start recording")
+                        val msgRes = if (stopReason == "low_storage") {
+                            R.string.toast_recording_low_storage_start
                         } else {
-                            showBottomToast("Failed to start screen recording")
+                            R.string.toast_recording_start_failed
                         }
+                        showBottomToast(context.getString(msgRes))
                     }
                 }
             }.start()
@@ -637,11 +683,12 @@ class ScreenOverlayManager(
         Thread {
             val state = repository.stopScreenRecording(reason)
             mainHandler.post {
-                if (state.lastCompletedPath.isNotEmpty()) {
-                    showBottomToast("Saved recording to Movies/ScreenRecordings")
+                val msgRes = if (state.lastCompletedPath.isNotEmpty()) {
+                    R.string.toast_recording_saved_to_movies
                 } else {
-                    showBottomToast("Screen recording stopped")
+                    R.string.toast_recording_stopped
                 }
+                showBottomToast(context.getString(msgRes))
             }
         }.start()
     }
@@ -709,9 +756,9 @@ class ScreenOverlayManager(
                 wait = false
             )
             if (launchedAction == null && execResult.isFailure) {
-                showBottomToast("Cast settings unavailable on this device")
+                showBottomToast(context.getString(R.string.toast_cast_settings_unavailable))
             } else if (targetDisplayId == TOP_DISPLAY_ID) {
-                showBottomToast("Choose a Cast device on Top Screen")
+                showBottomToast(context.getString(R.string.toast_cast_choose_on_top))
             }
         }, FADE_DURATION_MS)
     }
@@ -722,9 +769,10 @@ class ScreenOverlayManager(
             val disconnected = repository.disconnectScreenCast()
             mainHandler.post {
                 val message = when {
-                    !disconnected -> "Unable to disconnect screen cast"
-                    previousDeviceName.isNotBlank() -> "Disconnected from $previousDeviceName"
-                    else -> "Disconnected screen cast"
+                    !disconnected -> context.getString(R.string.toast_screen_cast_disconnect_failed)
+                    previousDeviceName.isNotBlank() ->
+                        context.getString(R.string.toast_screen_cast_disconnected_device, previousDeviceName)
+                    else -> context.getString(R.string.toast_screen_cast_disconnected)
                 }
                 showBottomToast(message)
             }
@@ -733,23 +781,25 @@ class ScreenOverlayManager(
 
     fun openClusterTuneProfilePickerOnTopScreen() {
         if (!repository.refreshClusterTuneInstalled()) {
-            showBottomToast("ClusterTune is not installed")
+            showBottomToast(context.getString(R.string.toast_clustertune_not_installed))
             return
         }
         if (repository.dualScreenDisplayMode.value == 2) {
-            showBottomToast("Top screen is off — switch to Dual or Top screen first")
+            showBottomToast(context.getString(R.string.toast_clustertune_top_screen_off))
             return
         }
         Thread {
             val result = repository.openClusterTuneProfilePicker()
             val errorMessage = when (result) {
                 ClusterTuneLaunchResult.OPENED -> null
-                ClusterTuneLaunchResult.NOT_INSTALLED -> "ClusterTune is not installed"
+                ClusterTuneLaunchResult.NOT_INSTALLED ->
+                    context.getString(R.string.toast_clustertune_not_installed)
                 ClusterTuneLaunchResult.TOP_SCREEN_OFF ->
-                    "Top screen is off — switch to Dual or Top screen first"
+                    context.getString(R.string.toast_clustertune_top_screen_off)
                 ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED ->
-                    "Enable overlay permission in ClusterTune first"
-                ClusterTuneLaunchResult.FAILED -> "Failed to open ClusterTune"
+                    context.getString(R.string.toast_clustertune_overlay_permission_denied)
+                ClusterTuneLaunchResult.FAILED ->
+                    context.getString(R.string.toast_clustertune_open_failed)
             }
             if (errorMessage != null) {
                 mainHandler.post { showBottomToast(errorMessage) }

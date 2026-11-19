@@ -3,6 +3,9 @@ package com.stormpanda.betterdualscreenassistant.system
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
+import com.stormpanda.betterdualscreenassistant.R
 
 /**
  * Hardware, multi-display, capability, and vendor-package profile abstracting differences
@@ -15,8 +18,8 @@ import android.os.Build
 enum class DeviceProfile(
     val displayName: String,
     val vendorName: String,
-    val wakeKeyName: String,
-    val physicalButtonLabel: String,
+    @get:VisibleForTesting val wakeKeyName: String,
+    @get:VisibleForTesting val physicalButtonLabel: String,
     val topDisplayId: Int,
     val bottomDisplayId: Int,
     val topSfPort: String,
@@ -32,8 +35,8 @@ enum class DeviceProfile(
     val protectedVendorPackages: List<String>,
     val supportsAmbientLight: Boolean,
     val supportsPreventAccidentalHome: Boolean,
-    val standardControllerLabel: String,
-    val controllerStyleOptionLabel: String,
+    @get:VisibleForTesting val standardControllerLabel: String,
+    @get:VisibleForTesting val controllerStyleOptionLabel: String,
     val topPanelTeClockRatio: Float,
     val longPressTogglesBottom: Boolean,
     val dismissOverlayOnBackMapping: Boolean
@@ -102,12 +105,54 @@ enum class DeviceProfile(
         dismissOverlayOnBackMapping = true
     );
 
+    @get:VisibleForTesting
     val closeBottomTipText: String
         get() = if (longPressTogglesBottom) {
             "When the secondary screen is turned off, you can long press or press the $wakeKeyName to wake up the screen."
         } else {
             "When the secondary screen is turned off, you can press the $wakeKeyName to wake up the screen."
         }
+
+    @get:StringRes
+    val standardControllerLabelRes: Int
+        get() = when (this) {
+            AYN_THOR -> R.string.controller_standard_label_odin
+            RETROID_POCKET_DUO -> R.string.controller_standard_label_retro
+        }
+
+    @get:StringRes
+    val controllerStyleOptionLabelRes: Int
+        get() = when (this) {
+            AYN_THOR -> R.string.fan_option_odin_style
+            RETROID_POCKET_DUO -> R.string.fan_option_retro_style
+        }
+
+    @get:StringRes
+    val closeBottomTipTextRes: Int
+        get() = when (this) {
+            AYN_THOR -> R.string.tip_content_text
+            RETROID_POCKET_DUO -> R.string.tip_content_text_retroid
+        }
+
+    @get:StringRes
+    val replaceStockDescActiveRes: Int
+        get() = when (this) {
+            AYN_THOR -> R.string.settings_replace_stock_desc_active_ayn
+            RETROID_POCKET_DUO -> R.string.settings_replace_stock_desc_active_retroid
+        }
+
+    @get:StringRes
+    val replaceStockDescInactiveRes: Int
+        get() = when (this) {
+            AYN_THOR -> R.string.settings_replace_stock_desc_inactive_ayn
+            RETROID_POCKET_DUO -> R.string.settings_replace_stock_desc_inactive_retroid
+        }
+
+    fun standardControllerLabel(context: Context): String = context.getString(standardControllerLabelRes)
+
+    fun controllerStyleOptionLabel(context: Context): String = context.getString(controllerStyleOptionLabelRes)
+
+    fun closeBottomTipText(context: Context): String = context.getString(closeBottomTipTextRes)
 
     companion object {
         const val ODIN_STOCK_ASSISTANT_PACKAGE = "com.odin.dualscreen.assistant"

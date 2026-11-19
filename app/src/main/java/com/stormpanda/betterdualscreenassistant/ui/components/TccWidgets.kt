@@ -69,6 +69,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1307,7 +1308,7 @@ fun TccOptionDialog(
 
             if (showOsThemeToggle && onToggleInjectOsTheme != null) {
                 TccDialogToggleRow(
-                    label = "Inject Theme Colors into OS",
+                    label = stringResource(R.string.dialog_theme_inject_os_colors),
                     checked = injectOsThemeEnabled,
                     onCheckedChange = onToggleInjectOsTheme
                 )
@@ -1323,7 +1324,7 @@ fun TccOptionDialog(
                 ) {
                     Image(
                         painter = painterResource(id = tccDrawable(R.drawable.ic_fan_custom_progress)),
-                        contentDescription = "Fan Speed",
+                        contentDescription = stringResource(R.string.dialog_fan_speed_cd),
                         colorFilter = ColorFilter.tint(colors.primary),
                         modifier = Modifier.size(if (isRetroid) 26.dp else aynDp(20f))
                     )
@@ -1606,8 +1607,11 @@ fun TccDialogFpsSelectorRow(
 ) {
     val normalized = if (selectedFps <= 30) 30 else 60
     TccDialogSegmentedRow(
-        label = "Frame Rate",
-        segments = listOf(30 to "30 FPS", 60 to "60 FPS"),
+        label = stringResource(R.string.dialog_screen_record_frame_rate),
+        segments = listOf(
+            30 to stringResource(R.string.dialog_screen_record_fps_option, 30),
+            60 to stringResource(R.string.dialog_screen_record_fps_option, 60)
+        ),
         selectedId = normalized,
         onSelectId = onSelectFps,
         modifier = modifier

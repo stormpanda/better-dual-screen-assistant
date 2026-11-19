@@ -644,4 +644,41 @@ class TccThemeAndOverlayFormatTest {
             )
         )
     }
+
+    @Test
+    fun `supportsRetroidPixelLabelFont enables pixel font for covered Latin scripts and falls back for unsupported locales`() {
+        val coveredLatinLocales = listOf("en", "en-US", "de-DE", "fr-FR", "es-ES", "pt-BR", "it-IT", "hu-HU", "sr-Latn")
+        for (tag in coveredLatinLocales) {
+            assertTrue(
+                "Expected pixel label font for covered Latin locale $tag",
+                supportsRetroidPixelLabelFont(java.util.Locale.forLanguageTag(tag))
+            )
+        }
+
+        val fallbackLocales = listOf(
+            "zh-TW", "zh-CN", "zh-Hant", "zh-Hans",
+            "ja-JP", "ko-KR", "ru-RU", "uk-UA",
+            "ar-SA", "he-IL", "th-TH", "hi-IN", "el-GR", "sr-Cyrl",
+            // Latin locales whose core diacritics are missing from the bundled pixel subset
+            "pl-PL", "tr-TR", "vi-VN", "vi-Latn-VN", "cs-CZ", "sk-SK", "ro-RO"
+        )
+        for (tag in fallbackLocales) {
+            assertFalse(
+                "Expected system font fallback for locale $tag",
+                supportsRetroidPixelLabelFont(java.util.Locale.forLanguageTag(tag))
+            )
+        }
+    }
+
+    @Test
+    fun `all AppThemeOption and TccUiLookPreference entries expose valid string resources`() {
+        for (option in AppThemeOption.entries) {
+            assertTrue("Missing displayNameRes for $option", option.displayNameRes != 0)
+            assertTrue("Missing shortTileLabelRes for $option", option.shortTileLabelRes != 0)
+        }
+        for (pref in TccUiLookPreference.entries) {
+            assertTrue("Missing displayNameRes for $pref", pref.displayNameRes != 0)
+            assertTrue("Missing shortLabelRes for $pref", pref.shortLabelRes != 0)
+        }
+    }
 }

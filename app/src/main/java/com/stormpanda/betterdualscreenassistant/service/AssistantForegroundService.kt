@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.IBinder
 import android.os.SystemClock
@@ -91,6 +92,7 @@ class AssistantForegroundService : Service() {
     private var longPressConsumed: Boolean = false
     private var postBroadcastStockCheckJob: Job? = null
     private var fallbackBroadcastRefreezeJob: Job? = null
+    private var lastLocaleTags: String = ""
 
     internal var modernParallelBroadcastQueueOverride: Boolean? = null
 
@@ -227,6 +229,7 @@ class AssistantForegroundService : Service() {
             this,
             SystemSettingsRepository.PREFS_NAME
         ).getBoolean(SystemSettingsRepository.PREF_PROMOTED_TO_MANAGER, false)
+        lastLocaleTags = resources.configuration.locales.toLanguageTags()
         startForeground(NOTIFICATION_ID, createForegroundNotification(initialPromoted))
 
         PrivilegedBridge.ensureInitialized(applicationContext)
@@ -277,7 +280,7 @@ class AssistantForegroundService : Service() {
                         }
                         if (!synced.isRecording) {
                             if (synced.lastStopReason == "low_storage") {
-                                overlayManager.showBottomToast("Recording saved (stopped: low storage)")
+                                overlayManager.showBottomToast(getString(R.string.toast_recording_saved_low_storage))
                             }
                             break
                         }
@@ -481,6 +484,23 @@ class AssistantForegroundService : Service() {
         super.onDestroy()
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val newLocaleTags = newConfig.locales.toLanguageTags()
+        if (newLocaleTags != lastLocaleTags) {
+            lastLocaleTags = newLocaleTags
+            if (::repository.isInitialized) {
+                updateForegroundNotification(
+                    promoted = repository.promotedToManager.value,
+                    recordingState = repository.screenRecordingState.value
+                )
+            }
+            if (::overlayManager.isInitialized) {
+                overlayManager.onLocaleChanged()
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun stopActiveRecordingOnPowerTransition(reason: String) {
@@ -504,17 +524,19 @@ class AssistantForegroundService : Service() {
         recordingState: ScreenRecordingState = ScreenRecordingState()
     ): Notification {
         val nm = getSystemService(NotificationManager::class.java)
-        val channelTitle = if (promoted) {
-            "Dual Screen Manager Service"
-        } else {
-            "Dual Screen Assistant Service"
-        }
+        val channelTitle = getString(
+            if (promoted) {
+                R.string.notification_channel_manager_name
+            } else {
+                R.string.notification_channel_assistant_name
+            }
+        )
         val channel = NotificationChannel(
             CHANNEL_ID,
             channelTitle,
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Keeps the dual-screen overlay and TCC button handler ready"
+            description = getString(R.string.notification_channel_desc)
             setShowBadge(false)
         }
         nm?.createNotificationChannel(channel)
@@ -548,10 +570,10 @@ class AssistantForegroundService : Service() {
             .setOngoing(true)
 
         if (recordingState.isRecording) {
-            val targetName = when (recordingState.targetMode) {
-                0 -> "Top"
-                1 -> "Bottom"
-                else -> "Both"
+            val recordingContentRes = when (recordingState.targetMode) {
+                0 -> R.string.notification_recording_top_text
+                1 -> R.string.notification_recording_bottom_text
+                else -> R.string.notification_recording_both_text
             }
             val elapsedMs = (SystemClock.elapsedRealtime() - recordingState.startedElapsedRealtimeMs)
                 .coerceAtLeast(0L)
@@ -565,18 +587,18 @@ class AssistantForegroundService : Service() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
             builder
-                .setContentText("Recording $targetName screen — tap Stop to save")
+                .setContentText(getString(recordingContentRes))
                 .setUsesChronometer(true)
                 .setWhen(System.currentTimeMillis() - elapsedMs)
                 .addAction(
                     Notification.Action.Builder(
                         Icon.createWithResource(this, R.drawable.ic_qs_screen_record),
-                        "Stop Recording",
+                        getString(R.string.notification_action_stop_recording),
                         stopPendingIntent
                     ).build()
                 )
         } else {
-            builder.setContentText("Ready for TCC button & dual-screen controls")
+            builder.setContentText(getString(R.string.notification_ready_text))
         }
 
         return builder.build()

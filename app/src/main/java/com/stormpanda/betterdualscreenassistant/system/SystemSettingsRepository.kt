@@ -2780,7 +2780,8 @@ class SystemSettingsRepository(private val context: Context) {
         }
         val ramSnapshot = TelemetryMonitor.readRamUsageSnapshot(am)
         val availGb = ramSnapshot.availableBytes / 1_000_000_000.0
-        val formattedMem = String.format(java.util.Locale.US, "%.2f GB", availGb)
+        val activeLocale = context.resources.configuration.locales.get(0) ?: java.util.Locale.getDefault()
+        val formattedMem = String.format(activeLocale, "%.2f GB", availGb)
         return killedCount to formattedMem
     }
 

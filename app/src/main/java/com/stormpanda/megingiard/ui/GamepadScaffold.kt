@@ -72,6 +72,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
@@ -174,6 +175,7 @@ fun GamepadBreadcrumbHeader(
     modifier: Modifier = Modifier,
 ) {
     val accentColor = LocalAppColors.current.accent
+    val activeLocale = LocalConfiguration.current.locales.get(0) ?: Locale.getDefault()
     AnimatedContent(
         targetState = breadcrumbs,
         transitionSpec = {
@@ -185,7 +187,7 @@ fun GamepadBreadcrumbHeader(
     ) { crumbs ->
         if (crumbs.isNotEmpty()) {
             GamepadSectionHeader(
-                text = crumbs.joinToString("  ›  ") { it.uppercase(Locale.ROOT) },
+                text = crumbs.joinToString("  ›  ") { it.uppercase(activeLocale) },
                 color = accentColor,
                 contentPadding = PaddingValues(horizontal = GC_SPACING_4, vertical = 0.dp),
             )
@@ -273,8 +275,9 @@ fun GamepadDeck(
             verticalArrangement = Arrangement.spacedBy(GS_DECK_SPACING),
         ) {
             if (showLocalHeader) {
+                val activeLocale = LocalConfiguration.current.locales.get(0) ?: Locale.getDefault()
                 GamepadSectionHeader(
-                    text = breadcrumbs.joinToString("  ›  ") { it.uppercase(Locale.ROOT) },
+                    text = breadcrumbs.joinToString("  ›  ") { it.uppercase(activeLocale) },
                     color = LocalAppColors.current.accent,
                 )
             }
