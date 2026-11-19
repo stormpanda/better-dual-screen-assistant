@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.AttributionSource
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -29,6 +30,7 @@ import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Root companion process launched via PServerBinder using `app_process`.
@@ -82,9 +84,39 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SET_BACKLIGHT_POWER = IBinder.FIRST_CALL_TRANSACTION + 25
     const val TRANSACTION_WINDOW_SESSION_TRANSACT = IBinder.FIRST_CALL_TRANSACTION + 26
     const val TRANSACTION_CAPTURE_SCREENSHOT = IBinder.FIRST_CALL_TRANSACTION + 27
+    const val TRANSACTION_GET_SCREEN_CAST_STATE = IBinder.FIRST_CALL_TRANSACTION + 28
+    const val TRANSACTION_DISCONNECT_SCREEN_CAST = IBinder.FIRST_CALL_TRANSACTION + 29
+    const val TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE = IBinder.FIRST_CALL_TRANSACTION + 30
+    const val TRANSACTION_SUPPRESS_STOCK_ASSISTANT = IBinder.FIRST_CALL_TRANSACTION + 31
+    const val TRANSACTION_GET_PIN_SCREEN_MODE = IBinder.FIRST_CALL_TRANSACTION + 32
 
-    const val HELPER_PROTOCOL_VERSION = 23
+    const val HELPER_PROTOCOL_VERSION = 28
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
+
+    internal val CAST_PROJECTION_PACKAGES: Set<String> = setOf(
+        "com.google.android.gms",
+        "com.google.android.apps.chromecast.app"
+    )
+    private val GENERIC_CAST_DISPLAY_NAMES: Set<String> = setOf(
+        "castdisplay",
+        "virtualdisplay",
+        "screencast",
+        "screen cast",
+        "cast",
+        "chromecast virtual display"
+    )
+    private val NON_CAST_GMS_DISPLAY_KEYWORDS: List<String> = listOf(
+        "android auto",
+        "carprojection",
+        "nearby",
+        "companion"
+    )
+
+    internal data class HelperCastStatus(
+        val isCasting: Boolean = false,
+        val isConnecting: Boolean = false,
+        val deviceName: String = ""
+    )
     internal const val SYSTEM_LIB_SEARCH_PATH =
         "/system/lib64:/system/lib:/system_ext/lib64:/system_ext/lib:/product/lib64:/product/lib"
     const val OS_THEME_OWNING_PACKAGE = "com.android.shell"
@@ -121,6 +153,16 @@ object PrivilegedHelperMain {
     internal const val MAX_RAPID_CRASHES = 8
     internal const val MAX_UNREGISTERED_RESPAWN_ATTEMPTS = 6
     internal const val STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS = 350L
+    internal const val STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS = 600L
+    internal const val STOCK_MONITOR_INTERVAL_MS = 2_000L
+    internal const val STOCK_AUTO_RESUPPRESS_COOLDOWN_MS = 3_000L
+    internal const val STOCK_SPAWN_WAIT_TIMEOUT_MS = 2_500L
+    internal const val STOCK_STARTUP_WAIT_TIMEOUT_MS = 2_500L
+    internal const val STOCK_STARTUP_SETTLE_MS = 200L
+    internal const val STOCK_STARTUP_FALLBACK_SLEEP_MS = 800L
+    internal const val STOCK_POLL_INTERVAL_MS = 80L
+    internal val SIGNAL_KILL: Int =
+        android.system.OsConstants.SIGKILL.takeIf { it > 0 } ?: 9
     internal val SIGNAL_CONT: Int =
         android.system.OsConstants.SIGCONT.takeIf { it > 0 } ?: 18
     internal val SIGNAL_STOP: Int =
@@ -352,6 +394,41 @@ object PrivilegedHelperMain {
             null
         }
 
+        private val mediaProjectionManagerProxy: Any? by lazy {
+            try {
+                val binder = getServiceMethod.invoke(null, "media_projection") as? IBinder
+                if (binder != null) {
+                    val stubClass =
+                        Class.forName("android.media.projection.IMediaProjectionManager\$Stub")
+                    stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+                } else {
+                    null
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to get IMediaProjectionManager", t)
+                null
+            }
+        }
+
+        private val mediaRouter2Manager: Any? by lazy {
+            createMediaRouter2Manager(systemContext)
+        }
+
+        private val mediaRouterServiceProxy: Any? by lazy {
+            try {
+                val binder = getServiceMethod.invoke(null, "media_router") as? IBinder
+                if (binder != null) {
+                    val stubClass = Class.forName("android.media.IMediaRouterService\$Stub")
+                    stubClass.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+                } else {
+                    null
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to get IMediaRouterService", t)
+                null
+            }
+        }
+
         private val statusBarDisableToken = Binder()
         private var topDisplayContext: Context? = null
         private var topBootProgressBlankView: View? = null
@@ -446,10 +523,25 @@ object PrivilegedHelperMain {
         internal var resolveStockPidOverride: (() -> Int)? = null
         internal var isPidStoppedOverride: ((Int) -> Boolean)? = null
         internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
+        internal var modernBroadcastQueueOverride: Boolean? = null
+        internal var isTccServiceRunningOverride: ((String) -> Boolean)? = null
+        internal var hasStockReceiverRegisteredOverride: ((Int, String) -> Boolean?)? = null
+        internal var suppressStockOverride: (() -> Boolean)? = null
+        internal var execRootCommandOverride: ((String) -> String)? = null
+        internal var resolveAllStockPidsOverride: ((String) -> List<Int>)? = null
+        internal var stockPollIntervalMsOverride: Long? = null
+        internal var stockStartupSettleMsOverride: Long? = null
+        internal var stockStartupFallbackSleepMsOverride: Long? = null
+        internal var stockWorkerExecutorOverride: ((Runnable) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
+        internal var packageManagerOverride: Any? = null
+        internal var launcherPackagesOverride: (() -> Set<String>)? = null
+        internal var windowManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
         internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
+        internal var screenCastStateOverride: (() -> HelperCastStatus)? = null
+        internal var disconnectScreenCastOverride: (() -> Boolean)? = null
         internal var commitOsThemeOverlaysOverride: ((Array<String>, IntArray) -> Unit)? = null
         internal var allowedWindowSessionCodesOverride: Set<Int>? = null
 
@@ -500,6 +592,19 @@ object PrivilegedHelperMain {
         @Volatile
         private var activeClientDeathRecipient: IBinder.DeathRecipient? = null
 
+        private val stockSuppressionLock = Any()
+
+        @Volatile
+        private var isSuppressingStock: Boolean = false
+
+        private val isVerifyingStockService = AtomicBoolean(false)
+
+        @Volatile
+        private var lastAutoResuppressElapsedMs: Long = -STOCK_AUTO_RESUPPRESS_COOLDOWN_MS
+
+        @Volatile
+        private var lastVerifiedWindowlessStockPid: Int = -1
+
         private val stockFreezeLock = Any()
 
         @Volatile
@@ -510,6 +615,28 @@ object PrivilegedHelperMain {
 
         private val refreezeStockSafetyRunnable = Runnable {
             setStockProcessFrozenForBroadcastInternal(true)
+        }
+
+        private val stockSuppressionMonitorRunnable: Runnable = object : Runnable {
+            override fun run() {
+                if (isShuttingDown || !replaceStockPreferred) return
+                val activeClient = clientBinder
+                if (activeClient == null || !activeClient.isBinderAlive) return
+                val unfrozenForBroadcast = synchronized(stockFreezeLock) {
+                    temporarilyUnfrozenStockPid > 0
+                }
+                if (!isSuppressingStock && !unfrozenForBroadcast) {
+                    val pid = resolveStockPidInternal()
+                    if (pid > 0) {
+                        if (!isPidStoppedInternal(pid)) {
+                            triggerStockResuppressionAsync("monitor_unfrozen_pid_$pid")
+                        } else if (pid != lastVerifiedWindowlessStockPid) {
+                            triggerStockTccServiceVerificationAsync(pid)
+                        }
+                    }
+                }
+                mainHandler.postDelayed(this, STOCK_MONITOR_INTERVAL_MS)
+            }
         }
 
         @Volatile
@@ -658,6 +785,8 @@ object PrivilegedHelperMain {
             } else {
                 rapidCrashCount = 0
             }
+            mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+            lastVerifiedWindowlessStockPid = -1
             mainHandler.removeCallbacks(watchdogCheckRunnable)
             mainHandler.postDelayed(watchdogCheckRunnable, WATCHDOG_POLL_INTERVAL_MS)
         }
@@ -935,11 +1064,29 @@ object PrivilegedHelperMain {
                         true
                     }
                     TRANSACTION_UPDATE_WATCHDOG_STATE -> {
-                        replaceStockPreferred = data.readInt() != 0
+                        val newReplace = data.readInt() != 0
+                        replaceStockPreferred = newReplace
                         val topBright = data.readFloat()
                         val bottomBright = data.readFloat()
                         if (topBright > 0f) savedTopBrightness = topBright
                         if (bottomBright > 0f) savedBottomBrightness = bottomBright
+                        if (!newReplace) {
+                            mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+                            synchronized(stockFreezeLock) {
+                                mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                                temporarilyUnfrozenStockPid = -1
+                                lastVerifiedWindowlessStockPid = -1
+                            }
+                        } else if (!isShuttingDown) {
+                            val activeClient = clientBinder
+                            if (activeClient != null && activeClient.isBinderAlive) {
+                                mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+                                mainHandler.postDelayed(
+                                    stockSuppressionMonitorRunnable,
+                                    STOCK_MONITOR_INTERVAL_MS
+                                )
+                            }
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -947,6 +1094,8 @@ object PrivilegedHelperMain {
                         setStockProcessFrozenForBroadcastInternal(true)
                         isShuttingDown = true
                         mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                        mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+                        lastVerifiedWindowlessStockPid = -1
                         mainHandler.removeCallbacks(watchdogCheckRunnable)
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
@@ -1140,6 +1289,56 @@ object PrivilegedHelperMain {
                         reply?.writeInt(if (ok) 1 else 0)
                         true
                     }
+                    TRANSACTION_GET_SCREEN_CAST_STATE -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val status = try {
+                            getScreenCastStateInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        writeScreenCastStatusToParcel(reply, status)
+                        true
+                    }
+                    TRANSACTION_DISCONNECT_SCREEN_CAST -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val ok = try {
+                            disconnectScreenCastInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (ok) 1 else 0)
+                        true
+                    }
+                    TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val active = try {
+                            isStockAssistantActiveInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (active) 1 else 0)
+                        true
+                    }
+                    TRANSACTION_SUPPRESS_STOCK_ASSISTANT -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val ok = try {
+                            suppressStockAssistantInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (ok) 1 else 0)
+                        true
+                    }
+                    TRANSACTION_GET_PIN_SCREEN_MODE -> {
+                        val mode = getPinScreenModeInternal()
+                        reply?.writeNoException()
+                        reply?.writeInt(mode)
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -1171,6 +1370,7 @@ object PrivilegedHelperMain {
                 mainHandler.removeCallbacks(watchdogCheckRunnable)
                 mainHandler.removeCallbacks(onClientDiedRunnable)
                 mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
                 if (newClient != null) {
                     lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
                     val recipient = IBinder.DeathRecipient { handleClientBinderDied(newClient) }
@@ -1189,6 +1389,12 @@ object PrivilegedHelperMain {
                     mainHandler.post(onClientDiedRunnable)
                 } else {
                     mainHandler.post(fpsTrackerMaintenanceRunnable)
+                    if (replaceStockPreferred) {
+                        mainHandler.postDelayed(
+                            stockSuppressionMonitorRunnable,
+                            STOCK_MONITOR_INTERVAL_MS
+                        )
+                    }
                 }
             } else {
                 unregisterFpsListenerInternal()
@@ -1343,45 +1549,105 @@ object PrivilegedHelperMain {
         }
 
         /**
-         * Closes all visible recent app tasks via `IActivityTaskManager.removeAllVisibleRecentTasks()`
-         * (the exact system call invoked by Android SystemUI Recents' "Clear all" button), returning
-         * the number of clearable recent tasks (`>= 0`) or `-1` on error.
+         * Closes all visible recent non-launcher app tasks via per-task
+         * `IActivityTaskManager.removeTask(taskId)`, skipping any package that declares an
+         * Android Home / Secondary Home launcher activity (`CATEGORY_HOME` /
+         * `CATEGORY_SECONDARY_HOME`) so dual-screen launchers running a standard task on the
+         * secondary display are never terminated.
+         *
+         * Returns the number of cleared tasks (`>= 0`) or `-1` on error.
          */
         private fun clearAllRecentTasksInternal(): Int {
             val atm = activityTaskManagerOverride ?: activityTaskManagerProxy ?: return -1
             return try {
-                val candidateTaskIds = queryClearableRecentTaskIds(atm)
-                val removeAllMethod = atm.javaClass.methods.firstOrNull { m ->
-                    m.name == "removeAllVisibleRecentTasks" && m.parameterTypes.isEmpty()
-                }
-                if (removeAllMethod != null) {
-                    removeAllMethod.invoke(atm)
-                    return candidateTaskIds.size
-                }
+                val launcherPackages = resolveLauncherPackagesInternal()
+                val queryResult = queryClearableRecentTasks(atm, launcherPackages)
                 val removeTaskMethod = atm.javaClass.methods.firstOrNull { m ->
                     m.name == "removeTask" &&
                         m.parameterTypes.size == 1 &&
                         m.parameterTypes[0] == Int::class.javaPrimitiveType
-                } ?: return -1
-                var removed = 0
-                for (taskId in candidateTaskIds) {
-                    val ok = removeTaskMethod.invoke(atm, taskId) as? Boolean ?: false
-                    if (ok) removed++
                 }
-                removed
+                if (removeTaskMethod != null) {
+                    var removed = 0
+                    for (taskId in queryResult.clearableTaskIds) {
+                        val ok = removeTaskMethod.invoke(atm, taskId) as? Boolean ?: false
+                        if (ok) removed++
+                    }
+                    return removed
+                }
+                if (queryResult.skippedLauncherTask) {
+                    return 0
+                }
+                val removeAllMethod = atm.javaClass.methods.firstOrNull { m ->
+                    m.name == "removeAllVisibleRecentTasks" && m.parameterTypes.isEmpty()
+                } ?: return -1
+                removeAllMethod.invoke(atm)
+                queryResult.clearableTaskIds.size
             } catch (t: Throwable) {
                 Log.w(TAG, "clearAllRecentTasksInternal failed", t)
                 -1
             }
         }
 
-        private fun queryClearableRecentTaskIds(atm: Any): List<Int> {
+        private data class ClearableRecentTasksResult(
+            val clearableTaskIds: List<Int>,
+            val skippedLauncherTask: Boolean
+        )
+
+        private fun resolveLauncherPackagesInternal(): Set<String> {
+            launcherPackagesOverride?.let { return it() }
+            val pm = packageManagerOverride ?: packageManagerProxy ?: return emptySet()
+            val queryMethod = pm.javaClass.methods.firstOrNull { m ->
+                m.name == "queryIntentActivities" && m.parameterTypes.size == 4
+            } ?: return emptySet()
+            val flagsParam: Any = if (queryMethod.parameterTypes[2] == Long::class.javaPrimitiveType) {
+                0L
+            } else {
+                0
+            }
+            val categories = listOf(
+                android.content.Intent.CATEGORY_HOME,
+                android.content.Intent.CATEGORY_SECONDARY_HOME
+            )
+            val packages = LinkedHashSet<String>()
+            for (category in categories) {
+                try {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                        .addCategory(category)
+                    val rawResult = queryMethod.invoke(pm, intent, null, flagsParam, 0) ?: continue
+                    val resolveInfos: List<*> = when (rawResult) {
+                        is List<*> -> rawResult
+                        else -> {
+                            val getList = rawResult.javaClass.methods.firstOrNull { m ->
+                                m.name == "getList" && m.parameterTypes.isEmpty()
+                            }
+                            getList?.invoke(rawResult) as? List<*> ?: emptyList<Any?>()
+                        }
+                    }
+                    for (info in resolveInfos) {
+                        val ri = info as? android.content.pm.ResolveInfo ?: continue
+                        val pkg = ri.activityInfo?.packageName
+                        if (!pkg.isNullOrEmpty()) {
+                            packages.add(pkg)
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            return packages
+        }
+
+        private fun queryClearableRecentTasks(
+            atm: Any,
+            launcherPackages: Set<String>
+        ): ClearableRecentTasksResult {
             return try {
                 val getRecentMethod = atm.javaClass.methods.firstOrNull { m ->
                     m.name == "getRecentTasks" && m.parameterTypes.size == 3
-                } ?: return emptyList()
+                } ?: return ClearableRecentTasksResult(emptyList(), false)
                 // ActivityManager.RECENT_IGNORE_UNAVAILABLE == 2 (returns tasks visible in Recents)
-                val rawResult = getRecentMethod.invoke(atm, 256, 2, 0) ?: return emptyList()
+                val rawResult = getRecentMethod.invoke(atm, 256, 2, 0)
+                    ?: return ClearableRecentTasksResult(emptyList(), false)
                 val tasks: List<*> = when (rawResult) {
                     is List<*> -> rawResult
                     else -> {
@@ -1392,24 +1658,21 @@ object PrivilegedHelperMain {
                     }
                 }
                 val ids = LinkedHashSet<Int>()
+                var skippedLauncherTask = false
                 for (task in tasks) {
                     if (task == null) continue
                     try {
                         val taskId = task.javaClass.getField("taskId").getInt(task)
                         if (taskId <= 0) continue
-                        val topPkg = (task.javaClass.getField("topActivity").get(task)
-                            as? android.content.ComponentName)?.packageName
-                        val basePkg = try {
-                            (task.javaClass.getField("baseIntent").get(task) as? android.content.Intent)
-                                ?.component?.packageName
-                        } catch (_: Throwable) {
-                            null
-                        }
-                        val pkg = topPkg ?: basePkg ?: ""
+                        val pkg = extractTaskPackageName(task)
                         if (pkg == APP_PACKAGE_NAME ||
                             isStockAssistantPackage(pkg) ||
                             pkg == SYSUI_PACKAGE
                         ) {
+                            continue
+                        }
+                        if (pkg.isNotEmpty() && pkg in launcherPackages) {
+                            skippedLauncherTask = true
                             continue
                         }
                         val actType = try {
@@ -1426,9 +1689,28 @@ object PrivilegedHelperMain {
                     } catch (_: Throwable) {
                     }
                 }
-                ids.toList()
+                ClearableRecentTasksResult(ids.toList(), skippedLauncherTask)
             } catch (_: Throwable) {
-                emptyList()
+                ClearableRecentTasksResult(emptyList(), false)
+            }
+        }
+
+        private fun extractTaskPackageName(task: Any): String {
+            val componentFields = arrayOf("topActivity", "baseActivity", "realActivity", "origActivity")
+            for (fieldName in componentFields) {
+                val pkg = try {
+                    (task.javaClass.getField(fieldName).get(task) as? android.content.ComponentName)
+                        ?.packageName
+                } catch (_: Throwable) {
+                    null
+                }
+                if (!pkg.isNullOrEmpty()) return pkg
+            }
+            return try {
+                val intent = task.javaClass.getField("baseIntent").get(task) as? android.content.Intent
+                intent?.component?.packageName ?: intent?.`package` ?: ""
+            } catch (_: Throwable) {
+                ""
             }
         }
 
@@ -1559,6 +1841,7 @@ object PrivilegedHelperMain {
         }
 
         private fun execRootCommand(command: String): String {
+            execRootCommandOverride?.let { return it(command) }
             val ps = pServerBinder
             if (ps != null && ps.isBinderAlive) {
                 val data = Parcel.obtain()
@@ -1695,25 +1978,301 @@ object PrivilegedHelperMain {
                 return
             } catch (_: Throwable) {
             }
-            val sigArg = if (sig == SIGNAL_CONT) "-CONT" else "-STOP"
+            val sigArg = when (sig) {
+                SIGNAL_CONT -> "-CONT"
+                SIGNAL_KILL -> "-9"
+                else -> "-STOP"
+            }
             execRootCommand("kill $sigArg $pid")
+        }
+
+        private fun resolveBroadcastUnfreezeDelayMs(): Long {
+            val modern = modernBroadcastQueueOverride ?: (android.os.Build.VERSION.SDK_INT >= 34)
+            return if (modern) {
+                STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS
+            } else {
+                STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS
+            }
+        }
+
+        private fun runStockWorker(task: Runnable) {
+            val hook = stockWorkerExecutorOverride
+            if (hook != null) {
+                hook(task)
+            } else {
+                Thread(task, "BDSA-StockSupervisor").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+        }
+
+        private fun triggerStockResuppressionAsync(reason: String) {
+            if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) return
+            val now = SystemClock.elapsedRealtime()
+            val last = lastAutoResuppressElapsedMs
+            if (now - last in 0L until STOCK_AUTO_RESUPPRESS_COOLDOWN_MS) {
+                return
+            }
+            lastAutoResuppressElapsedMs = now
+            runStockWorker {
+                if (!replaceStockPreferred || isShuttingDown) return@runStockWorker
+                Log.w(TAG, "Stock assistant escaped ($reason); re-suppressing ephemerally")
+                suppressStockAssistantInternal()
+            }
+        }
+
+        private fun triggerStockTccServiceVerificationAsync(pid: Int) {
+            if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) return
+            if (!isVerifyingStockService.compareAndSet(false, true)) return
+            runStockWorker {
+                try {
+                    if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) {
+                        return@runStockWorker
+                    }
+                    val stockPkg = resolveStockPackageInternal()
+                    if (isTccServiceRunningInternal(stockPkg)) {
+                        triggerStockResuppressionAsync("monitor_tcc_service_pid_$pid")
+                    } else {
+                        lastVerifiedWindowlessStockPid = pid
+                    }
+                } finally {
+                    isVerifyingStockService.set(false)
+                }
+            }
+        }
+
+        private fun resolveAllStockPidsInternal(stockPkg: String): List<Int> {
+            resolveAllStockPidsOverride?.let { return it(stockPkg) }
+            val am = activityManagerProxy
+            if (am != null) {
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    val procs = am.javaClass.getMethod("getRunningAppProcesses")
+                        .invoke(am) as? List<ActivityManager.RunningAppProcessInfo>
+                    if (procs != null) {
+                        return procs.filter {
+                            (it.processName == stockPkg || isStockAssistantPackage(it.processName)) &&
+                                it.pid > 0
+                        }.map { it.pid }.distinct()
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            return execRootCommand("pidof $stockPkg")
+                .trim()
+                .split(Regex("\\s+"))
+                .mapNotNull { token ->
+                    token.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.toIntOrNull()
+                }
+                .filter { it > 0 }
+                .distinct()
+        }
+
+        private fun isTccServiceRunningInternal(stockPkg: String): Boolean {
+            isTccServiceRunningOverride?.let { return it(stockPkg) }
+            val am = activityManagerProxy
+            if (am != null) {
+                try {
+                    val getServices = am.javaClass.methods.firstOrNull { m ->
+                        m.name == "getServices" && m.parameterTypes.size == 2
+                    }
+                    if (getServices != null) {
+                        @Suppress("UNCHECKED_CAST")
+                        val services = getServices.invoke(am, 200, 0)
+                            as? List<ActivityManager.RunningServiceInfo>
+                        if (services != null) {
+                            return services.any { info ->
+                                info.service?.packageName == stockPkg &&
+                                    info.service?.className?.endsWith(".TccServices") == true
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            val out = execRootCommand("dumpsys activity services $stockPkg | grep -c 'TccServices'")
+                .trim()
+            return (out.toIntOrNull() ?: 0) > 0
+        }
+
+        private fun hasStockReceiverRegisteredInternal(pid: Int, stockPkg: String): Boolean? {
+            hasStockReceiverRegisteredOverride?.let { return it(pid, stockPkg) }
+            val out = execRootCommand("dumpsys activity broadcasts | grep -cF ' $pid $stockPkg/'")
+                .trim()
+            return out.toIntOrNull()?.let { it > 0 }
+        }
+
+        private fun isStockAssistantActiveInternal(): Boolean {
+            val stockPkg = resolveStockPackageInternal()
+            val pid = resolveStockPidInternal()
+            if (pid > 0) {
+                if (isTccServiceRunningInternal(stockPkg)) {
+                    return true
+                }
+                val tempUnfrozen = synchronized(stockFreezeLock) {
+                    temporarilyUnfrozenStockPid == pid
+                }
+                if (tempUnfrozen) {
+                    return false
+                }
+                return !isPidStoppedInternal(pid)
+            }
+            return getApplicationInfoInternal(stockPkg)?.enabled ?: true
+        }
+
+        /**
+         * Deterministically suppresses the persistent stock DualScreenAssistant ephemerally:
+         * 1. Transiently disables `TccServices` and kills existing stock PIDs.
+         * 2. Waits for the respawned persistent process to appear and finish startup
+         *    (`ScreenReceiver` registration in `ActivityManager`) before sending `SIGSTOP`,
+         *    preventing `failed to complete startup` ANRs on Android 16.
+         * 3. Always re-enables the stock package and `TccServices` on disk in `finally`, then
+         *    verifies the frozen PID stayed unchanged without `TccServices` running (retrying once
+         *    if a race spawned a new PID).
+         */
+        private fun suppressStockAssistantInternal(): Boolean = synchronized(stockSuppressionLock) {
+            isSuppressingStock = true
+            try {
+                synchronized(stockFreezeLock) {
+                    mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                    temporarilyUnfrozenStockPid = -1
+                    cachedStockPid = -1
+                    lastVerifiedWindowlessStockPid = -1
+                }
+                suppressStockOverride?.let { return it() }
+
+                val stockPkg = resolveStockPackageInternal()
+                val serviceComponent = "$stockPkg/.services.TccServices"
+                val pollMs = (stockPollIntervalMsOverride ?: STOCK_POLL_INTERVAL_MS).coerceAtLeast(0L)
+                val settleMs = (stockStartupSettleMsOverride ?: STOCK_STARTUP_SETTLE_MS)
+                    .coerceAtLeast(0L)
+                val fallbackSleepMs =
+                    (stockStartupFallbackSleepMsOverride ?: STOCK_STARTUP_FALLBACK_SLEEP_MS)
+                        .coerceAtLeast(0L)
+
+                repeat(2) {
+                    var newPid = -1
+                    try {
+                        execRootCommand("am stopservice -n $serviceComponent")
+                        execRootCommand("pm disable $serviceComponent")
+                        execRootCommand("pm enable $stockPkg")
+
+                        val oldPids = resolveAllStockPidsInternal(stockPkg).toSet()
+                        for (oldPid in oldPids) {
+                            sendSignalToStockPidInternal(oldPid, SIGNAL_KILL)
+                        }
+
+                        val spawnDeadline = SystemClock.elapsedRealtime() + STOCK_SPAWN_WAIT_TIMEOUT_MS
+                        var spawnPolls = 0
+                        while (true) {
+                            val currentPids = resolveAllStockPidsInternal(stockPkg)
+                            val candidate = currentPids.firstOrNull { it !in oldPids && it > 0 }
+                            if (candidate != null) {
+                                newPid = candidate
+                                break
+                            }
+                            spawnPolls++
+                            if (SystemClock.elapsedRealtime() >= spawnDeadline || spawnPolls >= 40) {
+                                break
+                            }
+                            if (pollMs > 0L) {
+                                try {
+                                    Thread.sleep(pollMs)
+                                } catch (_: InterruptedException) {
+                                    break
+                                }
+                            }
+                        }
+
+                        if (newPid > 0) {
+                            val startupDeadline =
+                                SystemClock.elapsedRealtime() + STOCK_STARTUP_WAIT_TIMEOUT_MS
+                            var startupPolls = 0
+                            while (true) {
+                                val registered = hasStockReceiverRegisteredInternal(newPid, stockPkg)
+                                if (registered == true) {
+                                    if (settleMs > 0L) {
+                                        try {
+                                            Thread.sleep(settleMs)
+                                        } catch (_: InterruptedException) {
+                                        }
+                                    }
+                                    break
+                                }
+                                if (registered == null) {
+                                    if (fallbackSleepMs > 0L) {
+                                        try {
+                                            Thread.sleep(fallbackSleepMs)
+                                        } catch (_: InterruptedException) {
+                                        }
+                                    }
+                                    break
+                                }
+                                if (resolveAllStockPidsOverride == null &&
+                                    !doesPidMatchStockPackage(newPid)
+                                ) {
+                                    break
+                                }
+                                startupPolls++
+                                if (SystemClock.elapsedRealtime() >= startupDeadline ||
+                                    startupPolls >= 40
+                                ) {
+                                    break
+                                }
+                                if (pollMs > 0L) {
+                                    try {
+                                        Thread.sleep(pollMs)
+                                    } catch (_: InterruptedException) {
+                                        break
+                                    }
+                                }
+                            }
+                            sendSignalToStockPidInternal(newPid, SIGNAL_STOP)
+                        }
+                    } finally {
+                        execRootCommand("pm enable $stockPkg")
+                        execRootCommand("pm enable $serviceComponent")
+                        execRootCommand("pm enable $stockPkg/.receivers.BootBroadcastReceiver")
+                    }
+
+                    val verifyPids = resolveAllStockPidsInternal(stockPkg)
+                    if (newPid > 0 && verifyPids.contains(newPid) && verifyPids.all { it == newPid }) {
+                        if (!isPidStoppedInternal(newPid)) {
+                            sendSignalToStockPidInternal(newPid, SIGNAL_STOP)
+                        }
+                        if (!isTccServiceRunningInternal(stockPkg)) {
+                            synchronized(stockFreezeLock) {
+                                cachedStockPid = newPid
+                                lastVerifiedWindowlessStockPid = newPid
+                            }
+                            return true
+                        }
+                    }
+                }
+                return false
+            } finally {
+                isSuppressingStock = false
+            }
         }
 
         /**
          * Temporarily wakes (`SIGCONT`) or re-freezes (`SIGSTOP`) the windowless stock
-         * `com.odin.dualscreen.assistant` process around foreground ordered broadcasts
+         * assistant process around screen/power broadcasts
          * (`ACTION_SCREEN_ON`, `ACTION_SCREEN_OFF`, `ACTION_SHUTDOWN`, `REBOOT`).
          *
-         * Because `com.odin.dualscreen.assistant` registers a dynamic `ScreenReceiver` in
-         * `ThisApplication.onCreate()`, leaving it in `T` (`SIGSTOP`) state during ordered
-         * screen broadcasts stalls `system_server`'s foreground `BroadcastQueue` for 10s
-         * (delaying `SCREEN_ON`/`SCREEN_OFF` delivery to `com.odin.gameassistant`) and triggers
-         * a 12s ANR kill-and-respawn with `TccServices` re-bound.
+         * Because the stock assistant registers a dynamic `ScreenReceiver` in
+         * `ThisApplication.onCreate()`, leaving it in `T` (`SIGSTOP`) state during screen
+         * broadcasts stalls delivery and triggers a 10s ANR kill-and-respawn with `TccServices`
+         * re-bound. On Android 14+ (`BroadcastQueueModernImpl`), screen broadcasts dispatch in
+         * parallel per-process queues, so re-freezing relies on the safety timeout
+         * ([STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS]) rather than `postOrderedScreenReceiver`.
          */
         private fun setStockProcessFrozenForBroadcastInternal(freeze: Boolean) {
+            var escapedPid = -1
             synchronized(stockFreezeLock) {
                 if (!freeze) {
-                    if (!replaceStockPreferred || isShuttingDown) return
+                    if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) return
                     val pid = resolveStockPidInternal()
                     if (pid <= 0) return
                     if (temporarilyUnfrozenStockPid == pid || isPidStoppedInternal(pid)) {
@@ -1722,8 +2281,10 @@ object PrivilegedHelperMain {
                         mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                         mainHandler.postDelayed(
                             refreezeStockSafetyRunnable,
-                            STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS
+                            resolveBroadcastUnfreezeDelayMs()
                         )
+                    } else if (clientBinder?.isBinderAlive == true) {
+                        escapedPid = pid
                     }
                 } else {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
@@ -1734,6 +2295,9 @@ object PrivilegedHelperMain {
                         sendSignalToStockPidInternal(pid, SIGNAL_STOP)
                     }
                 }
+            }
+            if (escapedPid > 0) {
+                triggerStockResuppressionAsync("broadcast_escaped_pid_$escapedPid")
             }
         }
 
@@ -1778,7 +2342,10 @@ object PrivilegedHelperMain {
             try {
                 synchronized(stockFreezeLock) {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                    mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
                     temporarilyUnfrozenStockPid = -1
+                    cachedStockPid = -1
+                    lastVerifiedWindowlessStockPid = -1
                 }
                 val bottomDisplayId = resolveBottomDisplayIdInternal()
                 val stockPkg = resolveStockPackageInternal()
@@ -1810,7 +2377,7 @@ object PrivilegedHelperMain {
                     setDisplayBrightnessInternal(bottomDisplayId, restoreBottom, false)
                 }
 
-                // 2. Reset Dual-Screen mode (0), focus lock (0), touch disable ("0,0"), and pin screen mode (0)
+                // 2. Reset Dual-Screen mode (0), focus lock (0), and touch disable ("0,0")
                 putSystemSettingInternal("dual_screen_display_mode", "0")
                 putSystemSettingInternal("enable_system_key_focus_lock", "0")
                 putSystemSettingInternal("screen_focus_lock", "0")
@@ -1818,7 +2385,6 @@ object PrivilegedHelperMain {
                     sysPropsSet.invoke(null, "sys.temp.disabled.touch", "0,0")
                 } catch (_: Throwable) {
                 }
-                setPinScreenModeInternal(0)
 
                 // 2.5. Restore stock OS theme overlay and night mode if injected
                 clearOsThemeOverlayInternal(
@@ -2306,11 +2872,26 @@ object PrivilegedHelperMain {
             }
         }
 
+        private fun getPinScreenModeInternal(): Int {
+            val wm = windowManagerOverride ?: windowManagerProxy ?: return -1
+            return try {
+                val method = wm.javaClass.getMethod("getPinScreenMode")
+                (method.invoke(wm) as? Number)?.toInt() ?: -1
+            } catch (_: NoSuchMethodException) {
+                -1
+            } catch (t: Throwable) {
+                Log.w(TAG, "getPinScreenMode() failed", t)
+                -1
+            }
+        }
+
         private fun setPinScreenModeInternal(mode: Int) {
-            val wm = windowManagerProxy ?: return
+            val wm = windowManagerOverride ?: windowManagerProxy ?: return
             try {
                 val method = wm.javaClass.getMethod("setPinScreenMode", Int::class.javaPrimitiveType)
                 method.invoke(wm, mode)
+            } catch (_: NoSuchMethodException) {
+                // Not available on devices without vendor IME pin screen mode API (e.g. Retroid Pocket Duo)
             } catch (t: Throwable) {
                 Log.w(TAG, "setPinScreenMode($mode) failed", t)
             }
@@ -2915,6 +3496,36 @@ object PrivilegedHelperMain {
             reply.writeString(status.lastStopReason)
         }
 
+        private fun getScreenCastStateInternal(): HelperCastStatus {
+            screenCastStateOverride?.let { return it() }
+            return resolveScreenCastStateFromProxies(
+                dmProxy = displayManagerProxy,
+                projectionProxy = mediaProjectionManagerProxy,
+                routerProxy = mediaRouter2Manager,
+                fallbackRouterProxy = mediaRouterServiceProxy
+            )
+        }
+
+        private fun disconnectScreenCastInternal(): Boolean {
+            disconnectScreenCastOverride?.let { return it() }
+            return disconnectScreenCastViaProxies(
+                dmProxy = displayManagerProxy,
+                projectionProxy = mediaProjectionManagerProxy,
+                routerProxy = mediaRouter2Manager,
+                fallbackRouterProxy = mediaRouterServiceProxy
+            )
+        }
+
+        private fun writeScreenCastStatusToParcel(
+            reply: Parcel?,
+            status: HelperCastStatus
+        ) {
+            if (reply == null) return
+            reply.writeInt(if (status.isCasting) 1 else 0)
+            reply.writeInt(if (status.isConnecting) 1 else 0)
+            reply.writeString(status.deviceName)
+        }
+
         private fun captureScreenshotInternal(
             targetMode: Int,
             topPath: String,
@@ -3417,5 +4028,543 @@ object PrivilegedHelperMain {
             }
         }
         return topPhysId to bottomPhysId
+    }
+
+    internal fun isWirelessCastProjectionPackage(packageName: String?): Boolean {
+        val pkg = packageName?.trim().orEmpty()
+        return pkg in CAST_PROJECTION_PACKAGES
+    }
+
+    internal fun sanitizeCastDeviceName(rawName: String?): String {
+        val trimmed = rawName?.trim().orEmpty()
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.lowercase( java.util.Locale.US) in GENERIC_CAST_DISPLAY_NAMES) return ""
+        return trimmed
+    }
+
+    internal fun isNonCastGmsDisplayName(rawName: String?): Boolean {
+        val lower = rawName?.trim()?.lowercase(java.util.Locale.US).orEmpty()
+        if (lower.isEmpty()) return false
+        return NON_CAST_GMS_DISPLAY_KEYWORDS.any { lower.contains(it) }
+    }
+
+    private fun createMediaRouter2Manager(sysCtx: Context?): Any? {
+        val baseCtx = sysCtx ?: return null
+        val mgrClass = try {
+            Class.forName("android.media.MediaRouter2Manager")
+        } catch (_: Throwable) {
+            return null
+        }
+        val candidatePackageNames = if (Process.myUid() == 0) {
+            listOf("root", baseCtx.packageName)
+        } else {
+            listOf(baseCtx.packageName)
+        }
+        for (pkg in candidatePackageNames.distinct()) {
+            try {
+                val wrapped = object : ContextWrapper(baseCtx) {
+                    override fun getApplicationContext(): Context = this
+                    override fun getPackageName(): String = pkg
+                }
+                val ctor = mgrClass.getDeclaredConstructor(Context::class.java).apply {
+                    isAccessible = true
+                }
+                val instance = ctor.newInstance(wrapped)
+                mgrClass.getMethod("getRemoteSessions").invoke(instance)
+                return instance
+            } catch (_: Throwable) {
+            }
+        }
+        return try {
+            val wrapped = object : ContextWrapper(baseCtx) {
+                override fun getApplicationContext(): Context = this
+            }
+            mgrClass.getMethod("getInstance", Context::class.java).invoke(null, wrapped)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to initialize MediaRouter2Manager", t)
+            null
+        }
+    }
+
+    internal fun invokeStopActiveProjection(projectionManager: Any?): Boolean {
+        val pm = projectionManager ?: return false
+        return try {
+            val methods = pm.javaClass.methods
+            val zeroArg = methods.firstOrNull {
+                it.name == "stopActiveProjection" && it.parameterCount == 0
+            }
+            if (zeroArg != null) {
+                zeroArg.invoke(pm)
+                return true
+            }
+            val oneArg = methods.firstOrNull {
+                it.name == "stopActiveProjection" &&
+                    it.parameterCount == 1 &&
+                    it.parameterTypes[0] == Int::class.javaPrimitiveType
+            }
+            if (oneArg != null) {
+                oneArg.invoke(pm, 0)
+                return true
+            }
+            false
+        } catch (t: Throwable) {
+            Log.w(TAG, "invokeStopActiveProjection failed", t)
+            false
+        }
+    }
+
+    internal fun resolveScreenCastStateFromProxies(
+        dmProxy: Any?,
+        projectionProxy: Any?,
+        routerProxy: Any? = null,
+        fallbackRouterProxy: Any? = null
+    ): HelperCastStatus {
+        // 1. Miracast / Wi-Fi Display via IDisplayManager.getWifiDisplayStatus()
+        if (dmProxy != null) {
+            try {
+                val wfdStatus = dmProxy.javaClass.getMethod("getWifiDisplayStatus").invoke(dmProxy)
+                if (wfdStatus != null) {
+                    val activeState =
+                        wfdStatus.javaClass.getMethod("getActiveDisplayState").invoke(wfdStatus) as? Int ?: 0
+                    val activeDisplay =
+                        wfdStatus.javaClass.getMethod("getActiveDisplay").invoke(wfdStatus)
+                    val rawFriendly = try {
+                        activeDisplay?.javaClass?.getMethod("getFriendlyDisplayName")
+                            ?.invoke(activeDisplay) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val rawDevice = try {
+                        activeDisplay?.javaClass?.getMethod("getDeviceName")
+                            ?.invoke(activeDisplay) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val cleanName = sanitizeCastDeviceName(rawFriendly).ifEmpty {
+                        sanitizeCastDeviceName(rawDevice)
+                    }
+                    if (activeState == 2) {
+                        return HelperCastStatus(
+                            isCasting = true,
+                            isConnecting = false,
+                            deviceName = cleanName
+                        )
+                    }
+                    if (activeState == 1) {
+                        return HelperCastStatus(
+                            isCasting = false,
+                            isConnecting = true,
+                            deviceName = cleanName
+                        )
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        // 2. Google Cast / Chromecast MediaProjection + Cast VirtualDisplay / Wi-Fi Display
+        var castProjectionActive = false
+        if (projectionProxy != null) {
+            try {
+                val projInfo = projectionProxy.javaClass
+                    .getMethod("getActiveProjectionInfo")
+                    .invoke(projectionProxy)
+                val projPkg = projInfo?.javaClass
+                    ?.getMethod("getPackageName")
+                    ?.invoke(projInfo) as? String
+                if (isWirelessCastProjectionPackage(projPkg)) {
+                    castProjectionActive = true
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        val primarySessions = findMatchingRemoteCastSessions(routerProxy)
+        val activeRouterSource: Any?
+        val matchingRemoteSessions: List<Any>
+        if (primarySessions.isNotEmpty()) {
+            activeRouterSource = routerProxy
+            matchingRemoteSessions = primarySessions
+        } else {
+            activeRouterSource = fallbackRouterProxy
+            matchingRemoteSessions = findMatchingRemoteCastSessions(fallbackRouterProxy)
+        }
+        val hasRouterInspection = routerProxy != null || fallbackRouterProxy != null
+
+        var wifiDisplayActive = false
+        var gmsVirtualDisplayActive = false
+        var castDisplayName = ""
+        if (dmProxy != null) {
+            try {
+                val ids = invokeGetDisplayIds(dmProxy)
+                val getInfo = dmProxy.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                for (id in ids) {
+                    if (id == 0) continue
+                    val info = getInfo.invoke(dmProxy, id) ?: continue
+                    val type = try {
+                        info.javaClass.getField("type").getInt(info)
+                    } catch (_: Throwable) {
+                        0
+                    }
+                    val ownerPkg = try {
+                        info.javaClass.getField("ownerPackageName").get(info) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val rawInfoName = try {
+                        info.javaClass.getField("name").get(info) as? String
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (type == 3) {
+                        wifiDisplayActive = true
+                        val sanitized = sanitizeCastDeviceName(rawInfoName)
+                        if (sanitized.isNotEmpty() && castDisplayName.isEmpty()) {
+                            castDisplayName = sanitized
+                        }
+                    } else if (type == 5 &&
+                        isWirelessCastProjectionPackage(ownerPkg) &&
+                        !isNonCastGmsDisplayName(rawInfoName) &&
+                        (castProjectionActive || matchingRemoteSessions.isNotEmpty() || !hasRouterInspection)
+                    ) {
+                        gmsVirtualDisplayActive = true
+                        val sanitized = sanitizeCastDeviceName(rawInfoName)
+                        if (sanitized.isNotEmpty() && castDisplayName.isEmpty()) {
+                            castDisplayName = sanitized
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        if (castProjectionActive || wifiDisplayActive || gmsVirtualDisplayActive) {
+            val sessionName = extractRemoteCastSessionDeviceName(
+                sessions = matchingRemoteSessions,
+                routerSource = activeRouterSource
+            )
+            return HelperCastStatus(
+                isCasting = true,
+                isConnecting = false,
+                deviceName = sessionName.ifEmpty { castDisplayName }
+            )
+        }
+
+        return HelperCastStatus()
+    }
+
+    internal fun disconnectScreenCastViaProxies(
+        dmProxy: Any?,
+        projectionProxy: Any?,
+        routerProxy: Any? = null,
+        fallbackRouterProxy: Any? = null
+    ): Boolean {
+        var disconnectedAny = false
+        var hadCastVirtualDisplay = false
+        if (dmProxy != null) {
+            try {
+                val wfdStatus = try {
+                    dmProxy.javaClass.getMethod("getWifiDisplayStatus").invoke(dmProxy)
+                } catch (_: Throwable) {
+                    null
+                }
+                val activeState = try {
+                    wfdStatus?.javaClass?.getMethod("getActiveDisplayState")
+                        ?.invoke(wfdStatus) as? Int ?: 0
+                } catch (_: Throwable) {
+                    0
+                }
+                var hasWifiDisplay = false
+                try {
+                    val ids = invokeGetDisplayIds(dmProxy)
+                    val getInfo = dmProxy.javaClass.getMethod("getDisplayInfo", Int::class.javaPrimitiveType)
+                    for (id in ids) {
+                        if (id == 0) continue
+                        val info = getInfo.invoke(dmProxy, id) ?: continue
+                        val type = try {
+                            info.javaClass.getField("type").getInt(info)
+                        } catch (_: Throwable) {
+                            0
+                        }
+                        val ownerPkg = try {
+                            info.javaClass.getField("ownerPackageName").get(info) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        val rawInfoName = try {
+                            info.javaClass.getField("name").get(info) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        if (type == 3) {
+                            hasWifiDisplay = true
+                        } else if (type == 5 &&
+                            isWirelessCastProjectionPackage(ownerPkg) &&
+                            !isNonCastGmsDisplayName(rawInfoName)
+                        ) {
+                            hadCastVirtualDisplay = true
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+                if (activeState == 1 || activeState == 2 || hasWifiDisplay) {
+                    dmProxy.javaClass.getMethod("disconnectWifiDisplay").invoke(dmProxy)
+                    disconnectedAny = true
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "disconnectWifiDisplay failed", t)
+            }
+        }
+        var stoppedCastProjection = false
+        if (projectionProxy != null) {
+            try {
+                val projInfo = projectionProxy.javaClass
+                    .getMethod("getActiveProjectionInfo")
+                    .invoke(projectionProxy)
+                val projPkg = projInfo?.javaClass
+                    ?.getMethod("getPackageName")
+                    ?.invoke(projInfo) as? String
+                if (isWirelessCastProjectionPackage(projPkg)) {
+                    if (invokeStopActiveProjection(projectionProxy)) {
+                        stoppedCastProjection = true
+                        disconnectedAny = true
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "stopActiveProjection for cast failed", t)
+            }
+        }
+        if (stoppedCastProjection || hadCastVirtualDisplay) {
+            if (releaseMatchingRemoteCastSessions(routerProxy) ||
+                releaseMatchingRemoteCastSessions(fallbackRouterProxy)
+            ) {
+                disconnectedAny = true
+            }
+        }
+        return disconnectedAny
+    }
+
+    private fun invokeGetDisplayIds(dmProxy: Any): IntArray {
+        val methods = dmProxy.javaClass.methods
+        val zeroArg = methods.firstOrNull {
+            it.name == "getDisplayIds" && it.parameterCount == 0
+        }
+        if (zeroArg != null) {
+            return (zeroArg.invoke(dmProxy) as? IntArray) ?: IntArray(0)
+        }
+        val oneArg = methods.firstOrNull {
+            it.name == "getDisplayIds" &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0] == Boolean::class.javaPrimitiveType
+        }
+        if (oneArg != null) {
+            return (oneArg.invoke(dmProxy, false) as? IntArray) ?: IntArray(0)
+        }
+        return IntArray(0)
+    }
+
+    private fun isMatchingRemoteCastSession(session: Any): Boolean {
+        val isSystem = try {
+            session.javaClass.getMethod("isSystemSession").invoke(session) as? Boolean ?: false
+        } catch (_: Throwable) {
+            false
+        }
+        if (isSystem) return false
+        val ownerPkg = try {
+            session.javaClass.getMethod("getOwnerPackageName").invoke(session) as? String
+        } catch (_: Throwable) {
+            null
+        }
+        val clientPkg = try {
+            session.javaClass.getMethod("getClientPackageName").invoke(session) as? String
+        } catch (_: Throwable) {
+            null
+        }
+        return isWirelessCastProjectionPackage(ownerPkg) || isWirelessCastProjectionPackage(clientPkg)
+    }
+
+    private fun findMatchingRemoteCastSessions(routerProxy: Any?): List<Any> {
+        val router = routerProxy ?: return emptyList()
+        return try {
+            val methods = router.javaClass.methods
+            val zeroArg = methods.firstOrNull {
+                it.name == "getRemoteSessions" && it.parameterCount == 0
+            }
+            val rawSessions: List<*>? = if (zeroArg != null) {
+                zeroArg.invoke(router) as? List<*>
+            } else {
+                invokeServiceWithTemporaryRouter2Manager(router) { getSessions, managerProxy ->
+                    getSessions.invoke(router, managerProxy) as? List<*>
+                }
+            }
+            rawSessions?.filterNotNull()?.filter { isMatchingRemoteCastSession(it) }.orEmpty()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun extractRemoteCastSessionDeviceName(
+        sessions: List<Any>,
+        routerSource: Any?
+    ): String {
+        for (session in sessions) {
+            val rawSessionName = try {
+                (session.javaClass.getMethod("getName").invoke(session) as? CharSequence)?.toString()
+            } catch (_: Throwable) {
+                null
+            }
+            val cleanSessionName = sanitizeCastDeviceName(rawSessionName)
+            if (cleanSessionName.isNotEmpty()) return cleanSessionName
+
+            if (routerSource != null) {
+                val selectedRoutes = try {
+                    val getSelectedRoutes = routerSource.javaClass.methods.firstOrNull {
+                        it.name == "getSelectedRoutes" &&
+                            it.parameterCount == 1 &&
+                            it.parameterTypes[0].isAssignableFrom(session.javaClass)
+                    }
+                    getSelectedRoutes?.invoke(routerSource, session) as? List<*>
+                } catch (_: Throwable) {
+                    null
+                }
+                if (selectedRoutes != null) {
+                    for (route in selectedRoutes) {
+                        if (route == null) continue
+                        val rawRouteName = try {
+                            (route.javaClass.getMethod("getName").invoke(route) as? CharSequence)
+                                ?.toString()
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        val cleanRouteName = sanitizeCastDeviceName(rawRouteName)
+                        if (cleanRouteName.isNotEmpty()) return cleanRouteName
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun releaseMatchingRemoteCastSessions(routerProxy: Any?): Boolean {
+        val router = routerProxy ?: return false
+        var releasedAny = false
+        try {
+            val releaseMethod = router.javaClass.methods.firstOrNull {
+                it.name == "releaseSession" && it.parameterCount == 1
+            }
+            if (releaseMethod != null) {
+                val sessions = findMatchingRemoteCastSessions(router)
+                for (session in sessions) {
+                    if (releaseMethod.parameterTypes[0].isAssignableFrom(session.javaClass)) {
+                        releaseMethod.invoke(router, session)
+                        releasedAny = true
+                    }
+                }
+                return releasedAny
+            }
+
+            val releaseWithManager = router.javaClass.methods.firstOrNull {
+                it.name == "releaseSessionWithManager" && it.parameterCount == 3
+            }
+            if (releaseWithManager != null) {
+                releasedAny = invokeServiceWithTemporaryRouter2Manager(router) { getSessions, managerProxy ->
+                    val sessions = (getSessions.invoke(router, managerProxy) as? List<*>)
+                        ?.filterNotNull()
+                        ?.filter { isMatchingRemoteCastSession(it) }
+                        .orEmpty()
+                    var released = false
+                    var reqId = 1
+                    for (session in sessions) {
+                        val sessionId = try {
+                            session.javaClass.getMethod("getId").invoke(session) as? String
+                        } catch (_: Throwable) {
+                            null
+                        } ?: continue
+                        val firstType = releaseWithManager.parameterTypes[0]
+                        if (firstType == Long::class.javaPrimitiveType) {
+                            releaseWithManager.invoke(router, reqId.toLong(), managerProxy, sessionId)
+                        } else {
+                            releaseWithManager.invoke(router, reqId, managerProxy, sessionId)
+                        }
+                        reqId++
+                        released = true
+                    }
+                    released
+                } ?: false
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "releaseMatchingRemoteCastSessions failed", t)
+        }
+        return releasedAny
+    }
+
+    private fun <T> invokeServiceWithTemporaryRouter2Manager(
+        routerService: Any,
+        block: (java.lang.reflect.Method, Any) -> T
+    ): T? {
+        val methods = routerService.javaClass.methods
+        val getRemoteSessions = methods.firstOrNull {
+            it.name == "getRemoteSessions" &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0].isInterface
+        } ?: return null
+        val managerInterface = getRemoteSessions.parameterTypes[0]
+        val registerManager = methods.firstOrNull {
+            it.name == "registerManager" &&
+                it.parameterCount == 2 &&
+                it.parameterTypes[0] == managerInterface &&
+                it.parameterTypes[1] == String::class.java
+        } ?: return null
+        val unregisterManager = methods.firstOrNull {
+            it.name == "unregisterManager" &&
+                it.parameterCount == 1 &&
+                it.parameterTypes[0] == managerInterface
+        }
+        val callbackBinder = object : Binder() {
+            override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                return if (code == IBinder.INTERFACE_TRANSACTION) {
+                    reply?.writeString(managerInterface.name)
+                    true
+                } else {
+                    true
+                }
+            }
+        }
+        val managerProxy = java.lang.reflect.Proxy.newProxyInstance(
+            managerInterface.classLoader,
+            arrayOf(managerInterface, android.os.IInterface::class.java)
+        ) { _, method, _ ->
+            when (method.name) {
+                "asBinder" -> callbackBinder
+                "hashCode" -> System.identityHashCode(callbackBinder)
+                "equals" -> false
+                "toString" -> "TempMediaRouter2ManagerProxy"
+                else -> when (method.returnType) {
+                    Boolean::class.javaPrimitiveType -> false
+                    Int::class.javaPrimitiveType -> 0
+                    Long::class.javaPrimitiveType -> 0L
+                    else -> null
+                }
+            }
+        }
+        val candidatePackages = listOf("root", "android", OS_THEME_OWNING_PACKAGE)
+        var registered = false
+        for (pkg in candidatePackages) {
+            try {
+                registerManager.invoke(routerService, managerProxy, pkg)
+                registered = true
+                break
+            } catch (_: Throwable) {
+            }
+        }
+        if (!registered) return null
+        return try {
+            block(getRemoteSessions, managerProxy)
+        } finally {
+            try {
+                unregisterManager?.invoke(routerService, managerProxy)
+            } catch (_: Throwable) {
+            }
+        }
     }
 }

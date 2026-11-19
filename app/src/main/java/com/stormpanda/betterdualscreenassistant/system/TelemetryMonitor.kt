@@ -5,6 +5,7 @@ import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.compose.runtime.Stable
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +17,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.ceil
 import kotlin.math.min
+import kotlin.math.round
 import kotlin.math.roundToInt
+
+internal data class RamUsageSnapshot(
+    val usedBytes: Long,
+    val availableBytes: Long,
+    val totalBytes: Long
+)
 
 data class HardwareTelemetryState(
     val currentFps: Int = 60,
@@ -41,6 +50,7 @@ data class HardwareTelemetryState(
  * Polls live FPS, CPU/GPU frequencies, thermal_zone48 temperature, fan percentage,
  * battery power (W), and RAM usage when the Settings tab is visible.
  */
+@Stable
 class TelemetryMonitor(private val context: Context) {
 
     companion object {
@@ -54,6 +64,7 @@ class TelemetryMonitor(private val context: Context) {
         private const val DEFAULT_THERMAL_CPU_TYPE_PATH = "/sys/devices/virtual/thermal/thermal_zone48/type"
         private const val BATTERY_CURRENT_NOW_PATH = "/sys/class/power_supply/battery/current_now"
         private const val BATTERY_VOLTAGE_NOW_PATH = "/sys/class/power_supply/battery/voltage_now"
+        private const val PROC_MEMINFO_PATH = "/proc/meminfo"
         internal const val ACCURATE_FPS_POLL_INTERVAL_MS = 500L
         internal const val LEGACY_FPS_POLL_INTERVAL_MS = 1500L
 
@@ -96,6 +107,133 @@ class TelemetryMonitor(private val context: Context) {
 
             // Do not cache fallback when sysfs was unreadable (e.g. before PrivilegedHelperMain connects)
             return DEFAULT_THERMAL_CPU_PATH
+        }
+
+        /**
+         * Locale-independent equivalent of stock `DualScreenAssistant` (`N0.a$b.k()`), rounding
+         * kernel-reported total RAM bytes to nominal decimal capacity (e.g. `11.52 GB` -> `12 GB`).
+         */
+        internal fun roundNominalMemoryBytes(totalBytes: Long): Long {
+            if (totalBytes <= 0L) return 0L
+            var scaled = totalBytes.toDouble()
+            var unit = 1L
+            repeat(4) {
+                if (scaled > 900.0) {
+                    scaled /= 1000.0
+                    unit *= 1000L
+                }
+            }
+            return round(scaled).toLong() * unit
+        }
+
+        /**
+         * Parses `MemTotal` and `MemAvailable` (in kB) from Linux `/proc/meminfo` text.
+         * Returns `null` when either field is absent or invalid.
+         */
+        internal fun parseProcMemInfoKb(memInfoText: String?): Pair<Long, Long>? {
+            if (memInfoText.isNullOrBlank()) return null
+            var memTotalKb = -1L
+            var memAvailableKb = -1L
+            for (rawLine in memInfoText.lineSequence()) {
+                val line = rawLine.trim()
+                if (line.startsWith("MemTotal:")) {
+                    memTotalKb = parseMemInfoValueKb(line)
+                } else if (line.startsWith("MemAvailable:")) {
+                    memAvailableKb = parseMemInfoValueKb(line)
+                }
+                if (memTotalKb > 0L && memAvailableKb >= 0L) {
+                    return memTotalKb to memAvailableKb
+                }
+            }
+            return null
+        }
+
+        private fun parseMemInfoValueKb(line: String): Long {
+            val colonIdx = line.indexOf(':')
+            if (colonIdx < 0) return -1L
+            val valuePart = line.substring(colonIdx + 1).trim()
+            val token = valuePart.takeWhile { it.isDigit() }
+            return token.toLongOrNull() ?: -1L
+        }
+
+        /**
+         * Computes RAM usage matching stock `DualScreenAssistant` (`N0.a$b.l()` / `RamRingView`):
+         * prefers `/proc/meminfo`'s `MemAvailable` / `MemTotal` ratio scaled to nominal total
+         * memory so reclaimable kernel/page caches after heavy game exits or crashes are reflected
+         * immediately instead of lagging behind `ActivityManager.MemoryInfo.availMem`.
+         */
+        internal fun computeRamUsageSnapshot(
+            memInfoText: String?,
+            amTotalBytes: Long,
+            amAvailBytes: Long
+        ): RamUsageSnapshot {
+            val parsed = parseProcMemInfoKb(memInfoText)
+            if (parsed != null) {
+                val (memTotalKb, memAvailableKb) = parsed
+                val rawTotalBytes = if (amTotalBytes > 0L) amTotalBytes else memTotalKb * 1024L
+                val displayTotalBytes = roundNominalMemoryBytes(rawTotalBytes)
+                    .takeIf { it > 0L } ?: rawTotalBytes
+                val availFraction = (memAvailableKb.toDouble() / memTotalKb.toDouble())
+                    .coerceIn(0.0, 1.0)
+                val displayAvailBytes = (displayTotalBytes * availFraction)
+                    .toLong()
+                    .coerceIn(0L, displayTotalBytes)
+                val usedBytes = (displayTotalBytes - displayAvailBytes).coerceAtLeast(0L)
+                return RamUsageSnapshot(
+                    usedBytes = usedBytes,
+                    availableBytes = displayAvailBytes,
+                    totalBytes = displayTotalBytes
+                )
+            }
+            val total = amTotalBytes.coerceAtLeast(0L)
+            val avail = amAvailBytes.coerceIn(0L, total)
+            return RamUsageSnapshot(
+                usedBytes = (total - avail).coerceAtLeast(0L),
+                availableBytes = avail,
+                totalBytes = total
+            )
+        }
+
+        internal fun readProcMemInfoText(): String? {
+            try {
+                val file = File(PROC_MEMINFO_PATH)
+                if (file.canRead()) {
+                    val sb = StringBuilder()
+                    var foundTotal = false
+                    var foundAvail = false
+                    file.bufferedReader().use { reader ->
+                        while (true) {
+                            val line = reader.readLine() ?: break
+                            if (line.startsWith("MemTotal:")) {
+                                sb.append(line).append('\n')
+                                foundTotal = true
+                            } else if (line.startsWith("MemAvailable:")) {
+                                sb.append(line).append('\n')
+                                foundAvail = true
+                            }
+                            if (foundTotal && foundAvail) break
+                        }
+                    }
+                    if (foundTotal && foundAvail) {
+                        return sb.toString()
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+            return PrivilegedBridge.readSysfsFile(PROC_MEMINFO_PATH).takeIf { it.isNotBlank() }
+        }
+
+        internal fun readRamUsageSnapshot(
+            am: ActivityManager?,
+            memInfoReader: () -> String? = ::readProcMemInfoText
+        ): RamUsageSnapshot {
+            val memInfo = ActivityManager.MemoryInfo()
+            am?.getMemoryInfo(memInfo)
+            return computeRamUsageSnapshot(
+                memInfoText = memInfoReader(),
+                amTotalBytes = memInfo.totalMem,
+                amAvailBytes = memInfo.availMem
+            )
         }
 
         /**
@@ -202,6 +340,13 @@ class TelemetryMonitor(private val context: Context) {
                 .divide(BigDecimal.valueOf(denominator), scale, RoundingMode.HALF_UP)
                 .toFloat()
         }
+
+        private fun roundFloat(value: Float, scale: Int = 2): Float {
+            if (!value.isFinite()) return 0f
+            return BigDecimal.valueOf(value.toDouble())
+                .setScale(scale, RoundingMode.HALF_UP)
+                .toFloat()
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -271,10 +416,9 @@ class TelemetryMonitor(private val context: Context) {
             val (_, initialGpuMaxVal, initialGpuUnitStr) = scaleGpuFrequency(0L, maxGpuRaw)
 
             val am = context.getSystemService(ActivityManager::class.java)
-            val memInfo = ActivityManager.MemoryInfo()
-            am?.getMemoryInfo(memInfo)
-            val totalRamGb = if (memInfo.totalMem > 0) {
-                memInfo.totalMem / 1_000_000_000f
+            val initialRam = readRamUsageSnapshot(am)
+            val totalRamGb = if (initialRam.totalBytes > 0L) {
+                roundDiv(initialRam.totalBytes, 1_000_000_000L, scale = 2)
             } else {
                 12f
             }
@@ -299,7 +443,7 @@ class TelemetryMonitor(private val context: Context) {
                 }
                 val tempRaw = PrivilegedBridge.readSysfsLong(cpuThermalPath)
                 val cpuTemp = when {
-                    tempRaw > 1000L -> tempRaw / 1000f
+                    tempRaw > 1000L -> roundDiv(tempRaw, 1000L, scale = 1)
                     tempRaw > 0L -> tempRaw.toFloat()
                     else -> _state.value.cpuTempCelsius
                 }
@@ -336,10 +480,22 @@ class TelemetryMonitor(private val context: Context) {
                 val currentNowUa = PrivilegedBridge.readSysfsLong(BATTERY_CURRENT_NOW_PATH)
                 val voltageNowUv = PrivilegedBridge.readSysfsLong(BATTERY_VOLTAGE_NOW_PATH)
                 // Replicate S0.n power calculation: (current_now / 1e6f) * (voltage_now / 1e6f) -> Watts
-                val powerWatts = (currentNowUa / 1_000_000f) * (voltageNowUv / 1_000_000f)
+                val powerWatts = roundFloat(
+                    (currentNowUa / 1_000_000f) * (voltageNowUv / 1_000_000f),
+                    scale = 2
+                )
 
-                am?.getMemoryInfo(memInfo)
-                val usedRamGb = ((memInfo.totalMem - memInfo.availMem).coerceAtLeast(0L)) / 1_000_000_000f
+                val ramSnapshot = readRamUsageSnapshot(am)
+                val polledTotalRamGb = if (ramSnapshot.totalBytes > 0L) {
+                    roundDiv(ramSnapshot.totalBytes, 1_000_000_000L, scale = 2)
+                } else {
+                    totalRamGb
+                }
+                val usedRamGb = roundDiv(
+                    ramSnapshot.usedBytes,
+                    1_000_000_000L,
+                    scale = 2
+                )
 
                 _state.value = _state.value.copy(
                     cpuTempCelsius = cpuTemp,
@@ -352,7 +508,7 @@ class TelemetryMonitor(private val context: Context) {
                     gpuUnit = dynamicGpuUnitStr,
                     powerWatts = powerWatts.coerceIn(-20f, 25f),
                     ramUsedGb = usedRamGb,
-                    ramTotalGb = totalRamGb
+                    ramTotalGb = polledTotalRamGb
                 )
 
                 delay(1500L)

@@ -123,6 +123,7 @@ Read and written via `PrivilegedBridge.getSystemProperty()` / `setSystemProperty
 | `"action.tcc.button.key.event"` | System -> App (`TccKeyReceiver`) | `key_action_down: Boolean`<br>`key_isLongPress: Boolean` | Broadcast by the AYN Thor framework whenever the physical AYN / TCC hardware button is pressed, held past the long-press threshold, or released. |
 | `"com.ro.external.request.light.adj.action"` | Bidirectional (`PrivilegedBridge` <-> System) | `isShow: Boolean` *(toggle state)*<br>`light_brightness: Int (0..255)` *(brightness)* | Controls or notifies changes to the joystick RGB ambient LEDs. Target package for toggle: `"com.android.settings"`. |
 | `Intent.ACTION_AIRPLANE_MODE_CHANGED` | App -> System | `state: Boolean` | Broadcast when toggling Airplane Mode. |
+| `"android.hardware.display.action.WIFI_DISPLAY_STATUS_CHANGED"` | System -> App (`SystemSettingsRepository`) | `android.hardware.display.extra.WIFI_DISPLAY_STATUS: WifiDisplayStatus` | Observed to refresh wireless Miracast / Screen Cast quick toggle state immediately on connection changes. |
 
 ---
 

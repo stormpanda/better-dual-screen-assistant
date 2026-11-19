@@ -6,10 +6,12 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -67,6 +69,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -229,6 +232,7 @@ enum class TccTileVariant {
  * Unified, look-driven tile button replicating `TCCButtonView` across both AYN Smooth and
  * Retroid Pixel UI looks in the shared `720dp` canonical coordinate space.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TccButton(
     label: String,
@@ -237,7 +241,8 @@ fun TccButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     variant: TccTileVariant = TccTileVariant.QUICK_SETTING,
-    maxLabelWidth: Dp? = null
+    maxLabelWidth: Dp? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
@@ -245,6 +250,7 @@ fun TccButton(
     val tileSpec = lookSpec.tile
     val labelStyle = tccTextStyle()
     var isFocused by remember { mutableStateOf(false) }
+    var longPressConsumed by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
 
     val iconTint = tccTileIconTint(colors, isRetroid, selected)
@@ -300,21 +306,49 @@ fun TccButton(
             .background(if (isFocused) colors.panelBackgroundSelected else Color.Transparent)
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
-                if (event.nativeKeyEvent.action == KeyEvent.ACTION_UP &&
-                    (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
-                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
-                ) {
-                    onClick()
-                    true
-                } else {
-                    false
+                val native = event.nativeKeyEvent
+                val isConfirmKey = native.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                    native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_ENTER
+                if (!isConfirmKey) return@onKeyEvent false
+                when (native.action) {
+                    KeyEvent.ACTION_DOWN -> {
+                        if (onLongClick != null && !longPressConsumed &&
+                            (native.isLongPress || native.repeatCount > 0)
+                        ) {
+                            longPressConsumed = true
+                            onLongClick()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    KeyEvent.ACTION_UP -> {
+                        if (longPressConsumed) {
+                            longPressConsumed = false
+                        } else {
+                            onClick()
+                        }
+                        true
+                    }
+                    else -> false
                 }
             }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = onLongClick
+                    )
+                } else {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                }
             ),
         contentAlignment = Alignment.Center
     ) {
@@ -694,6 +728,33 @@ private val RingDecelerateEasing = Easing { fraction ->
     1f - (1f - fraction) * (1f - fraction)
 }
 
+internal enum class RingUpdateAction {
+    SKIP,
+    SNAP,
+    ANIMATE
+}
+
+/**
+ * Decides how [HardwareRingGauge] should transition from [currentFraction] to [targetFraction].
+ * Animates on initial ring fill or substantial load steps (`>= 5%`), snaps in a single frame for
+ * modest fluctuations (`0.5%..5%`), and skips sub-pixel jitter (`< 0.5%`) to avoid committing
+ * continuous 60 Hz animation frames on the secondary display during 120 Hz top-screen gameplay.
+ */
+internal fun resolveRingUpdateAction(
+    currentFraction: Float,
+    targetFraction: Float
+): RingUpdateAction {
+    val delta = kotlin.math.abs(targetFraction - currentFraction)
+    if (delta == 0f) return RingUpdateAction.SKIP
+    if (delta < 0.005f && kotlin.math.abs(targetFraction) > 0.001f) return RingUpdateAction.SKIP
+    val isInitialFill = kotlin.math.abs(currentFraction) < 0.001f && kotlin.math.abs(targetFraction) >= 0.005f
+    return if (isInitialFill || delta >= 0.05f) {
+        RingUpdateAction.ANIMATE
+    } else {
+        RingUpdateAction.SNAP
+    }
+}
+
 /**
  * Replicates `HardwareInfoRingView` (`CPU`, `GPU`, `PWR`, `RAM` circular telemetry gauges),
  * scaling diameter and typography dynamically from `min(maxWidth, maxHeight)`.
@@ -733,14 +794,20 @@ fun HardwareRingGauge(
     val animatedRingProgress = remember { Animatable(0f) }
 
     LaunchedEffect(targetFraction) {
-        if (animatedRingProgress.value != targetFraction) {
-            animatedRingProgress.animateTo(
-                targetValue = targetFraction,
-                animationSpec = tween(
-                    durationMillis = 300,
-                    easing = RingDecelerateEasing
+        when (resolveRingUpdateAction(animatedRingProgress.value, targetFraction)) {
+            RingUpdateAction.ANIMATE -> {
+                animatedRingProgress.animateTo(
+                    targetValue = targetFraction,
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = RingDecelerateEasing
+                    )
                 )
-            )
+            }
+            RingUpdateAction.SNAP -> {
+                animatedRingProgress.snapTo(targetFraction)
+            }
+            RingUpdateAction.SKIP -> Unit
         }
     }
 
@@ -1241,7 +1308,7 @@ fun TccOptionDialog(
 
             if (showOsThemeToggle && onToggleInjectOsTheme != null) {
                 TccDialogToggleRow(
-                    label = androidx.compose.ui.res.stringResource(com.stormpanda.betterdualscreenassistant.R.string.widget_inject_os_theme_label),
+                    label = stringResource(R.string.dialog_theme_inject_os_colors),
                     checked = injectOsThemeEnabled,
                     onCheckedChange = onToggleInjectOsTheme
                 )
@@ -1257,7 +1324,7 @@ fun TccOptionDialog(
                 ) {
                     Image(
                         painter = painterResource(id = tccDrawable(R.drawable.ic_fan_custom_progress)),
-                        contentDescription = "Fan Speed",
+                        contentDescription = stringResource(R.string.dialog_fan_speed_cd),
                         colorFilter = ColorFilter.tint(colors.primary),
                         modifier = Modifier.size(if (isRetroid) 26.dp else aynDp(20f))
                     )
@@ -1540,8 +1607,11 @@ fun TccDialogFpsSelectorRow(
 ) {
     val normalized = if (selectedFps <= 30) 30 else 60
     TccDialogSegmentedRow(
-        label = androidx.compose.ui.res.stringResource(com.stormpanda.betterdualscreenassistant.R.string.widget_frame_rate_label),
-        segments = listOf(30 to "30 FPS", 60 to "60 FPS"),
+        label = stringResource(R.string.dialog_screen_record_frame_rate),
+        segments = listOf(
+            30 to stringResource(R.string.dialog_screen_record_fps_option, 30),
+            60 to stringResource(R.string.dialog_screen_record_fps_option, 60)
+        ),
         selectedId = normalized,
         onSelectId = onSelectFps,
         modifier = modifier

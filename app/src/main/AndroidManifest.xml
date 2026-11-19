@@ -31,9 +31,19 @@
         <package android:name="com.retroidpocket.gamelauncher" />
         <package android:name="com.stormpanda.megingiard" />
         <package android:name="com.stormpanda.megingiard.debug" />
+        <package android:name="com.aure.clustertune" />
         <provider android:authorities="com.stormpanda.megingiard.provider;com.stormpanda.megingiard.debug.provider" />
         <intent>
             <action android:name="com.ro.mapping.action.MAPPING_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.CAST_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.WIFI_DISPLAY_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.CONNECTED_DEVICE_SETTINGS" />
         </intent>
     </queries>
 

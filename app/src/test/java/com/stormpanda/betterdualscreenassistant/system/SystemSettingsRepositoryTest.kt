@@ -5,11 +5,14 @@ import android.os.IBinder
 import android.os.Parcel
 import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
+import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +36,10 @@ class SystemSettingsRepositoryTest {
     private var lastCapturedRecFps = 0
     private var lastCapturedRecInternal = false
     private var lastCapturedRecMic = false
+    private var simulatedCastActive = false
+    private var simulatedCastConnecting = false
+    private var simulatedCastDeviceName = ""
+    private var disconnectCastCalls = 0
     private val appliedOsThemes = java.util.Collections.synchronizedList(
         mutableListOf<Triple<List<String>, List<Int>, String>>()
     )
@@ -62,6 +69,10 @@ class SystemSettingsRepositoryTest {
         lastCapturedRecFps = 0
         lastCapturedRecInternal = false
         lastCapturedRecMic = false
+        simulatedCastActive = false
+        simulatedCastConnecting = false
+        simulatedCastDeviceName = ""
+        disconnectCastCalls = 0
         appliedOsThemes.clear()
 
         val helper = mockk<IBinder>(relaxed = true)
@@ -137,6 +148,22 @@ class SystemSettingsRepositoryTest {
                         reply.writeString(simulatedRecOutputPath)
                         reply.writeString(simulatedRecCompletedPath)
                         reply.writeString(simulatedRecStopReason)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        reply.writeNoException()
+                        reply.writeInt(if (simulatedCastActive) 1 else 0)
+                        reply.writeInt(if (simulatedCastConnecting) 1 else 0)
+                        reply.writeString(simulatedCastDeviceName)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        disconnectCastCalls++
+                        simulatedCastActive = false
+                        simulatedCastConnecting = false
+                        simulatedCastDeviceName = ""
+                        reply.writeNoException()
+                        reply.writeInt(1)
                     }
                     PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME -> {
                         data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
@@ -985,6 +1012,292 @@ class SystemSettingsRepositoryTest {
         val colorMap2 = names2.indices.associate { names2[it] to colors2[it] }
         assertTrue(json2.contains("26A69A"))
         assertEquals(syncedTealArgb, colorMap2["android:color/system_shade_active_dark"])
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `screenCastState syncs on WIFI_DISPLAY_STATUS_CHANGED broadcast disconnects cleanly and migrates screen_cast disabled by default`() {
+        // Simulate upgrading from a version prior to screen_cast whileWIFI was enabled by the user
+        val legacyKnown = QuickSettingTileId.entries
+            .filter { it != QuickSettingTileId.SCREEN_CAST }
+        val legacyDisabled = legacyKnown
+            .filter { !it.enabledByDefault && it != QuickSettingTileId.WIFI }
+        DirectBootPrefs.open(context, SystemSettingsRepository.PREFS_NAME).edit()
+            .putString("disabled_quick_tiles", legacyDisabled.joinToString(",") { it.key })
+            .putString("known_quick_tiles", legacyKnown.joinToString(",") { it.key })
+            .commit()
+
+        val repo = SystemSettingsRepository(context).also { it.register() }
+        fun awaitCastRefresh() {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(60L)
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        }
+
+        awaitCastRefresh()
+        // User's enabled WIFI choice is preserved while newly introduced SCREEN_CAST defaults to disabled
+        assertFalse(QuickSettingTileId.WIFI in repo.disabledQuickTiles.value)
+        assertTrue(QuickSettingTileId.SCREEN_CAST in repo.disabledQuickTiles.value)
+        assertTrue(QuickSettingTileId.SCREEN_CAST in repo.quickTileOrder.value)
+        assertFalse(repo.screenCastState.value.isActiveOrConnecting)
+
+        // Simulate Miracast connecting via WIFI_DISPLAY_STATUS_CHANGED broadcast (with real WifiDisplayStatus extra)
+        val wfdStatusExtra = Class.forName("android.hardware.display.WifiDisplayStatus")
+            .getDeclaredConstructor()
+            .newInstance() as android.os.Parcelable
+        fun buildWfdBroadcastIntent(): android.content.Intent =
+            android.content.Intent(SystemSettingsRepository.ACTION_WIFI_DISPLAY_STATUS_CHANGED).apply {
+                putExtra("android.hardware.display.extra.WIFI_DISPLAY_STATUS", wfdStatusExtra)
+            }
+
+        simulatedCastConnecting = true
+        simulatedCastDeviceName = "Living Room TV"
+        context.sendBroadcast(buildWfdBroadcastIntent())
+        awaitCastRefresh()
+        assertFalse(repo.screenCastState.value.isCasting)
+        assertTrue(repo.screenCastState.value.isConnecting)
+        assertEquals("Living Room TV", repo.screenCastState.value.deviceName)
+
+        // Transition to connected
+        simulatedCastConnecting = false
+        simulatedCastActive = true
+        context.sendBroadcast(buildWfdBroadcastIntent())
+        awaitCastRefresh()
+        assertTrue(repo.screenCastState.value.isCasting)
+        assertFalse(repo.screenCastState.value.isConnecting)
+        assertEquals("Living Room TV", repo.screenCastState.value.deviceName)
+
+        // Disconnect clears state immediately, invokes helper disconnect, and suppresses 0ms bounce-back during settle window
+        assertTrue(repo.disconnectScreenCast())
+        assertEquals(1, disconnectCastCalls)
+        assertFalse(repo.screenCastState.value.isActiveOrConnecting)
+        assertEquals("", repo.screenCastState.value.deviceName)
+
+        // Advance past the 350ms post-disconnect settle refresh and verify state remains clean
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(400L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCastRefresh()
+        assertFalse(repo.screenCastState.value.isActiveOrConnecting)
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `IME pin screen mode is preserved across lock unlock and stale stock clobber`() {
+        var wmPinMode = 2
+        var keyguardLocked = false
+        val repo = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { keyguardLocked }
+            bootCountReaderOverride = { 10 }
+        }
+
+        // Initial startup while unlocked records boot count & live pin mode
+        repo.reconcileImePinModeOnStartup()
+        assertEquals(2, wmPinMode)
+
+        // Screen off -> stock drains stale ACTION_USER_PRESENT and clobbers pin mode to 0
+        repo.captureImePinModeBeforePowerTransition()
+        wmPinMode = 0
+        repo.reassertImePinModeAfterScreenOffBroadcast()
+        assertEquals("Post-SCREEN_OFF reassert must recover stock clobber", 2, wmPinMode)
+
+        // Wake onto Keyguard -> temporarily resets to 0 for PIN/password entry on top screen
+        keyguardLocked = true
+        repo.handlePreScreenOnImePinMode()
+        assertEquals(0, wmPinMode)
+        repo.handlePostScreenOnImePinMode()
+        assertEquals(0, wmPinMode)
+
+        // Screen times out while still locked -> must NOT overwrite saved pin mode with 0
+        repo.captureImePinModeBeforePowerTransition()
+        repo.handlePreScreenOnImePinMode()
+        assertEquals(0, wmPinMode)
+
+        // Unlock -> restores pinned keyboard mode (2)
+        keyguardLocked = false
+        repo.handleUserPresentImePinMode()
+        assertEquals(2, wmPinMode)
+
+        // User manually unpins Gboard -> lock/unlock must keep it unpinned (0)
+        wmPinMode = 0
+        repo.captureImePinModeBeforePowerTransition()
+        keyguardLocked = true
+        repo.handlePreScreenOnImePinMode()
+        keyguardLocked = false
+        repo.handleUserPresentImePinMode()
+        assertEquals(0, wmPinMode)
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `IME pin screen mode survives reboot when stock zeroes it during locked boot`() {
+        var wmPinMode = 2
+        var keyguardLocked = false
+        var bootCount = 15
+
+        val beforeReboot = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { keyguardLocked }
+            bootCountReaderOverride = { bootCount }
+        }
+        beforeReboot.reconcileImePinModeOnStartup()
+        beforeReboot.captureImePinModeBeforePowerTransition(synchronous = true)
+        beforeReboot.unregister()
+
+        // Simulate reboot: BOOT_COUNT increments, device boots locked, and stock already zeroed pin mode
+        bootCount = 16
+        keyguardLocked = true
+        wmPinMode = 0
+
+        val afterReboot = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { keyguardLocked }
+            bootCountReaderOverride = { bootCount }
+        }
+        afterReboot.reconcileImePinModeOnStartup()
+        assertEquals("Pin mode must stay 0 while on lockscreen", 0, wmPinMode)
+
+        // User unlocks -> restores pre-reboot pinned mode (2)
+        keyguardLocked = false
+        afterReboot.handleUserPresentImePinMode()
+        assertEquals("Pin mode must be restored after reboot + unlock", 2, wmPinMode)
+
+        // User unpins manually, then service restarts within the SAME boot -> must NOT re-pin
+        wmPinMode = 0
+        afterReboot.reconcileImePinModeOnStartup()
+        assertEquals("Same-boot restart must not override manual unpin", 0, wmPinMode)
+
+        afterReboot.unregister()
+    }
+
+    @Test
+    fun `setDualScreenDisplayMode preserves and restores IME pin screen mode across single-screen transitions`() {
+        var wmPinMode = 2
+        val repo = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { false }
+        }
+
+        // Dual (0) -> Only Top (1) saves pin mode (2) and temporarily clears to 0
+        repo.setDualScreenDisplayMode(1)
+        assertEquals(0, wmPinMode)
+
+        // Only Top (1) -> Only Bottom (2) must not clobber saved pin mode (2) with 0
+        repo.setDualScreenDisplayMode(2)
+        assertEquals(0, wmPinMode)
+
+        // Returning to Dual (0) restores pin mode (2)
+        repo.setDualScreenDisplayMode(0)
+        assertEquals(2, wmPinMode)
+
+        // Redundant setDualScreenDisplayMode(0) while already in Dual mode must not clear pin mode
+        repo.setDualScreenDisplayMode(0)
+        assertEquals(2, wmPinMode)
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `screenshotTargetMode defaults to Ask Every Time, clamps out-of-range values, and persists across reloads`() {
+        val repo = SystemSettingsRepository(context)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_ASK, repo.screenshotTargetMode.value)
+
+        repo.setScreenshotTargetMode(SystemSettingsRepository.SCREENSHOT_TARGET_TOP)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_TOP, repo.screenshotTargetMode.value)
+
+        repo.setScreenshotTargetMode(SystemSettingsRepository.SCREENSHOT_TARGET_BOTH)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_BOTH, repo.screenshotTargetMode.value)
+
+        // Clamping out-of-range inputs
+        repo.setScreenshotTargetMode(99)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_BOTH, repo.screenshotTargetMode.value)
+        repo.setScreenshotTargetMode(-99)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_ASK, repo.screenshotTargetMode.value)
+
+        // Persists across reload
+        repo.setScreenshotTargetMode(SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM)
+        val reloaded = SystemSettingsRepository(context)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM, reloaded.screenshotTargetMode.value)
+
+        repo.unregister()
+        reloaded.unregister()
+    }
+
+    @Test
+    fun `openClusterTuneProfilePicker checks install state top screen state overlay permission and launches service`() {
+        val repo = SystemSettingsRepository(context)
+        assertFalse(repo.isClusterTuneInstalled.value)
+        assertEquals(ClusterTuneLaunchResult.NOT_INSTALLED, repo.openClusterTuneProfilePicker())
+
+        // Register ClusterTune package in Robolectric PackageManager
+        val pkgInfo = android.content.pm.PackageInfo().apply {
+            packageName = SystemSettingsRepository.CLUSTER_TUNE_PACKAGE
+            applicationInfo = android.content.pm.ApplicationInfo().apply {
+                packageName = SystemSettingsRepository.CLUSTER_TUNE_PACKAGE
+                enabled = true
+            }
+        }
+        org.robolectric.Shadows.shadowOf(context.packageManager).installPackage(pkgInfo)
+        assertTrue(repo.refreshClusterTuneInstalled())
+        assertTrue(repo.isClusterTuneInstalled.value)
+
+        // Mode 2 (Only Bottom) -> top screen is off
+        repo.setDualScreenDisplayMode(2)
+        assertEquals(ClusterTuneLaunchResult.TOP_SCREEN_OFF, repo.openClusterTuneProfilePicker())
+        repo.setDualScreenDisplayMode(0)
+
+        mockkObject(PServerClient)
+        try {
+            // Overlay permission denied -> OVERLAY_PERMISSION_DENIED
+            every {
+                PServerClient.exec(match { it.startsWith("appops get com.aure.clustertune SYSTEM_ALERT_WINDOW") }, true)
+            } returns Result.success("Uid mode: SYSTEM_ALERT_WINDOW: default")
+            assertEquals(
+                ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED,
+                repo.openClusterTuneProfilePicker()
+            )
+
+            // Overlay permission allowed + flattened single-line pservice output -> OPENED
+            every {
+                PServerClient.exec(match { it.startsWith("appops get com.aure.clustertune SYSTEM_ALERT_WINDOW") }, true)
+            } returns Result.success("Uid mode: SYSTEM_ALERT_WINDOW: allow ")
+            every {
+                PServerClient.exec(match { it.contains("com.aure.clustertune/.overlay.OverlayHostService") }, true)
+            } returns Result.success("Starting service: Intent { act=com.aure.clustertune.overlay.SHOW_PROFILE_PICKER } __EXIT=0 ")
+            assertEquals(ClusterTuneLaunchResult.OPENED, repo.openClusterTuneProfilePicker())
+
+            // Single-line fgets output containing only "Starting service:" (without __EXIT marker) -> OPENED
+            every {
+                PServerClient.exec(match { it.contains("com.aure.clustertune/.overlay.OverlayHostService") }, true)
+            } returns Result.success("Starting service: Intent { act=com.aure.clustertune.overlay.SHOW_PROFILE_PICKER }")
+            assertEquals(ClusterTuneLaunchResult.OPENED, repo.openClusterTuneProfilePicker())
+
+            // Service error output -> FAILED
+            every {
+                PServerClient.exec(match { it.contains("com.aure.clustertune/.overlay.OverlayHostService") }, true)
+            } returns Result.success("Error: Not found; no service started. __EXIT=255 ")
+            assertEquals(ClusterTuneLaunchResult.FAILED, repo.openClusterTuneProfilePicker())
+        } finally {
+            unmockkObject(PServerClient)
+        }
 
         repo.unregister()
     }

@@ -16,6 +16,7 @@ import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -44,6 +45,7 @@ import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.ClusterTuneLaunchResult
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
@@ -161,6 +163,11 @@ class ScreenOverlayManager(
          */
         const val PRIVILEGED_OVERLAY_WINDOW_TYPE = PrivilegedBridge.PRIVILEGED_OVERLAY_WINDOW_TYPE
         private const val FADE_DURATION_MS = 200L
+
+        internal fun resolveCastSettingsTargetDisplayId(
+            dualScreenMode: Int,
+            bottomDisplayId: Int
+        ): Int = if (dualScreenMode == 2) bottomDisplayId else TOP_DISPLAY_ID
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -210,6 +217,24 @@ class ScreenOverlayManager(
         }
     }
 
+    /**
+     * Recreates the assistant overlay view when the app locale changes while the overlay is open
+     * so all bottom-screen labels immediately reflect the updated locale resources without
+     * resetting the active tab/quick-toggle page or replaying the slide-up animation.
+     */
+    fun onLocaleChanged() {
+        mainHandler.post {
+            if (!isAssistantShowing) return@post
+            val currentTab = activeTabState.value
+            hideAssistantOverlay(immediate = true)
+            showAssistantOverlay(
+                initialTab = currentTab,
+                preserveQuickTogglePage = true,
+                animateEnter = false
+            )
+        }
+    }
+
     private fun cleanupExitingAssistant() {
         val oldView = exitingAssistantView
         val oldLifecycle = exitingAssistantLifecycle
@@ -226,14 +251,18 @@ class ScreenOverlayManager(
         oldLifecycle?.onDestroy()
     }
 
-    fun showAssistantOverlay(initialTab: Int? = null) {
+    fun showAssistantOverlay(
+        initialTab: Int? = null,
+        preserveQuickTogglePage: Boolean = false,
+        animateEnter: Boolean = true
+    ) {
         mainHandler.post {
             if (initialTab != null) {
                 activeTabState.value = initialTab.coerceIn(0, 1)
             } else if (!isAssistantShowing && !repository.rememberLastTab.value) {
                 activeTabState.value = 0
             }
-            if (!isAssistantShowing && !repository.rememberLastQuickTogglePage.value) {
+            if (!isAssistantShowing && !preserveQuickTogglePage && !repository.rememberLastQuickTogglePage.value) {
                 repository.setLastQuickTogglePage(0)
             }
             if (isAssistantShowing) return@post
@@ -277,8 +306,13 @@ class ScreenOverlayManager(
                 setViewTreeViewModelStoreOwner(lifecycleOwner)
                 setViewTreeSavedStateRegistryOwner(lifecycleOwner)
                 // Start at 90%p Y offset & 0 alpha to match pop_win_enter_anim.xml
-                translationY = realSize.y * 0.90f
-                alpha = 0f
+                if (animateEnter) {
+                    translationY = realSize.y * 0.90f
+                    alpha = 0f
+                } else {
+                    translationY = 0f
+                    alpha = 1f
+                }
                 setContent {
                     AssistantOverlayScreen(
                         repository = repository,
@@ -310,6 +344,15 @@ class ScreenOverlayManager(
                         onStopScreenRecordingRequest = {
                             performStopScreenRecordingWithToast()
                         },
+                        onOpenScreenCastRequest = {
+                            openCastSettingsOnTopScreen()
+                        },
+                        onDisconnectScreenCastRequest = {
+                            performDisconnectScreenCastWithToast()
+                        },
+                        onOpenClusterTuneRequest = {
+                            openClusterTuneProfilePickerOnTopScreen()
+                        },
                         onOpenEditRequest = {
                             openMainActivityOnTopScreen()
                         },
@@ -321,41 +364,29 @@ class ScreenOverlayManager(
             }
 
             // Replicate TccServices.u(): exact pixel dimensions of bottom display (Display 4 on AYN Thor,
-            // Display 2 on Retroid Pocket Duo), Gravity.CENTER, and no FLAG_LAYOUT_NO_LIMITS so it never overflows.
-            var overlayFlags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
-                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-            if (currentProfile.useLocalFocusMode) {
-                overlayFlags = overlayFlags or WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
-            }
-            val lp = WindowManager.LayoutParams(
-                realSize.x,
-                realSize.y,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                overlayFlags,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.CENTER
-                softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
-                windowAnimations = R.style.tcc_anim
-                fitInsetsTypes = 0
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
+            // Display 2 on Retroid Pocket Duo), Gravity.CENTER, FLAG_FULLSCREEN, SOFT_INPUT_ADJUST_NOTHING,
+            // and no FLAG_LAYOUT_NO_LIMITS so it never overflows onto the secondary display.
+            val lp = createAssistantOverlayLayoutParams(
+                width = realSize.x,
+                height = realSize.y,
+                useLocalFocusMode = currentProfile.useLocalFocusMode
+            )
 
             try {
                 if (!android.provider.Settings.canDrawOverlays(context)) {
                     PServerClient.ensurePermissionsGranted(context)
                 }
                 addOverlayViewWithPrivilegeFallback(wm, composeView, lp)
-                applyImmersiveFullscreen(composeView)
                 composeView.requestFocus()
-                composeView.animate()
-                    .translationY(0f)
-                    .alpha(1f)
-                    .setDuration(FADE_DURATION_MS)
-                    .setInterpolator(DecelerateInterpolator())
-                    .start()
+                if (animateEnter) {
+                    composeView.animate()
+                        .withLayer()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(FADE_DURATION_MS)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                }
                 assistantView = composeView
                 assistantLifecycle = lifecycleOwner
                 isAssistantShowing = true
@@ -367,8 +398,11 @@ class ScreenOverlayManager(
     }
 
     fun hideAssistantOverlay(immediate: Boolean = false) {
-        mainHandler.post {
-            val view = assistantView ?: return@post
+        val action = Runnable {
+            if (immediate) {
+                cleanupExitingAssistant()
+            }
+            val view = assistantView ?: return@Runnable
             val lifecycle = assistantLifecycle
             assistantView = null
             assistantLifecycle = null
@@ -384,7 +418,7 @@ class ScreenOverlayManager(
                 }
                 lifecycle?.onPause()
                 lifecycle?.onDestroy()
-                return@post
+                return@Runnable
             }
 
             cleanupExitingAssistant()
@@ -394,6 +428,7 @@ class ScreenOverlayManager(
             val slideOutDistance =
                 (view.height.takeIf { it > 0 } ?: profile.bottomFallbackHeight) * 0.90f
             view.animate()
+                .withLayer()
                 .translationY(slideOutDistance)
                 .alpha(0f)
                 .setDuration(FADE_DURATION_MS)
@@ -411,6 +446,11 @@ class ScreenOverlayManager(
                     }
                 }
                 .start()
+        }
+        if (immediate && Looper.myLooper() == Looper.getMainLooper()) {
+            action.run()
+        } else {
+            mainHandler.post(action)
         }
     }
 
@@ -526,7 +566,12 @@ class ScreenOverlayManager(
         mainHandler.post {
             val (killedCount, availMemStr) = repository.cleanMemory()
             val message = if (killedCount > 0) {
-                context.getString(R.string.toast_clean_process_result, killedCount, availMemStr)
+                context.resources.getQuantityString(
+                    R.plurals.toast_clean_process_result,
+                    killedCount,
+                    killedCount,
+                    availMemStr
+                )
             } else {
                 context.getString(R.string.toast_clean_process_successful)
             }
@@ -541,10 +586,13 @@ class ScreenOverlayManager(
                 val clearedCount = repository.clearAllRecentTasks()
                 mainHandler.post {
                     val message = when {
-                        clearedCount > 1 -> context.getString(R.string.toast_cleared_apps_plural, clearedCount)
-                        clearedCount == 1 -> context.getString(R.string.toast_cleared_apps_one)
-                        clearedCount == 0 -> context.getString(R.string.toast_cleared_apps_zero)
-                        else -> context.getString(R.string.toast_cleared_apps_fail)
+                        clearedCount > 0 -> context.resources.getQuantityString(
+                            R.plurals.toast_cleared_recent_apps,
+                            clearedCount,
+                            clearedCount
+                        )
+                        clearedCount == 0 -> context.getString(R.string.toast_cleared_recent_apps_zero)
+                        else -> context.getString(R.string.toast_clear_recent_apps_failed)
                     }
                     showBottomToast(message)
                 }
@@ -559,9 +607,9 @@ class ScreenOverlayManager(
                 val swapped = repository.swapScreens()
                 mainHandler.post {
                     if (swapped) {
-                        showBottomToast(context.getString(R.string.toast_swapped_apps))
+                        showBottomToast(context.getString(R.string.toast_swapped_screens))
                     } else {
-                        showBottomToast(context.getString(R.string.toast_swapped_apps_none))
+                        showBottomToast(context.getString(R.string.toast_swap_screens_none))
                     }
                 }
             }.start()
@@ -573,13 +621,15 @@ class ScreenOverlayManager(
             val locked = repository.toggleTouchLock()
             if (locked) {
                 hideAssistantOverlay()
-                val roleTitle = context.getString(
-                    if (repository.promotedToManager.value) R.string.role_manager else R.string.role_assistant
-                )
-                showBottomToast(context.getString(R.string.toast_touch_locked_fmt, roleTitle))
+                val msgRes = if (repository.promotedToManager.value) {
+                    R.string.toast_touch_lock_enabled_manager
+                } else {
+                    R.string.toast_touch_lock_enabled_assistant
+                }
+                showBottomToast(context.getString(msgRes))
             } else {
                 PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,0")
-                showBottomToast(context.getString(R.string.toast_touch_unlocked))
+                showBottomToast(context.getString(R.string.toast_touch_lock_disabled))
             }
         }
     }
@@ -589,19 +639,21 @@ class ScreenOverlayManager(
         mainHandler.postDelayed({
             Thread {
                 val ok = PrivilegedBridge.captureScreenshot(context, targetMode)
-                val targetName = context.getString(
+                val msgRes = if (ok) {
                     when (targetMode) {
-                        0 -> R.string.dialog_target_top_screen
-                        1 -> R.string.dialog_target_bottom_screen
-                        else -> R.string.dialog_target_both_screens
+                        0 -> R.string.toast_screenshot_top_saved
+                        1 -> R.string.toast_screenshot_bottom_saved
+                        else -> R.string.toast_screenshot_both_saved
                     }
-                )
+                } else {
+                    when (targetMode) {
+                        0 -> R.string.toast_screenshot_top_failed
+                        1 -> R.string.toast_screenshot_bottom_failed
+                        else -> R.string.toast_screenshot_both_failed
+                    }
+                }
                 mainHandler.post {
-                    if (ok) {
-                        showBottomToast(context.getString(R.string.toast_screenshot_saved_fmt, targetName))
-                    } else {
-                        showBottomToast(context.getString(R.string.toast_screenshot_failed_fmt, targetName))
-                    }
+                    showBottomToast(context.getString(msgRes))
                 }
             }.start()
         }, 280L)
@@ -615,11 +667,12 @@ class ScreenOverlayManager(
                 if (!ok) {
                     val stopReason = repository.screenRecordingState.value.lastStopReason
                     mainHandler.post {
-                        if (stopReason == "low_storage") {
-                            showBottomToast(context.getString(R.string.toast_record_low_storage))
+                        val msgRes = if (stopReason == "low_storage") {
+                            R.string.toast_recording_low_storage_start
                         } else {
-                            showBottomToast(context.getString(R.string.toast_record_start_failed))
+                            R.string.toast_recording_start_failed
                         }
+                        showBottomToast(context.getString(msgRes))
                     }
                 }
             }.start()
@@ -630,11 +683,12 @@ class ScreenOverlayManager(
         Thread {
             val state = repository.stopScreenRecording(reason)
             mainHandler.post {
-                if (state.lastCompletedPath.isNotEmpty()) {
-                    showBottomToast(context.getString(R.string.toast_record_saved))
+                val msgRes = if (state.lastCompletedPath.isNotEmpty()) {
+                    R.string.toast_recording_saved_to_movies
                 } else {
-                    showBottomToast(context.getString(R.string.toast_record_stopped))
+                    R.string.toast_recording_stopped
                 }
+                showBottomToast(context.getString(msgRes))
             }
         }.start()
     }
@@ -663,6 +717,94 @@ class ScreenOverlayManager(
                 wait = false
             )
         }
+    }
+
+    fun openCastSettingsOnTopScreen() {
+        val targetDisplayId = resolveCastSettingsTargetDisplayId(
+            dualScreenMode = repository.dualScreenDisplayMode.value,
+            bottomDisplayId = bottomDisplayId
+        )
+        hideAssistantOverlay()
+        mainHandler.postDelayed({
+            val candidateActions = listOf(
+                Settings.ACTION_CAST_SETTINGS,
+                "android.settings.WIFI_DISPLAY_SETTINGS",
+                "android.settings.CONNECTED_DEVICE_SETTINGS"
+            )
+            var launchedAction: String? = null
+            val options = ActivityOptions.makeBasic().apply {
+                launchDisplayId = targetDisplayId
+            }.toBundle()
+            for (action in candidateActions) {
+                try {
+                    val intent = Intent(action).apply {
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        )
+                    }
+                    context.startActivity(intent, options)
+                    launchedAction = action
+                    break
+                } catch (_: Throwable) {
+                }
+            }
+            val rootAction = launchedAction ?: Settings.ACTION_CAST_SETTINGS
+            val execResult = PServerClient.exec(
+                "am start --display $targetDisplayId --activity-clear-top --activity-single-top -a $rootAction",
+                wait = false
+            )
+            if (launchedAction == null && execResult.isFailure) {
+                showBottomToast(context.getString(R.string.toast_cast_settings_unavailable))
+            } else if (targetDisplayId == TOP_DISPLAY_ID) {
+                showBottomToast(context.getString(R.string.toast_cast_choose_on_top))
+            }
+        }, FADE_DURATION_MS)
+    }
+
+    fun performDisconnectScreenCastWithToast() {
+        val previousDeviceName = repository.screenCastState.value.deviceName
+        Thread {
+            val disconnected = repository.disconnectScreenCast()
+            mainHandler.post {
+                val message = when {
+                    !disconnected -> context.getString(R.string.toast_screen_cast_disconnect_failed)
+                    previousDeviceName.isNotBlank() ->
+                        context.getString(R.string.toast_screen_cast_disconnected_device, previousDeviceName)
+                    else -> context.getString(R.string.toast_screen_cast_disconnected)
+                }
+                showBottomToast(message)
+            }
+        }.start()
+    }
+
+    fun openClusterTuneProfilePickerOnTopScreen() {
+        if (!repository.refreshClusterTuneInstalled()) {
+            showBottomToast(context.getString(R.string.toast_clustertune_not_installed))
+            return
+        }
+        if (repository.dualScreenDisplayMode.value == 2) {
+            showBottomToast(context.getString(R.string.toast_clustertune_top_screen_off))
+            return
+        }
+        Thread {
+            val result = repository.openClusterTuneProfilePicker()
+            val errorMessage = when (result) {
+                ClusterTuneLaunchResult.OPENED -> null
+                ClusterTuneLaunchResult.NOT_INSTALLED ->
+                    context.getString(R.string.toast_clustertune_not_installed)
+                ClusterTuneLaunchResult.TOP_SCREEN_OFF ->
+                    context.getString(R.string.toast_clustertune_top_screen_off)
+                ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED ->
+                    context.getString(R.string.toast_clustertune_overlay_permission_denied)
+                ClusterTuneLaunchResult.FAILED ->
+                    context.getString(R.string.toast_clustertune_open_failed)
+            }
+            if (errorMessage != null) {
+                mainHandler.post { showBottomToast(errorMessage) }
+            }
+        }.start()
     }
 
     private fun dismissActiveToast() {
@@ -920,6 +1062,35 @@ class ScreenOverlayManager(
                 })
                 start()
             }
+        }
+    }
+
+    internal fun createAssistantOverlayLayoutParams(
+        width: Int,
+        height: Int,
+        useLocalFocusMode: Boolean
+    ): WindowManager.LayoutParams {
+        @Suppress("DEPRECATION")
+        var overlayFlags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
+            WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        if (useLocalFocusMode) {
+            overlayFlags = overlayFlags or WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
+        }
+        return WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            overlayFlags,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            windowAnimations = R.style.tcc_anim
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
     }
 

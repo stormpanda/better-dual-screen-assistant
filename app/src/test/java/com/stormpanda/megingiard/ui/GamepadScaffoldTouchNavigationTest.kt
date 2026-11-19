@@ -158,7 +158,11 @@ class GamepadScaffoldTouchNavigationTest {
         assertNotNull(findNodeWithTextOrNull(activity, "Enable / Disable Toggles"))
         assertNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
 
-        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId.entries.size
+        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+            .supportedEntries(
+                com.stormpanda.betterdualscreenassistant.system.DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            ).size
 
         // 2. Tap "Enable / Disable Toggles" via touch -> must open sub-menu, NOT jump back to General
         tapClickableNodeWithText(activity, "Enable / Disable Toggles")
@@ -362,7 +366,11 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 100)
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 450)
-        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId.entries.size
+        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+            .supportedEntries(
+                com.stormpanda.betterdualscreenassistant.system.DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            ).size
         assertNotNull(
             "D-pad Down from Quick Settings Layout must focus Enable / Disable Toggles directly",
             findNodeWithTextOrNull(activity, "Toggle Visibility (10 of $totalTiles Active)")
@@ -901,10 +909,10 @@ class GamepadScaffoldTouchNavigationTest {
         assertNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
         assertEquals("Better Dual Screen Assistant", activity.title.toString())
 
-        // Enter General deck and navigate to the very bottom item (12th card, 11 D-pad Down presses)
+        // Enter General deck and navigate to the Promotion toggle (13th card, 12 D-pad Down presses)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 100)
-        repeat(11) {
+        repeat(12) {
             sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
             idleCompose(activity, 80)
         }
@@ -980,14 +988,17 @@ class GamepadScaffoldTouchNavigationTest {
         assertNotNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
         assertNotNull(findNodeWithTextOrNull(activity, "physical Dual Screen button"))
 
-        // 2. Quick Toggles tab filters unsupported tiles (Ambient Light & Double-Tap Home -> 22 supported tiles)
+        // 2. Quick Toggles tab filters unsupported tiles (Ambient Light & Double-Tap Home -> 23 supported tiles)
         tapClickableNodeWithText(activity, "Quick Toggles")
         idleCompose(activity, 300)
         val supportedCount = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
-            .supportedEntries(com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO)
+            .supportedEntries(
+                com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO,
+                isClusterTuneInstalled = false
+            )
             .size
-        assertEquals(22, supportedCount)
-        assertNotNull(findNodeWithTextOrNull(activity, "9 / 22 Active"))
+        assertEquals(23, supportedCount)
+        assertNotNull(findNodeWithTextOrNull(activity, "9 / 23 Active"))
 
         // 3. Updates tab no longer shows Licenses; General tab places "Licenses & Third-Party Notices" at the very bottom
         tapClickableNodeWithText(activity, "Updates")
@@ -998,7 +1009,7 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 300)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 100)
-        repeat(11) {
+        repeat(12) {
             sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
             idleCompose(activity, 80)
         }

@@ -327,6 +327,37 @@ class PrivilegedBridgeTest {
     }
 
     @Test
+    fun `isStockAssistantActive and suppressStockAssistant delegate to helper binder and return null when disconnected`() {
+        setHelperBinder(null)
+        assertEquals(null, PrivilegedBridge.isStockAssistantActive())
+        assertEquals(null, PrivilegedBridge.suppressStockAssistant())
+
+        var activeResult = true
+        var suppressCalls = 0
+        val helper = createMockHelperBinder { code, data, reply ->
+            data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE -> {
+                    reply.writeNoException()
+                    reply.writeInt(if (activeResult) 1 else 0)
+                }
+                PrivilegedHelperMain.TRANSACTION_SUPPRESS_STOCK_ASSISTANT -> {
+                    suppressCalls++
+                    activeResult = false
+                    reply.writeNoException()
+                    reply.writeInt(1)
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        assertEquals(true, PrivilegedBridge.isStockAssistantActive())
+        assertEquals(true, PrivilegedBridge.suppressStockAssistant())
+        assertEquals(1, suppressCalls)
+        assertEquals(false, PrivilegedBridge.isStockAssistantActive())
+    }
+
+    @Test
     fun `captureScreenshot parses SurfaceFlinger display IDs for port 131 and 132`() {
         pServerResponder = { cmd ->
             if (cmd.contains("dumpsys SurfaceFlinger --display-id")) {
@@ -409,14 +440,29 @@ class PrivilegedBridgeTest {
         setHelperBinder(helper)
         assertEquals(4, PrivilegedBridge.clearAllRecentTasks(context))
 
-        // Fallback to PServerClient when helper binder is absent
+        // Fallback to PServerClient when helper binder is absent (excludes CATEGORY_HOME launchers)
         setHelperBinder(null)
+        val shadowPm = org.robolectric.Shadows.shadowOf(context.packageManager)
+        val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_HOME)
+        shadowPm.addResolveInfoForIntent(
+            homeIntent,
+            android.content.pm.ResolveInfo().apply {
+                activityInfo = android.content.pm.ActivityInfo().apply {
+                    packageName = "com.example.customlauncher"
+                }
+            }
+        )
         pServerCommands.clear()
         pServerResponder = { cmd ->
             if (cmd.contains("dumpsys activity recents")) "CLEARED:2\n" else ""
         }
         assertEquals(2, PrivilegedBridge.clearAllRecentTasks(context))
         assertTrue(pServerCommands.any { it.contains("am stack remove") })
+        assertTrue(
+            "Fallback shell script must exclude installed CATEGORY_HOME launcher packages",
+            pServerCommands.any { it.contains("""com\.example\.customlauncher""") }
+        )
     }
 
     @Test
@@ -495,5 +541,71 @@ class PrivilegedBridgeTest {
         assertFalse(stopped.isRecording)
         assertEquals(testPath, stopped.lastCompletedPath)
         assertEquals("user", stopped.lastStopReason)
+    }
+
+    @Test
+    fun `getScreenCastState and disconnectScreenCast marshal Parcel fields accurately`() {
+        var disconnectCalled = false
+        var activeCast = true
+
+        val helper = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    reply.writeNoException()
+                    reply.writeInt(if (activeCast) 1 else 0)
+                    reply.writeInt(0)
+                    reply.writeString(if (activeCast) "Bedroom Chromecast" else "")
+                }
+                PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    disconnectCalled = true
+                    activeCast = false
+                    reply.writeNoException()
+                    reply.writeInt(1)
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        val castStatus = PrivilegedBridge.getScreenCastState(context)
+        assertTrue(castStatus.isCasting)
+        assertFalse(castStatus.isConnecting)
+        assertEquals("Bedroom Chromecast", castStatus.deviceName)
+
+        assertTrue(PrivilegedBridge.disconnectScreenCast(context))
+        assertTrue(disconnectCalled)
+
+        val afterDisconnect = PrivilegedBridge.getScreenCastState(context)
+        assertFalse(afterDisconnect.isCasting)
+        assertEquals("", afterDisconnect.deviceName)
+    }
+
+    @Test
+    fun `getPinScreenMode and setPinScreenMode delegate to helper binder and return fallback when disconnected`() {
+        assertEquals(-1, PrivilegedBridge.getPinScreenMode(context))
+        assertFalse(PrivilegedBridge.setPinScreenMode(context, 2))
+
+        var currentPinMode = 2
+        val helper = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    reply.writeNoException()
+                    reply.writeInt(currentPinMode)
+                }
+                PrivilegedHelperMain.TRANSACTION_SET_PIN_SCREEN_MODE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    currentPinMode = data.readInt()
+                    reply.writeNoException()
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        assertEquals(2, PrivilegedBridge.getPinScreenMode(context))
+        assertTrue(PrivilegedBridge.setPinScreenMode(context, 0))
+        assertEquals(0, currentPinMode)
+        assertEquals(0, PrivilegedBridge.getPinScreenMode(context))
     }
 }

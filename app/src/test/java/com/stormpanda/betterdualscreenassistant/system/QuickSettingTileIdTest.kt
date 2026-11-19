@@ -1,20 +1,15 @@
 package com.stormpanda.betterdualscreenassistant.system
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class QuickSettingTileIdTest {
-
-    private val context: Context
-        get() = ApplicationProvider.getApplicationContext()
 
     @Test
     fun `QuickSettingCategory default enabled flags match stock vs optional categories`() {
@@ -30,9 +25,8 @@ class QuickSettingTileIdTest {
         assertEquals(entries.size, keys.toSet().size)
         entries.forEach { tile ->
             assertTrue(tile.key.isNotBlank())
-            assertTrue(tile.titleRes != 0)
-            assertTrue(tile.descriptionRes != 0)
-            assertTrue(tile.title(context).isNotBlank())
+            assertTrue(tile.title.isNotBlank())
+            assertTrue(tile.description.isNotBlank())
             assertTrue(tile.iconRes != 0)
         }
     }
@@ -47,14 +41,22 @@ class QuickSettingTileIdTest {
         assertEquals(expectedDisabled, QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CHARGING_SEPARATION !in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.WIFI in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.SCREEN_CAST in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.TOUCH_LOCK in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.SCREENSHOT in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.SCREEN_RECORD in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CLEAR_ALL_TASKS in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.CLUSTER_TUNE in QuickSettingTileId.defaultDisabled)
+        assertEquals(QuickSettingCategory.ANDROID_SYSTEM, QuickSettingTileId.SCREEN_CAST.category)
+        assertEquals("Screen Cast", QuickSettingTileId.SCREEN_CAST.title)
+        assertEquals("screen_cast", QuickSettingTileId.SCREEN_CAST.key)
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.SCREEN_RECORD.category)
-        assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title(context))
-        assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title(context))
+        assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title)
+        assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title)
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLEAR_ALL_TASKS.category)
+        assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLUSTER_TUNE.category)
+        assertEquals("ClusterTune", QuickSettingTileId.CLUSTER_TUNE.title)
+        assertEquals("cluster_tune", QuickSettingTileId.CLUSTER_TUNE.key)
     }
 
     @Test
@@ -72,29 +74,76 @@ class QuickSettingTileIdTest {
         assertFalse(QuickSettingTileId.AMBIENT_LIGHT.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
         assertTrue(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME.isSupportedOn(DeviceProfile.AYN_THOR))
         assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
+        assertTrue(QuickSettingTileId.SCREEN_CAST.isSupportedOn(DeviceProfile.AYN_THOR))
+        assertTrue(QuickSettingTileId.SCREEN_CAST.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
 
         val retroidSupported = QuickSettingTileId.supportedEntries(DeviceProfile.RETROID_POCKET_DUO)
         assertFalse(QuickSettingTileId.AMBIENT_LIGHT in retroidSupported)
         assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME in retroidSupported)
         assertEquals(QuickSettingTileId.entries.size - 2, retroidSupported.size)
 
+        assertTrue(
+            QuickSettingTileId.CLUSTER_TUNE.isSupportedOn(
+                DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = true
+            )
+        )
+        assertFalse(
+            QuickSettingTileId.CLUSTER_TUNE.isSupportedOn(
+                DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            )
+        )
+        assertEquals(
+            QuickSettingTileId.entries.size - 1,
+            QuickSettingTileId.supportedEntries(
+                DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            ).size
+        )
+
         assertEquals(
             "Stock AYN Toggles",
-            QuickSettingCategory.STOCK_AYN.titleFor(context, DeviceProfile.AYN_THOR)
+            QuickSettingCategory.STOCK_AYN.titleFor(DeviceProfile.AYN_THOR)
         )
         assertEquals(
             "Stock Retroid Toggles",
-            QuickSettingCategory.STOCK_AYN.titleFor(context, DeviceProfile.RETROID_POCKET_DUO)
+            QuickSettingCategory.STOCK_AYN.titleFor(DeviceProfile.RETROID_POCKET_DUO)
         )
         assertTrue(
             QuickSettingTileId.CONTROLLER_STYLE
-                .descriptionFor(context, promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
+                .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
                 .contains("Retro")
         )
         assertTrue(
             QuickSettingTileId.KEY_MAPPER
-                .descriptionFor(context, promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
+                .descriptionFor(promotedToManager = false, profile = DeviceProfile.RETROID_POCKET_DUO)
                 .contains("Retroid")
         )
+    }
+
+    @Test
+    fun `title flattens grid newlines cleanly for both CJK and space-delimited scripts while gridTitle preserves them`() {
+        val mockCtx = mockk<Context>()
+        every { mockCtx.getString(QuickSettingTileId.FORCE_LANDSCAPE.titleRes) } returns "強制\n橫向"
+        every { mockCtx.getString(QuickSettingTileId.TOUCH_LOCK.titleRes) } returns "Verrouillage\ntactile"
+        every { mockCtx.getString(QuickSettingTileId.SCREENSHOT.titleRes) } returns "Captura de \npantalla"
+        every { mockCtx.getString(QuickSettingTileId.CHARGE_LIMIT_80.titleRes) } returns "80%-\nLadelimit"
+
+        assertEquals("強制橫向", QuickSettingTileId.FORCE_LANDSCAPE.title(mockCtx))
+        assertEquals("強制\n橫向", QuickSettingTileId.FORCE_LANDSCAPE.gridTitle(mockCtx))
+        assertEquals("Verrouillage tactile", QuickSettingTileId.TOUCH_LOCK.title(mockCtx))
+        assertEquals("Verrouillage\ntactile", QuickSettingTileId.TOUCH_LOCK.gridTitle(mockCtx))
+        assertEquals("Captura de pantalla", QuickSettingTileId.SCREENSHOT.title(mockCtx))
+        assertEquals("80%-Ladelimit", QuickSettingTileId.CHARGE_LIMIT_80.title(mockCtx))
+
+        QuickSettingTileId.entries.forEach { tile ->
+            assertTrue("Missing titleRes for $tile", tile.titleRes != 0)
+            assertTrue("Missing descriptionRes for $tile", tile.descriptionRes != 0)
+        }
+        QuickSettingCategory.entries.forEach { category ->
+            assertTrue("Missing titleRes for $category", category.titleRes != 0)
+            assertTrue("Missing descriptionRes for $category", category.descriptionRes != 0)
+        }
     }
 }

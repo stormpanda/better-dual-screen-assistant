@@ -97,10 +97,18 @@ class TccThemeAndOverlayFormatTest {
         assertTrue(syncedPalette.isDark)
         assertEquals(Color(syncedAccent), syncedPalette.accent)
 
-        // Verify all remaining options resolve cleanly
+        // Verify all remaining options resolve cleanly with opaque surface and content colors
         for (opt in AppThemeOption.entries) {
             val resolved = resolveTccPalette(opt, systemDark = true)
-            assertTrue(resolved.panelBackground.alpha > 0f)
+            assertEquals("primaryBackground alpha for $opt", 1f, resolved.primaryBackground.alpha, 0.001f)
+            assertEquals("panelBackground alpha for $opt", 1f, resolved.panelBackground.alpha, 0.001f)
+            assertEquals("panelBackgroundSelected alpha for $opt", 1f, resolved.panelBackgroundSelected.alpha, 0.001f)
+            assertEquals("primary alpha for $opt", 1f, resolved.primary.alpha, 0.001f)
+            assertEquals("secondary alpha for $opt", 1f, resolved.secondary.alpha, 0.001f)
+            assertEquals("tertiary alpha for $opt", 1f, resolved.tertiary.alpha, 0.001f)
+            assertEquals("fourth alpha for $opt", 1f, resolved.fourth.alpha, 0.001f)
+            assertEquals("fifth alpha for $opt", 1f, resolved.fifth.alpha, 0.001f)
+            assertEquals("dialogBackground alpha for $opt", 1f, resolved.dialogBackground.alpha, 0.001f)
         }
     }
 
@@ -182,9 +190,8 @@ class TccThemeAndOverlayFormatTest {
         assertEquals(TccUiLook.AYN, TccUiLookPreference.AYN.resolve(DeviceProfile.RETROID_POCKET_DUO))
         assertEquals(TccUiLook.RETROID, TccUiLookPreference.RETROID.resolve(DeviceProfile.AYN_THOR))
 
-        assertEquals(R.string.ui_look_auto, TccUiLookPreference.AUTO.displayNameRes)
-        assertEquals(R.string.ui_look_ayn, TccUiLookPreference.AYN.displayNameRes)
-        assertEquals(R.string.ui_look_retroid, TccUiLookPreference.RETROID.displayNameRes)
+        assertEquals("Auto (AYN Smooth)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.AYN_THOR))
+        assertEquals("Auto (Retroid Pixel)", TccUiLookPreference.AUTO.displayNameFor(DeviceProfile.RETROID_POCKET_DUO))
 
         assertTrue(RetroidPixelTealSwatch in MegingiardAccentPresets)
         assertTrue(RetroidPixelOrangeSwatch in MegingiardAccentPresets)
@@ -513,5 +520,165 @@ class TccThemeAndOverlayFormatTest {
             assertEquals(brightCyanArgb, cyanMap[key])
         }
         assertEquals(Color.Black.toArgb(), cyanMap["android:color/system_on_shade_active_dark"])
+    }
+
+    @Test
+    fun `formatScreenCastTileLabel and rp_ic_qs_cast mapping handle idle connecting and active cast states`() {
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.R.drawable.rp_ic_qs_cast,
+            retroidPixelDrawableOrNull(com.stormpanda.betterdualscreenassistant.R.drawable.ic_qs_cast)
+        )
+
+        val idle = com.stormpanda.betterdualscreenassistant.system.ScreenCastState()
+        assertFalse(idle.isActiveOrConnecting)
+        assertEquals(
+            "Screen Cast",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(idle)
+        )
+
+        val connecting = com.stormpanda.betterdualscreenassistant.system.ScreenCastState(
+            isCasting = false,
+            isConnecting = true,
+            deviceName = "Living Room TV"
+        )
+        assertTrue(connecting.isActiveOrConnecting)
+        assertEquals(
+            "Connecting…",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(connecting)
+        )
+
+        val unnamedCast = com.stormpanda.betterdualscreenassistant.system.ScreenCastState(
+            isCasting = true,
+            isConnecting = false,
+            deviceName = ""
+        )
+        assertTrue(unnamedCast.isActiveOrConnecting)
+        assertEquals(
+            "Casting",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(unnamedCast)
+        )
+
+        val namedCast = com.stormpanda.betterdualscreenassistant.system.ScreenCastState(
+            isCasting = true,
+            isConnecting = false,
+            deviceName = "Living Room TV"
+        )
+        assertTrue(namedCast.isActiveOrConnecting)
+        assertEquals(
+            "Living Room TV",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(namedCast)
+        )
+    }
+
+    @Test
+    fun `formatNetworkSpeedText suppresses idle keepalive trickle and formats active throughput`() {
+        assertEquals(
+            "0.0KB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(0L, 2000L)
+        )
+        // 500 bytes over 2s = 0.24 KB/s (< 0.5 KB/s threshold) -> stays quiet at 0.0KB/S
+        assertEquals(
+            "0.0KB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(500L, 2000L)
+        )
+        // 10240 bytes over 2s = 5.0 KB/s
+        assertEquals(
+            "5.0KB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(10_240L, 2000L)
+        )
+        // 4 MiB over 2s = 2.0 MB/S
+        assertEquals(
+            "2.0MB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(4L * 1024L * 1024L, 2000L)
+        )
+    }
+
+    @Test
+    fun `resolveRingUpdateAction skips micro-jitter, snaps small fluctuations, and animates large transitions`() {
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.SKIP,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.50f, 0.502f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.SNAP,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.50f, 0.52f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.ANIMATE,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0f, 0.35f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.ANIMATE,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.30f, 0.45f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.SNAP,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.003f, 0f)
+        )
+    }
+
+    @Test
+    fun `formatScreenshotTileLabel formats Ask Every Time and direct target display modes`() {
+        assertEquals(
+            "Screenshot",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_ASK
+            )
+        )
+        assertEquals(
+            "Screenshot: Top",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_TOP
+            )
+        )
+        assertEquals(
+            "Screenshot: Bottom",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM
+            )
+        )
+        assertEquals(
+            "Screenshot: Both",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_BOTH
+            )
+        )
+    }
+
+    @Test
+    fun `supportsRetroidPixelLabelFont enables pixel font for covered Latin scripts and falls back for unsupported locales`() {
+        val coveredLatinLocales = listOf("en", "en-US", "de-DE", "fr-FR", "es-ES", "pt-BR", "it-IT", "hu-HU", "sr-Latn")
+        for (tag in coveredLatinLocales) {
+            assertTrue(
+                "Expected pixel label font for covered Latin locale $tag",
+                supportsRetroidPixelLabelFont(java.util.Locale.forLanguageTag(tag))
+            )
+        }
+
+        val fallbackLocales = listOf(
+            "zh-TW", "zh-CN", "zh-Hant", "zh-Hans",
+            "ja-JP", "ko-KR", "ru-RU", "uk-UA",
+            "ar-SA", "he-IL", "th-TH", "hi-IN", "el-GR", "sr-Cyrl",
+            // Latin locales whose core diacritics are missing from the bundled pixel subset
+            "pl-PL", "tr-TR", "vi-VN", "vi-Latn-VN", "cs-CZ", "sk-SK", "ro-RO"
+        )
+        for (tag in fallbackLocales) {
+            assertFalse(
+                "Expected system font fallback for locale $tag",
+                supportsRetroidPixelLabelFont(java.util.Locale.forLanguageTag(tag))
+            )
+        }
+    }
+
+    @Test
+    fun `all AppThemeOption and TccUiLookPreference entries expose valid string resources`() {
+        for (option in AppThemeOption.entries) {
+            assertTrue("Missing displayNameRes for $option", option.displayNameRes != 0)
+            assertTrue("Missing shortTileLabelRes for $option", option.shortTileLabelRes != 0)
+        }
+        for (pref in TccUiLookPreference.entries) {
+            assertTrue("Missing displayNameRes for $pref", pref.displayNameRes != 0)
+            assertTrue("Missing shortLabelRes for $pref", pref.shortLabelRes != 0)
+        }
     }
 }

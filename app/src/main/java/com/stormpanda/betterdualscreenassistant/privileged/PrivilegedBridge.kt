@@ -137,6 +137,7 @@ object PrivilegedBridge {
                         .getInstance(appCtx)
                     repo.refreshDisplayBrightness()
                     repo.syncScreenRecordingStateFromHelper()
+                    repo.refreshScreenCastStateAsync()
                 } catch (_: Throwable) {
                 }
             }
@@ -363,7 +364,28 @@ object PrivilegedBridge {
         return floatArrayOf(0.5f, 0f, 1f, 0.5f)
     }
 
-    fun setPinScreenMode(context: Context, mode: Int) {
+    fun getPinScreenMode(context: Context): Int {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE, data, reply, 0)
+                reply.readException()
+                return reply.readInt()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper getPinScreenMode failed", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        ensureStarted(context)
+        return -1
+    }
+
+    fun setPinScreenMode(context: Context, mode: Int): Boolean {
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
             val data = Parcel.obtain()
@@ -373,7 +395,7 @@ object PrivilegedBridge {
                 data.writeInt(mode)
                 binder.transact(PrivilegedHelperMain.TRANSACTION_SET_PIN_SCREEN_MODE, data, reply, 0)
                 reply.readException()
-                return
+                return true
             } catch (t: Throwable) {
                 Log.w(TAG, "Helper setPinScreenMode failed", t)
             } finally {
@@ -382,6 +404,7 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+        return false
     }
 
     fun setTopScreenBlanked(
@@ -899,12 +922,19 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
-        val stockPkgsRegex = DeviceProfile.allStockAssistantPackages.joinToString("|") {
-            it.replace(".", """\.""")
+        val excludedPackages = LinkedHashSet<String>().apply {
+            add(PrivilegedHelperMain.APP_PACKAGE_NAME)
+            addAll(DeviceProfile.allStockAssistantPackages)
+            add("com.android.systemui")
+            addAll(resolveLauncherPackages(context))
         }
+        val pkgNameRegex = Regex("^[A-Za-z0-9._]+$")
+        val excludedPkgsAwkRegex = excludedPackages
+            .filter { pkgNameRegex.matches(it) }
+            .joinToString("|") { it.replace(".", """\.""") }
         val script = """
             count=0
-            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|${stockPkgsRegex}|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
+            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|${excludedPkgsAwkRegex})/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
                 am stack remove "${'$'}id" >/dev/null 2>&1 && count=${'$'}((count + 1))
             done
             echo "CLEARED:${'$'}count"
@@ -914,6 +944,30 @@ object PrivilegedBridge {
         val out = res.getOrDefault("")
         val match = Regex("""CLEARED:(\d+)""").find(out) ?: return -1
         return match.groupValues[1].toIntOrNull() ?: 0
+    }
+
+    internal fun resolveLauncherPackages(context: Context): Set<String> {
+        val pm = context.packageManager ?: return emptySet()
+        val packages = LinkedHashSet<String>()
+        val categories = listOf(
+            android.content.Intent.CATEGORY_HOME,
+            android.content.Intent.CATEGORY_SECONDARY_HOME
+        )
+        for (category in categories) {
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                    .addCategory(category)
+                val matches = pm.queryIntentActivities(intent, 0)
+                for (ri in matches) {
+                    val pkg = ri.activityInfo?.packageName
+                    if (!pkg.isNullOrEmpty()) {
+                        packages.add(pkg)
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return packages
     }
 
     internal fun resolvePhysicalDisplayId(context: Context, logicalDisplayId: Int): String? {
@@ -1218,6 +1272,63 @@ object PrivilegedBridge {
         PServerClient.setStockProcessFrozenForBroadcastFallback(freeze, context)
     }
 
+    /**
+     * Queries [PrivilegedHelperMain] whether the stock DualScreenAssistant is currently active
+     * (either `TccServices` is running, or its process is running outside a broadcast unfreeze window).
+     * Returns `null` if the privileged helper is not connected or fails to respond.
+     */
+    fun isStockAssistantActive(): Boolean? {
+        val binder = helperBinder ?: return null
+        if (!binder.isBinderAlive) return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            binder.transact(
+                PrivilegedHelperMain.TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE,
+                data,
+                reply,
+                0
+            )
+            reply.readException()
+            reply.readInt() != 0
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper isStockAssistantActive failed", t)
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    /**
+     * Requests [PrivilegedHelperMain] to run deterministic ephemeral stock assistant suppression.
+     * Returns `null` if the privileged helper is not connected or fails to respond.
+     */
+    fun suppressStockAssistant(): Boolean? {
+        val binder = helperBinder ?: return null
+        if (!binder.isBinderAlive) return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            binder.transact(
+                PrivilegedHelperMain.TRANSACTION_SUPPRESS_STOCK_ASSISTANT,
+                data,
+                reply,
+                0
+            )
+            reply.readException()
+            reply.readInt() != 0
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper suppressStockAssistant failed", t)
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
     data class ScreenRecordHelperStatus(
         val isRecording: Boolean = false,
         val targetMode: Int = 0,
@@ -1361,6 +1472,164 @@ object PrivilegedBridge {
             data.recycle()
             reply.recycle()
         }
+    }
+
+    data class ScreenCastHelperStatus(
+        val isCasting: Boolean = false,
+        val isConnecting: Boolean = false,
+        val deviceName: String = ""
+    )
+
+    private fun readScreenCastHelperStatusFromParcel(reply: Parcel): ScreenCastHelperStatus {
+        if (reply.dataAvail() <= 0) return ScreenCastHelperStatus()
+        val isCasting = reply.readInt() != 0
+        val isConnecting = reply.readInt() != 0
+        val deviceName = reply.readString() ?: ""
+        return ScreenCastHelperStatus(
+            isCasting = isCasting,
+            isConnecting = isConnecting,
+            deviceName = deviceName
+        )
+    }
+
+    /**
+     * Queries the current wireless screen cast status (Miracast / Wi-Fi Display + Google Cast)
+     * from [PrivilegedHelperMain] with in-process [DisplayManager] reflection fallback.
+     */
+    fun getScreenCastState(context: Context? = null): ScreenCastHelperStatus {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                return readScreenCastHelperStatusFromParcel(reply)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper getScreenCastState failed, using fallback", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        if (context != null) {
+            return readScreenCastStateFallback(context)
+        }
+        return ScreenCastHelperStatus()
+    }
+
+    private fun readScreenCastStateFallback(context: Context): ScreenCastHelperStatus {
+        val dm = try {
+            context.getSystemService(DisplayManager::class.java)
+        } catch (_: Throwable) {
+            null
+        } ?: return ScreenCastHelperStatus()
+
+        try {
+            val wfdStatus = dm.javaClass.getMethod("getWifiDisplayStatus").invoke(dm)
+            if (wfdStatus != null) {
+                val activeState =
+                    wfdStatus.javaClass.getMethod("getActiveDisplayState").invoke(wfdStatus) as? Int ?: 0
+                val activeDisplay =
+                    wfdStatus.javaClass.getMethod("getActiveDisplay").invoke(wfdStatus)
+                val friendlyName = try {
+                    activeDisplay?.javaClass?.getMethod("getFriendlyDisplayName")
+                        ?.invoke(activeDisplay) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                val deviceName = try {
+                    activeDisplay?.javaClass?.getMethod("getDeviceName")
+                        ?.invoke(activeDisplay) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                val cleanName = PrivilegedHelperMain.sanitizeCastDeviceName(friendlyName).ifEmpty {
+                    PrivilegedHelperMain.sanitizeCastDeviceName(deviceName)
+                }
+                if (activeState == 2) {
+                    return ScreenCastHelperStatus(isCasting = true, deviceName = cleanName)
+                }
+                if (activeState == 1) {
+                    return ScreenCastHelperStatus(isConnecting = true, deviceName = cleanName)
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        try {
+            for (display in dm.displays) {
+                if (display.displayId == 0) continue
+                val type = try {
+                    display.javaClass.getMethod("getType").invoke(display) as? Int ?: 0
+                } catch (_: Throwable) {
+                    0
+                }
+                val ownerPkg = try {
+                    display.javaClass.getMethod("getOwnerPackageName").invoke(display) as? String
+                } catch (_: Throwable) {
+                    null
+                }
+                if (type == 3 ||
+                    (type == 5 &&
+                        PrivilegedHelperMain.isWirelessCastProjectionPackage(ownerPkg) &&
+                        !PrivilegedHelperMain.isNonCastGmsDisplayName(display.name))
+                ) {
+                    val cleanName = PrivilegedHelperMain.sanitizeCastDeviceName(display.name)
+                    return ScreenCastHelperStatus(isCasting = true, deviceName = cleanName)
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        return ScreenCastHelperStatus()
+    }
+
+    /**
+     * Disconnects any active Miracast (Wi-Fi Display) or Google Cast screen mirroring session
+     * via [PrivilegedHelperMain] (`UID 0`), falling back to reflective [DisplayManager.disconnectWifiDisplay].
+     */
+    fun disconnectScreenCast(context: Context): Boolean {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST,
+                    data,
+                    reply,
+                    0
+                )
+                reply.readException()
+                return reply.readInt() != 0
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper disconnectScreenCast failed, trying fallback", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        val fallbackOk = try {
+            val dm = context.getSystemService(DisplayManager::class.java)
+            if (dm != null) {
+                dm.javaClass.getMethod("disconnectWifiDisplay").invoke(dm)
+                true
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+        ensureStarted(context)
+        return fallbackOk
     }
 
     @Volatile

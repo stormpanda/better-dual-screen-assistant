@@ -113,6 +113,44 @@ class ScreenOverlayManagerTest {
     }
 
     @Test
+    fun `createAssistantOverlayLayoutParams matches stock TccServices fullscreen flags without NO_LIMITS`() {
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+
+        val thorLp = manager.createAssistantOverlayLayoutParams(
+            width = 1240,
+            height = 1080,
+            useLocalFocusMode = true
+        )
+        assertEquals(1240, thorLp.width)
+        assertEquals(1080, thorLp.height)
+        assertEquals(0, thorLp.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        @Suppress("DEPRECATION")
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE) != 0)
+        assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING, thorLp.softInputMode)
+        assertEquals(Gravity.CENTER, thorLp.gravity)
+        assertEquals(0, thorLp.fitInsetsTypes)
+
+        val duoLp = manager.createAssistantOverlayLayoutParams(
+            width = 1280,
+            height = 960,
+            useLocalFocusMode = false
+        )
+        assertEquals(0, duoLp.flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE)
+        @Suppress("DEPRECATION")
+        assertTrue((duoLp.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0)
+        assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING, duoLp.softInputMode)
+    }
+
+    @Test
     fun `performToggleTouchLockWithToast toggles touch lock in repository`() {
         val manager = ScreenOverlayManager(
             context = context,
@@ -366,5 +404,53 @@ class ScreenOverlayManagerTest {
         ShadowLooper.idleMainLooper()
         verify(exactly = 1) { PrivilegedBridge.setBacklightPower(context, panelIndex = 0, blanked = false) }
         verify(exactly = 1) { PrivilegedBridge.setBacklightPower(context, panelIndex = 1, blanked = false) }
+    }
+
+    @Test
+    fun `resolveCastSettingsTargetDisplayId targets Top Screen unless Only Bottom Screen mode is active`() {
+        assertEquals(0, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 0, bottomDisplayId = 4))
+        assertEquals(0, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 1, bottomDisplayId = 4))
+        assertEquals(4, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 2, bottomDisplayId = 4))
+        assertEquals(2, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 2, bottomDisplayId = 2))
+    }
+
+    @Test
+    fun `openClusterTuneProfilePickerOnTopScreen skips launch when uninstalled or top screen is off`() {
+        every { mockRepository.dualScreenDisplayMode } returns MutableStateFlow(0)
+        every { mockRepository.refreshClusterTuneInstalled() } returns false
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+
+        manager.openClusterTuneProfilePickerOnTopScreen()
+        ShadowLooper.idleMainLooper()
+        verify(exactly = 0) { mockRepository.openClusterTuneProfilePicker() }
+
+        every { mockRepository.refreshClusterTuneInstalled() } returns true
+        every { mockRepository.dualScreenDisplayMode } returns MutableStateFlow(2)
+        manager.openClusterTuneProfilePickerOnTopScreen()
+        ShadowLooper.idleMainLooper()
+        verify(exactly = 0) { mockRepository.openClusterTuneProfilePicker() }
+
+        // When installed and top screen is on, launches ClusterTune without dismissing BDSA overlay
+        val launched = java.util.concurrent.CountDownLatch(1)
+        every { mockRepository.dualScreenDisplayMode } returns MutableStateFlow(0)
+        every { mockRepository.openClusterTuneProfilePicker() } answers {
+            launched.countDown()
+            com.stormpanda.betterdualscreenassistant.system.ClusterTuneLaunchResult.OPENED
+        }
+        val showingField = ScreenOverlayManager::class.java.getDeclaredField("isAssistantShowing").apply {
+            isAccessible = true
+        }
+        showingField.setBoolean(manager, true)
+
+        manager.openClusterTuneProfilePickerOnTopScreen()
+        assertTrue(launched.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        ShadowLooper.idleMainLooper()
+        assertTrue("BDSA overlay should remain open when opening ClusterTune", manager.isAssistantShowing)
+        verify(exactly = 1) { mockRepository.openClusterTuneProfilePicker() }
     }
 }

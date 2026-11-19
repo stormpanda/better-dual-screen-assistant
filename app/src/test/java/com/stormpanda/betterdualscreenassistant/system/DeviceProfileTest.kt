@@ -170,5 +170,15 @@ class DeviceProfileTest {
         assertEquals(setOf("132", "147"), DeviceProfile.allBottomSfPorts)
         assertTrue("com.rp.mapping" in DeviceProfile.allProtectedVendorPackages)
         assertTrue("com.odin.mapping" in DeviceProfile.allProtectedVendorPackages)
+
+        DeviceProfile.entries.forEach { profile ->
+            assertTrue(profile.standardControllerLabelRes != 0)
+            assertTrue(profile.controllerStyleOptionLabelRes != 0)
+            assertTrue(profile.closeBottomTipTextRes != 0)
+            assertTrue(profile.replaceStockDescActiveRes != 0)
+            assertTrue(profile.replaceStockDescInactiveRes != 0)
+        }
+        assertTrue(ayn.replaceStockDescActiveRes != retroid.replaceStockDescActiveRes)
+        assertTrue(ayn.replaceStockDescInactiveRes != retroid.replaceStockDescInactiveRes)
     }
 }

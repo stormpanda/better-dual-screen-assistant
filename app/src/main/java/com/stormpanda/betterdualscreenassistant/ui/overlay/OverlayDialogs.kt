@@ -27,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -108,6 +107,19 @@ internal fun AssistantOverlayDialogHost(
     onCaptureScreenshotRequest: (Int) -> Unit,
     onStartScreenRecordingRequest: (Int) -> Unit
 ) {
+    val themeDialogToken = remember { System.identityHashCode(Any()) }
+    val isThemeDialogOpen = activeDialog == ActiveDialog.THEME_MODE
+    DisposableEffect(isThemeDialogOpen) {
+        if (isThemeDialogOpen) {
+            repository.setSettingsUiActive(themeDialogToken, active = true)
+        }
+        onDispose {
+            if (isThemeDialogOpen) {
+                repository.setSettingsUiActive(themeDialogToken, active = false)
+            }
+        }
+    }
+
     var pendingDismissJob by remember { mutableStateOf<Job?>(null) }
     DisposableEffect(activeDialog) {
         pendingDismissJob?.cancel()
@@ -133,13 +145,7 @@ internal fun AssistantOverlayDialogHost(
 
         ActiveDialog.CLOSE_BOTTOM_TIP -> {
             CloseScreenTipOverlay(
-                tipBodyText = stringResource(
-                    if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-                        R.string.tip_content_text_retroid
-                    } else {
-                        R.string.tip_content_text
-                    }
-                ),
+                tipBodyText = stringResource(profile.closeBottomTipTextRes),
                 onCancel = onDismiss,
                 onConfirm = { noMore ->
                     if (noMore) {
@@ -298,13 +304,7 @@ internal fun AssistantOverlayDialogHost(
                 ),
                 TccDialogOption(
                     id = 1,
-                    label = stringResource(
-                        if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-                            R.string.fan_option_retro_style
-                        } else {
-                            R.string.fan_option_odin_style
-                        }
-                    ),
+                    label = stringResource(profile.controllerStyleOptionLabelRes),
                     iconRes = R.drawable.ic_controller_odin_style
                 )
             )
@@ -352,37 +352,41 @@ internal fun AssistantOverlayDialogHost(
                 when (opt) {
                     AppThemeOption.STOCK_SYSTEM -> TccDialogOption(
                         id = opt.id,
-                        label = "${stringResource(R.string.text_system_theme)} (Stock)",
+                        label = stringResource(R.string.dialog_theme_stock_format, stringResource(R.string.text_system_theme)),
                         iconRes = R.drawable.ic_qs_system_theme,
                         preserveIconColors = true
                     )
                     AppThemeOption.STOCK_LIGHT -> TccDialogOption(
                         id = opt.id,
-                        label = "${stringResource(R.string.text_light_theme)} (Stock)",
+                        label = stringResource(R.string.dialog_theme_stock_format, stringResource(R.string.text_light_theme)),
                         iconRes = R.drawable.ic_qs_light_theme,
                         preserveIconColors = true
                     )
                     AppThemeOption.STOCK_DARK -> TccDialogOption(
                         id = opt.id,
-                        label = opt.displayName(LocalContext.current),
+                        label = stringResource(R.string.dialog_theme_stock_format, stringResource(R.string.text_dark_theme)),
                         iconRes = R.drawable.ic_qs_dark_theme,
                         preserveIconColors = true
                     )
                     AppThemeOption.SYNC_MEGINGIARD -> TccDialogOption(
                         id = opt.id,
-                        label = "${opt.displayName(LocalContext.current)} (${syncedMegingiardOption.shortTileLabel(LocalContext.current)})",
+                        label = stringResource(
+                            R.string.dialog_theme_sync_format,
+                            stringResource(opt.displayNameRes),
+                            stringResource(syncedMegingiardOption.shortTileLabelRes)
+                        ),
                         iconRes = R.drawable.ic_qs_theme_mode,
                         swatchColors = syncedMegingiardOption.previewSurface to syncedAccentColor
                     )
                     AppThemeOption.MEGINGIARD_DARK, AppThemeOption.MEGINGIARD_DARK_OLED -> TccDialogOption(
                         id = opt.id,
-                        label = opt.displayName(LocalContext.current),
+                        label = stringResource(opt.displayNameRes),
                         iconRes = R.drawable.ic_qs_theme_mode,
                         swatchColors = opt.previewSurface to customAccentColor
                     )
                     else -> TccDialogOption(
                         id = opt.id,
-                        label = opt.displayName(LocalContext.current),
+                        label = stringResource(opt.displayNameRes),
                         iconRes = R.drawable.ic_qs_theme_mode,
                         swatchColors = opt.previewSurface to opt.previewAccent
                     )
@@ -412,21 +416,20 @@ internal fun AssistantOverlayDialogHost(
                 },
                 onDismiss = onDismiss,
                 footerContent = {
-                    val ctx = LocalContext.current
                     DialogFooterDivider()
                     TccDialogSegmentedRow(
-                        label = stringResource(R.string.app_ui_look_title),
+                        label = stringResource(R.string.settings_ui_look_title),
                         segments = listOf(
-                            TccUiLookPreference.AUTO.id to TccUiLookPreference.AUTO.shortLabel(ctx),
-                            TccUiLookPreference.AYN.id to TccUiLookPreference.AYN.shortLabel(ctx),
-                            TccUiLookPreference.RETROID.id to TccUiLookPreference.RETROID.shortLabel(ctx)
+                            TccUiLookPreference.AUTO.id to stringResource(TccUiLookPreference.AUTO.shortLabelRes),
+                            TccUiLookPreference.AYN.id to stringResource(TccUiLookPreference.AYN.shortLabelRes),
+                            TccUiLookPreference.RETROID.id to stringResource(TccUiLookPreference.RETROID.shortLabelRes)
                         ),
                         selectedId = uiLookMode,
                         onSelectId = { repository.setUiLookMode(it) }
                     )
                     DialogFooterDivider()
                     TccDialogCheckboxRow(
-                        label = stringResource(R.string.app_retroid_readability_title),
+                        label = stringResource(R.string.settings_retroid_readability_title),
                         checked = retroidReadabilityBoost,
                         enabled = isRetroidLookActive,
                         onCheckedChange = { repository.setRetroidReadabilityBoost(it) }
@@ -456,17 +459,29 @@ internal fun AssistantOverlayDialogHost(
         }
 
         ActiveDialog.SCREENSHOT -> {
+            val screenshotTargetMode by repository.screenshotTargetMode.collectAsState()
+            var keepSelectionAsDefault by remember { mutableStateOf(false) }
             val options = screenTargetDialogOptions()
             TccOptionDialog(
                 title = stringResource(R.string.dialog_screenshot_title),
                 titleIconRes = R.drawable.ic_qs_screenshot,
                 options = options,
-                selectedId = -1,
+                selectedId = screenshotTargetMode,
                 onSelectOption = { selected ->
+                    if (keepSelectionAsDefault) {
+                        repository.setScreenshotTargetMode(selected)
+                    }
                     onDismiss()
                     onCaptureScreenshotRequest(selected)
                 },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                footerContent = {
+                    TccDialogToggleRow(
+                        label = stringResource(R.string.dialog_screenshot_set_as_default),
+                        checked = keepSelectionAsDefault,
+                        onCheckedChange = { keepSelectionAsDefault = it }
+                    )
+                }
             )
         }
 
@@ -486,13 +501,13 @@ internal fun AssistantOverlayDialogHost(
                 onDismiss = onDismiss,
                 footerContent = {
                     TccDialogToggleRow(
-                        label = stringResource(R.string.dialog_record_internal_audio),
+                        label = stringResource(R.string.dialog_screen_record_internal_audio),
                         checked = screenRecordInternalAudio,
                         onCheckedChange = { repository.setScreenRecordInternalAudio(it) }
                     )
                     DialogFooterDivider()
                     TccDialogToggleRow(
-                        label = stringResource(R.string.dialog_record_mic),
+                        label = stringResource(R.string.dialog_screen_record_microphone),
                         checked = screenRecordMicAudio,
                         onCheckedChange = { repository.setScreenRecordMicAudio(it) }
                     )
@@ -509,9 +524,9 @@ internal fun AssistantOverlayDialogHost(
 
 @Composable
 private fun screenTargetDialogOptions(): List<TccDialogOption> = listOf(
-    TccDialogOption(id = 0, label = stringResource(R.string.dialog_target_top_screen), iconRes = R.drawable.ic_just_screen_above),
-    TccDialogOption(id = 1, label = stringResource(R.string.dialog_target_bottom_screen), iconRes = R.drawable.ic_just_screen_below),
-    TccDialogOption(id = 2, label = stringResource(R.string.dialog_target_both_screens), iconRes = R.drawable.ic_dual_screen_display)
+    TccDialogOption(id = 0, label = stringResource(R.string.dialog_screen_target_top), iconRes = R.drawable.ic_just_screen_above),
+    TccDialogOption(id = 1, label = stringResource(R.string.dialog_screen_target_bottom), iconRes = R.drawable.ic_just_screen_below),
+    TccDialogOption(id = 2, label = stringResource(R.string.dialog_screen_target_both), iconRes = R.drawable.ic_dual_screen_display)
 )
 
 @Composable

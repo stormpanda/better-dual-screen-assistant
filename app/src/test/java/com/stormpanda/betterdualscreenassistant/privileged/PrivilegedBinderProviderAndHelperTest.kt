@@ -420,6 +420,7 @@ class PrivilegedBinderProviderAndHelperTest {
         var stockPid = 8268
         var stockStopped = true
 
+        helperBinder.modernBroadcastQueueOverride = false
         helperBinder.resolveStockPidOverride = { stockPid }
         helperBinder.isPidStoppedOverride = { stockStopped }
         helperBinder.sendSignalOverride = { pid, sig ->
@@ -496,6 +497,370 @@ class PrivilegedBinderProviderAndHelperTest {
     }
 
     @Test
+    fun `HelperBinder TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST uses 600ms timeout on modern queue and resuppresses escaped PID`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val sentSignals = mutableListOf<Pair<Int, Int>>()
+        var stockPid = 8268
+        var stockStopped = true
+        var resuppressCalls = 0
+
+        helperBinder.modernBroadcastQueueOverride = true
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.sendSignalOverride = { pid, sig ->
+            sentSignals.add(pid to sig)
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+        helperBinder.stockWorkerExecutorOverride = { task -> task.run() }
+        helperBinder.suppressStockOverride = {
+            resuppressCalls++
+            true
+        }
+        registerMockClientAndCaptureDeathRecipient(helperBinder, replaceStock = true)
+
+        fun sendFreezeTransaction(freeze: Boolean) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeInt(if (freeze) 1 else 0)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+        }
+
+        // 1. Pre-broadcast unfreeze sends SIGCONT and stays unfrozen past legacy 350ms
+        sendFreezeTransaction(freeze = false)
+        assertEquals(listOf(8268 to PrivilegedHelperMain.SIGNAL_CONT), sentSignals)
+        assertFalse(stockStopped)
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS + 50L,
+            TimeUnit.MILLISECONDS
+        )
+        assertEquals(1, sentSignals.size)
+        assertFalse(stockStopped)
+
+        // 2. Advances to 600ms modern delay -> re-freezes with SIGSTOP
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS,
+            TimeUnit.MILLISECONDS
+        )
+        assertEquals(
+            listOf(
+                8268 to PrivilegedHelperMain.SIGNAL_CONT,
+                8268 to PrivilegedHelperMain.SIGNAL_STOP
+            ),
+            sentSignals
+        )
+        assertTrue(stockStopped)
+        assertEquals(0, resuppressCalls)
+
+        // 3. Escaped (unfrozen) PID on pre-broadcast triggers re-suppression without SIGCONT
+        sentSignals.clear()
+        stockPid = 9001
+        stockStopped = false
+        sendFreezeTransaction(freeze = false)
+        assertTrue(sentSignals.isEmpty())
+        assertEquals(1, resuppressCalls)
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE checks TccServices and broadcast window`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var stockPid = 5000
+        var stockStopped = true
+        var tccRunning = false
+
+        helperBinder.modernBroadcastQueueOverride = true
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.isTccServiceRunningOverride = { tccRunning }
+        helperBinder.sendSignalOverride = { _, sig ->
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+
+        fun queryStockActive(): Boolean {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            val active = reply.readInt() != 0
+            data.recycle()
+            reply.recycle()
+            return active
+        }
+
+        // Stopped and windowless -> false
+        assertFalse(queryStockActive())
+
+        // Temporarily unfrozen for broadcast while windowless -> still false
+        val unfreezeData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0)
+        }
+        val unfreezeReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                unfreezeData,
+                unfreezeReply,
+                0
+            )
+        )
+        unfreezeReply.readException()
+        unfreezeData.recycle()
+        unfreezeReply.recycle()
+        assertFalse(stockStopped)
+        assertFalse(queryStockActive())
+
+        // Wait for modern broadcast timeout, then simulate escaped unfrozen PID -> true
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS + 50L,
+            TimeUnit.MILLISECONDS
+        )
+        stockStopped = false
+        assertTrue(queryStockActive())
+
+        // Even if stopped, running TccServices -> true
+        stockStopped = true
+        tccRunning = true
+        assertTrue(queryStockActive())
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_SUPPRESS_STOCK_ASSISTANT waits for startup registration and retries on PID race`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val helperBinder = createAuthorizedHelperBinder()
+        val rootCommands = mutableListOf<String>()
+        val events = mutableListOf<String>()
+        var currentPids = listOf(100)
+        var tccRunning = false
+        var regPollCount = 0
+        var attemptScenario = 1
+        var pidReadsAfterEnable = 0
+
+        helperBinder.stockPollIntervalMsOverride = 0L
+        helperBinder.stockStartupSettleMsOverride = 0L
+        helperBinder.stockStartupFallbackSleepMsOverride = 0L
+        helperBinder.isPidStoppedOverride = { true }
+        helperBinder.isTccServiceRunningOverride = { tccRunning }
+        helperBinder.execRootCommandOverride = { cmd ->
+            rootCommands.add(cmd)
+            events.add("cmd:$cmd")
+            if (attemptScenario == 2 && cmd == "pm enable ${DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE}/.services.TccServices") {
+                if (pidReadsAfterEnable == 0) {
+                    // Simulate respawn race on attempt 1 where PID 200 dies and PID 300 binds TccServices
+                    currentPids = listOf(300)
+                    tccRunning = true
+                }
+                pidReadsAfterEnable++
+            }
+            ""
+        }
+        helperBinder.resolveAllStockPidsOverride = { currentPids }
+        helperBinder.sendSignalOverride = { pid, sig ->
+            events.add("sig:$pid:$sig")
+            if (sig == PrivilegedHelperMain.SIGNAL_KILL) {
+                currentPids = when (attemptScenario) {
+                    1 -> listOf(200)
+                    else -> if (pid == 100) listOf(200) else listOf(400)
+                }
+            }
+        }
+        helperBinder.hasStockReceiverRegisteredOverride = { pid, _ ->
+            events.add("reg:$pid")
+            regPollCount++
+            regPollCount >= 2
+        }
+
+        fun transactSuppress(): Boolean {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SUPPRESS_STOCK_ASSISTANT,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            val ok = reply.readInt() != 0
+            data.recycle()
+            reply.recycle()
+            return ok
+        }
+
+        // Scenario 1: single clean pass waits for ScreenReceiver registration before SIGSTOP and re-enables on disk
+        assertTrue(transactSuppress())
+        val sigStopIdx = events.indexOf("sig:200:${PrivilegedHelperMain.SIGNAL_STOP}")
+        val secondRegIdx = events.lastIndexOf("reg:200")
+        val enableIdx = events.indexOf("cmd:pm enable ${DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE}/.services.TccServices")
+        assertTrue(secondRegIdx in 0 until sigStopIdx)
+        assertTrue(enableIdx > sigStopIdx)
+
+        // Scenario 2: PID race on attempt 1 retries and cleanly suppresses PID 400 without blindly freezing 300
+        events.clear()
+        rootCommands.clear()
+        attemptScenario = 2
+        currentPids = listOf(100)
+        regPollCount = 0
+        pidReadsAfterEnable = 0
+        tccRunning = false
+        val origHasReg = helperBinder.hasStockReceiverRegisteredOverride
+        var racePoll = 0
+        helperBinder.hasStockReceiverRegisteredOverride = { pid, _ ->
+            if (pid == 400) {
+                tccRunning = false
+            }
+            racePoll++
+            true
+        }
+        assertNotNull(origHasReg)
+        assertTrue(transactSuppress())
+        assertFalse(events.contains("sig:300:${PrivilegedHelperMain.SIGNAL_STOP}"))
+        assertTrue(events.contains("sig:400:${PrivilegedHelperMain.SIGNAL_STOP}"))
+        assertEquals(
+            "pm enable ${DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE}/.receivers.BootBroadcastReceiver",
+            rootCommands.last()
+        )
+    }
+
+    @Test
+    fun `HelperBinder continuous stock monitor resuppresses escaped PID and respects broadcast window and opt-out`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var stockPid = 111
+        var stockStopped = true
+        var tccRunning = false
+        var tccChecks = 0
+        var resuppressCount = 0
+
+        helperBinder.modernBroadcastQueueOverride = true
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.isTccServiceRunningOverride = {
+            tccChecks++
+            tccRunning
+        }
+        helperBinder.sendSignalOverride = { _, sig ->
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+        helperBinder.stockWorkerExecutorOverride = { task -> task.run() }
+        helperBinder.suppressStockOverride = {
+            resuppressCount++
+            stockStopped = true
+            tccRunning = false
+            true
+        }
+
+        registerMockClientAndCaptureDeathRecipient(helperBinder, replaceStock = true)
+
+        // 1. Stopped + windowless PID 111 verifies once and caches PID without repeated dumpsys checks
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(1, tccChecks)
+        assertEquals(0, resuppressCount)
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(1, tccChecks)
+        assertEquals(0, resuppressCount)
+
+        // 2. Stopped PID 222 with TccServices running triggers re-suppression
+        stockPid = 222
+        tccRunning = true
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(2, tccChecks)
+        assertEquals(1, resuppressCount)
+
+        // Advance past auto-resuppress cooldown
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_AUTO_RESUPPRESS_COOLDOWN_MS, TimeUnit.MILLISECONDS)
+
+        // 3. Escaped unfrozen PID 333 outside broadcast window triggers re-suppression
+        stockPid = 333
+        stockStopped = false
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(2, resuppressCount)
+
+        // Advance past auto-resuppress cooldown
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_AUTO_RESUPPRESS_COOLDOWN_MS, TimeUnit.MILLISECONDS)
+
+        // 4. Temporarily unfrozen PID 444 during broadcast window must NOT trigger monitor re-suppression
+        stockPid = 444
+        stockStopped = true
+        val unfreezeData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0)
+        }
+        val unfreezeReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                unfreezeData,
+                unfreezeReply,
+                0
+            )
+        )
+        unfreezeReply.readException()
+        unfreezeData.recycle()
+        unfreezeReply.recycle()
+        // Advance to end of monitor interval (444ms < 600ms if triggered, or force monitor check mid-window)
+        val monitorField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("stockSuppressionMonitorRunnable").apply { isAccessible = true }
+        (monitorField.get(helperBinder) as Runnable).run()
+        assertEquals(2, resuppressCount)
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS + 50L,
+            TimeUnit.MILLISECONDS
+        )
+        assertTrue(stockStopped)
+
+        // 5. Opting out via TRANSACTION_UPDATE_WATCHDOG_STATE stops the monitor
+        val optOutData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0) // replaceStockPreferred = false
+            writeFloat(0.5f)
+            writeFloat(0.5f)
+        }
+        val optOutReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_UPDATE_WATCHDOG_STATE,
+                optOutData,
+                optOutReply,
+                0
+            )
+        )
+        optOutReply.readException()
+        optOutData.recycle()
+        optOutReply.recycle()
+
+        stockPid = 555
+        stockStopped = false
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS * 2, TimeUnit.MILLISECONDS)
+        assertEquals(2, resuppressCount)
+    }
+
+    @Test
     fun `HelperBinder TRANSACTION_CLEAR_OS_THEME is a no-op when no BDSA overlay is active`() {
         val helperBinder = createAuthorizedHelperBinder()
         val data = Parcel.obtain().apply {
@@ -553,9 +918,33 @@ class PrivilegedBinderProviderAndHelperTest {
     }
 
     @Test
-    fun `HelperBinder TRANSACTION_CLEAR_ALL_RECENT_TASKS invokes removeAllVisibleRecentTasks and counts clearable tasks`() {
+    fun `HelperBinder TRANSACTION_CLEAR_ALL_RECENT_TASKS removes non-launcher tasks via removeTask and preserves CATEGORY_HOME launchers`() {
         val helperBinder = createAuthorizedHelperBinder()
+        val removedTaskIds = mutableListOf<Int>()
         var removeAllCalled = false
+
+        val fakePm = object {
+            @Suppress("unused")
+            fun queryIntentActivities(
+                intent: android.content.Intent,
+                resolvedType: String?,
+                flags: Long,
+                userId: Int
+            ): List<android.content.pm.ResolveInfo> {
+                assertEquals(0, userId)
+                val pkg = when {
+                    intent.hasCategory(android.content.Intent.CATEGORY_HOME) -> "com.example.duallauncher"
+                    intent.hasCategory(android.content.Intent.CATEGORY_SECONDARY_HOME) -> "com.example.secondarylauncher"
+                    else -> return emptyList()
+                }
+                val ri = android.content.pm.ResolveInfo().apply {
+                    activityInfo = android.content.pm.ActivityInfo().apply {
+                        packageName = pkg
+                    }
+                }
+                return listOf(ri)
+            }
+        }
 
         val fakeAtm = object {
             @Suppress("unused")
@@ -578,7 +967,29 @@ class PrivilegedBinderProviderAndHelperTest {
                         "${PrivilegedHelperMain.APP_PACKAGE_NAME}.MainActivity"
                     )
                 }
-                return listOf(appTask1, appTask2, bdsaTask)
+                val homeLauncherBottomTask = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 104
+                    topActivity = android.content.ComponentName(
+                        "com.example.duallauncher",
+                        "com.example.duallauncher.BottomScreenActivity"
+                    )
+                }
+                val secondaryLauncherTask = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 105
+                    baseIntent = android.content.Intent().setComponent(
+                        android.content.ComponentName(
+                            "com.example.secondarylauncher",
+                            "com.example.secondarylauncher.SecondaryActivity"
+                        )
+                    )
+                }
+                return listOf(appTask1, appTask2, bdsaTask, homeLauncherBottomTask, secondaryLauncherTask)
+            }
+
+            @Suppress("unused")
+            fun removeTask(taskId: Int): Boolean {
+                removedTaskIds.add(taskId)
+                return true
             }
 
             @Suppress("unused")
@@ -586,6 +997,7 @@ class PrivilegedBinderProviderAndHelperTest {
                 removeAllCalled = true
             }
         }
+        helperBinder.packageManagerOverride = fakePm
         helperBinder.activityTaskManagerOverride = fakeAtm
 
         val data = Parcel.obtain().apply {
@@ -603,7 +1015,11 @@ class PrivilegedBinderProviderAndHelperTest {
         reply.setDataPosition(0)
         reply.readException()
         assertEquals(2, reply.readInt())
-        assertTrue(removeAllCalled)
+        assertEquals(listOf(101, 102), removedTaskIds)
+        assertFalse(
+            "Must use per-task removeTask instead of blanket removeAllVisibleRecentTasks so launcher tasks survive",
+            removeAllCalled
+        )
         data.recycle()
         reply.recycle()
     }
@@ -1091,6 +1507,320 @@ class PrivilegedBinderProviderAndHelperTest {
         assertEquals(2, committedPalettes.size)
         assertEquals(sampleColors.toList(), committedPalettes[0].second)
         assertEquals(sampleColors.toList(), committedPalettes[1].second)
+    }
+
+    private interface FakeMediaRouter2ManagerCallback : android.os.IInterface
+
+    @Test
+    fun `HelperBinder screen cast state and disconnect handle Miracast GMS MediaProjection and ignore screen recorders`() {
+        // 1. Cast package filter & device name sanitization
+        assertTrue(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.google.android.gms"))
+        assertTrue(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.google.android.apps.chromecast.app"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.android.systemui"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.odin.gameassistant"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage("com.rp.gameassistant"))
+        assertFalse(PrivilegedHelperMain.isWirelessCastProjectionPackage(PrivilegedHelperMain.APP_PACKAGE_NAME))
+
+        assertEquals("", PrivilegedHelperMain.sanitizeCastDeviceName("CastDisplay"))
+        assertEquals("", PrivilegedHelperMain.sanitizeCastDeviceName("VirtualDisplay"))
+        assertEquals("Living Room TV", PrivilegedHelperMain.sanitizeCastDeviceName("  Living Room TV  "))
+
+        // 2. 0-arg (Android 13-14) vs 1-arg int (Android 15-16) stopActiveProjection invocation
+        var zeroArgStopped = false
+        val sdk33ProjMgr = object {
+            @Suppress("unused")
+            fun stopActiveProjection() {
+                zeroArgStopped = true
+            }
+        }
+        assertTrue(PrivilegedHelperMain.invokeStopActiveProjection(sdk33ProjMgr))
+        assertTrue(zeroArgStopped)
+
+        var capturedStopReason = -1
+        val sdk36ProjMgr = object {
+            @Suppress("unused")
+            fun stopActiveProjection(stopReason: Int) {
+                capturedStopReason = stopReason
+            }
+        }
+        assertTrue(PrivilegedHelperMain.invokeStopActiveProjection(sdk36ProjMgr))
+        assertEquals(0, capturedStopReason)
+
+        // 3. Proxy inspection: GameAssistant screen recorder projection is ignored; GMS Cast projection + remote session resolves receiver name
+        var activeProjPkg: String? = "com.odin.gameassistant"
+        var wfdState = 0
+        var wfdDisconnectCalled = false
+        var gmsStopCalled = false
+
+        val fakeWfdDisplay = object {
+            @Suppress("unused")
+            fun getFriendlyDisplayName(): String = "Office Miracast"
+        }
+        val fakeDm = object {
+            @Suppress("unused")
+            fun getWifiDisplayStatus(): Any = object {
+                @Suppress("unused")
+                fun getActiveDisplayState(): Int = wfdState
+                @Suppress("unused")
+                fun getActiveDisplay(): Any? = if (wfdState != 0) fakeWfdDisplay else null
+            }
+
+            @Suppress("unused")
+            fun disconnectWifiDisplay() {
+                wfdDisconnectCalled = true
+                wfdState = 0
+            }
+
+            @Suppress("unused")
+            fun getDisplayIds(): IntArray = intArrayOf(0, 4)
+
+            @Suppress("unused")
+            fun getDisplayInfo(id: Int): Any = object {
+                @JvmField
+                val type: Int = 1
+                @JvmField
+                val ownerPackageName: String? = null
+                @JvmField
+                val name: String = "Built-in Screen"
+            }
+        }
+        val fakeProj = object {
+            @Suppress("unused")
+            fun getActiveProjectionInfo(): Any? = activeProjPkg?.let { pkg ->
+                object {
+                    @Suppress("unused")
+                    fun getPackageName(): String = pkg
+                }
+            }
+
+            @Suppress("unused")
+            fun stopActiveProjection(stopReason: Int) {
+                gmsStopCalled = true
+                activeProjPkg = null
+            }
+        }
+        var routerSessionReleased = false
+        val fakeRouteSession = object {
+            @Suppress("unused")
+            fun getId(): String = "cast-session-1"
+            @Suppress("unused")
+            fun isSystemSession(): Boolean = false
+            @Suppress("unused")
+            fun getOwnerPackageName(): String = "com.google.android.gms"
+            @Suppress("unused")
+            fun getName(): CharSequence = ""
+        }
+        val fakeRouter = object {
+            @Suppress("unused")
+            fun getRemoteSessions(): List<Any> = listOf(fakeRouteSession)
+
+            @Suppress("unused")
+            fun getSelectedRoutes(session: Any): List<Any> = listOf(
+                object {
+                    @Suppress("unused")
+                    fun getName(): CharSequence = "Family Room TV"
+                }
+            )
+
+            @Suppress("unused")
+            fun releaseSession(session: Any) {
+                routerSessionReleased = true
+            }
+        }
+
+        // Also test 1-arg IMediaRouterService.getRemoteSessions(IMediaRouter2Manager) fallback
+        var serviceRegisteredMgr: FakeMediaRouter2ManagerCallback? = null
+        var serviceUnregistered = false
+        var serviceReleasedSessionId: String? = null
+        val fakeRouterService = object {
+            @Suppress("unused")
+            fun registerManager(mgr: FakeMediaRouter2ManagerCallback, pkg: String) {
+                if (pkg != "root") throw SecurityException("Package $pkg does not match UID 0")
+                serviceRegisteredMgr = mgr
+            }
+
+            @Suppress("unused")
+            fun unregisterManager(mgr: FakeMediaRouter2ManagerCallback) {
+                if (mgr === serviceRegisteredMgr) {
+                    serviceUnregistered = true
+                }
+            }
+
+            @Suppress("unused")
+            fun getRemoteSessions(mgr: FakeMediaRouter2ManagerCallback): List<Any> {
+                assertNotNull(mgr.asBinder())
+                return listOf(
+                    object {
+                        @Suppress("unused")
+                        fun getId(): String = "service-cast-session"
+                        @Suppress("unused")
+                        fun isSystemSession(): Boolean = false
+                        @Suppress("unused")
+                        fun getOwnerPackageName(): String = "com.google.android.gms"
+                        @Suppress("unused")
+                        fun getName(): CharSequence = "Den Chromecast"
+                    }
+                )
+            }
+
+            @Suppress("unused")
+            fun releaseSessionWithManager(
+                requestId: Int,
+                mgr: FakeMediaRouter2ManagerCallback,
+                sessionId: String
+            ) {
+                serviceReleasedSessionId = sessionId
+            }
+        }
+
+        // GameAssistant active -> NOT treated as wireless cast and NOT stopped on disconnect
+        val nonCastStatus = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, fakeRouter)
+        assertFalse(nonCastStatus.isCasting)
+        assertFalse(PrivilegedHelperMain.disconnectScreenCastViaProxies(fakeDm, fakeProj, fakeRouter))
+        assertFalse(gmsStopCalled)
+        assertFalse(routerSessionReleased)
+
+        // Non-cast GMS display names (e.g. Android Auto) are filtered out
+        assertTrue(PrivilegedHelperMain.isNonCastGmsDisplayName("Android Auto"))
+        assertFalse(PrivilegedHelperMain.isNonCastGmsDisplayName("Chromecast"))
+
+        // GMS Cast active -> detected via MediaRouter2Manager getSelectedRoutes & stopped + session released
+        activeProjPkg = "com.google.android.gms"
+        val gmsCastStatus = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, fakeRouter)
+        assertTrue(gmsCastStatus.isCasting)
+        assertEquals("Family Room TV", gmsCastStatus.deviceName)
+        assertTrue(PrivilegedHelperMain.disconnectScreenCastViaProxies(fakeDm, fakeProj, fakeRouter))
+        assertTrue(gmsStopCalled)
+        assertTrue(routerSessionReleased)
+
+        // 1-arg IMediaRouterService fallback resolves receiver name & unregisters temporary manager
+        activeProjPkg = "com.google.android.gms"
+        val serviceFallbackStatus = PrivilegedHelperMain.resolveScreenCastStateFromProxies(
+            dmProxy = fakeDm,
+            projectionProxy = fakeProj,
+            routerProxy = null,
+            fallbackRouterProxy = fakeRouterService
+        )
+        assertTrue(serviceFallbackStatus.isCasting)
+        assertEquals("Den Chromecast", serviceFallbackStatus.deviceName)
+        assertTrue(serviceUnregistered)
+        assertTrue(
+            PrivilegedHelperMain.disconnectScreenCastViaProxies(
+                dmProxy = fakeDm,
+                projectionProxy = fakeProj,
+                routerProxy = null,
+                fallbackRouterProxy = fakeRouterService
+            )
+        )
+        assertEquals("service-cast-session", serviceReleasedSessionId)
+
+        // Miracast connecting & connected -> detected and disconnected via disconnectWifiDisplay
+        wfdState = 1
+        val wfdConnecting = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, null)
+        assertFalse(wfdConnecting.isCasting)
+        assertTrue(wfdConnecting.isConnecting)
+        assertEquals("Office Miracast", wfdConnecting.deviceName)
+
+        wfdState = 2
+        val wfdConnected = PrivilegedHelperMain.resolveScreenCastStateFromProxies(fakeDm, fakeProj, null)
+        assertTrue(wfdConnected.isCasting)
+        assertEquals("Office Miracast", wfdConnected.deviceName)
+        assertTrue(PrivilegedHelperMain.disconnectScreenCastViaProxies(fakeDm, fakeProj))
+        assertTrue(wfdDisconnectCalled)
+
+        // 4. Binder transaction roundtrip on HelperBinder
+        val helperBinder = createAuthorizedHelperBinder()
+        var overrideConnected = true
+        helperBinder.screenCastStateOverride = {
+            PrivilegedHelperMain.HelperCastStatus(
+                isCasting = overrideConnected,
+                isConnecting = false,
+                deviceName = if (overrideConnected) "Studio TV" else ""
+            )
+        }
+        helperBinder.disconnectScreenCastOverride = {
+            overrideConnected = false
+            true
+        }
+
+        val qData = Parcel.obtain().apply { writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR) }
+        val qReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_GET_SCREEN_CAST_STATE, qData, qReply, 0))
+        qReply.setDataPosition(0)
+        qReply.readException()
+        assertEquals(1, qReply.readInt())
+        assertEquals(0, qReply.readInt())
+        assertEquals("Studio TV", qReply.readString())
+        qData.recycle()
+        qReply.recycle()
+
+        val dData = Parcel.obtain().apply { writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR) }
+        val dReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_DISCONNECT_SCREEN_CAST, dData, dReply, 0))
+        dReply.setDataPosition(0)
+        dReply.readException()
+        assertEquals(1, dReply.readInt())
+        assertFalse(overrideConnected)
+        dData.recycle()
+        dReply.recycle()
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_GET_PIN_SCREEN_MODE and SET_PIN_SCREEN_MODE round-trip and handle unsupported devices`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val fakeWm = object {
+            var pinMode: Int = 2
+            @Suppress("unused")
+            fun getPinScreenMode(): Int = pinMode
+            @Suppress("unused")
+            fun setPinScreenMode(mode: Int) {
+                pinMode = mode
+            }
+        }
+        helperBinder.windowManagerOverride = fakeWm
+
+        val getData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val getReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE, getData, getReply, 0))
+        getReply.setDataPosition(0)
+        getReply.readException()
+        assertEquals(2, getReply.readInt())
+        getData.recycle()
+        getReply.recycle()
+
+        val setData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0)
+        }
+        val setReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_SET_PIN_SCREEN_MODE, setData, setReply, 0))
+        setReply.setDataPosition(0)
+        setReply.readException()
+        assertEquals(0, fakeWm.pinMode)
+        setData.recycle()
+        setReply.recycle()
+
+        // Unsupported device (no getPinScreenMode/setPinScreenMode methods) returns -1 cleanly
+        helperBinder.windowManagerOverride = Any()
+        val unsupportedData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val unsupportedReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE,
+                unsupportedData,
+                unsupportedReply,
+                0
+            )
+        )
+        unsupportedReply.setDataPosition(0)
+        unsupportedReply.readException()
+        assertEquals(-1, unsupportedReply.readInt())
+        unsupportedData.recycle()
+        unsupportedReply.recycle()
     }
 
     private fun registerMockClientAndCaptureDeathRecipient(

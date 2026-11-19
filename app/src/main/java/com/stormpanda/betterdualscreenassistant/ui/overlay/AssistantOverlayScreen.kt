@@ -1,10 +1,12 @@
 package com.stormpanda.betterdualscreenassistant.ui.overlay
 
+import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.annotation.DrawableRes
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,8 +57,8 @@ import androidx.compose.ui.unit.min
 import androidx.core.content.res.ResourcesCompat
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
-import com.stormpanda.betterdualscreenassistant.system.HardwareTelemetryState
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+import com.stormpanda.betterdualscreenassistant.system.ScreenCastState
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.components.HardwareInfoComponentCard
@@ -77,6 +79,8 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -95,6 +99,34 @@ internal fun formatRecordingElapsedSeconds(totalSeconds: Long): String {
     }
 }
 
+@VisibleForTesting
+internal fun formatScreenCastTileLabel(state: ScreenCastState): String = when {
+    state.isCasting -> state.deviceName.ifBlank { "Casting" }
+    state.isConnecting -> "Connecting…"
+    else -> "Screen Cast"
+}
+
+internal fun formatScreenCastTileLabel(context: Context, state: ScreenCastState): String = when {
+    state.isCasting -> state.deviceName.ifBlank { context.getString(R.string.qs_label_screen_cast_casting) }
+    state.isConnecting -> context.getString(R.string.qs_label_screen_cast_connecting)
+    else -> QuickSettingTileId.SCREEN_CAST.gridTitle(context)
+}
+
+@VisibleForTesting
+internal fun formatScreenshotTileLabel(targetMode: Int): String = when (targetMode) {
+    SystemSettingsRepository.SCREENSHOT_TARGET_TOP -> "Screenshot: Top"
+    SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM -> "Screenshot: Bottom"
+    SystemSettingsRepository.SCREENSHOT_TARGET_BOTH -> "Screenshot: Both"
+    else -> "Screenshot"
+}
+
+internal fun formatScreenshotTileLabel(context: Context, targetMode: Int): String = when (targetMode) {
+    SystemSettingsRepository.SCREENSHOT_TARGET_TOP -> context.getString(R.string.qs_label_screenshot_top)
+    SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM -> context.getString(R.string.qs_label_screenshot_bottom)
+    SystemSettingsRepository.SCREENSHOT_TARGET_BOTH -> context.getString(R.string.qs_label_screenshot_both)
+    else -> QuickSettingTileId.SCREENSHOT.gridTitle(context)
+}
+
 @Composable
 fun AssistantOverlayScreen(
     repository: SystemSettingsRepository,
@@ -110,6 +142,9 @@ fun AssistantOverlayScreen(
     onCaptureScreenshotRequest: (Int) -> Unit = {},
     onStartScreenRecordingRequest: (Int) -> Unit = {},
     onStopScreenRecordingRequest: () -> Unit = {},
+    onOpenScreenCastRequest: () -> Unit = {},
+    onDisconnectScreenCastRequest: () -> Unit = {},
+    onOpenClusterTuneRequest: () -> Unit = {},
     onDismissOverlayRequest: () -> Unit
 ) {
     val context = LocalContext.current
@@ -122,7 +157,6 @@ fun AssistantOverlayScreen(
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
     val showEditButton by repository.showEditButton.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
-    val telemetry by telemetryMonitor.state.collectAsState()
     val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
 
     var recordingElapsedSeconds by remember { mutableLongStateOf(0L) }
@@ -236,10 +270,14 @@ fun AssistantOverlayScreen(
                             SystemSettingsTab(
                                 profile = profile,
                                 repository = repository,
-                                telemetry = telemetry,
+                                telemetryMonitor = telemetryMonitor,
                                 recordingElapsedText = recordingElapsedText,
                                 onOpenDialog = { dialog -> activeDialog = dialog },
+                                onCaptureScreenshot = onCaptureScreenshotRequest,
                                 onStopScreenRecording = onStopScreenRecordingRequest,
+                                onOpenScreenCast = onOpenScreenCastRequest,
+                                onDisconnectScreenCast = onDisconnectScreenCastRequest,
+                                onOpenClusterTune = onOpenClusterTuneRequest,
                                 onCleanMemory = onCleanMemoryRequest,
                                 onClearAllTasks = onClearAllTasksRequest,
                                 onToggleTouchLock = onToggleTouchLockRequest
@@ -533,8 +571,16 @@ private data class QuickSettingTileModel(
     val label: String,
     @param:DrawableRes val iconRes: Int,
     val selected: Boolean,
+    val onLongClick: (() -> Unit)? = null,
     val onClick: () -> Unit
-)
+) {
+    constructor(
+        label: String,
+        @DrawableRes iconRes: Int,
+        selected: Boolean,
+        onClick: () -> Unit
+    ) : this(label = label, iconRes = iconRes, selected = selected, onLongClick = null, onClick = onClick)
+}
 
 @Composable
 private fun buildQuickSettingTileModels(
@@ -542,11 +588,16 @@ private fun buildQuickSettingTileModels(
     repository: SystemSettingsRepository,
     recordingElapsedText: String,
     onOpenDialog: (ActiveDialog) -> Unit,
+    onCaptureScreenshot: (Int) -> Unit,
     onStopScreenRecording: () -> Unit,
+    onOpenScreenCast: () -> Unit,
+    onDisconnectScreenCast: () -> Unit,
+    onOpenClusterTune: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
     onToggleTouchLock: () -> Unit
 ): List<QuickSettingTileModel> {
+    val context = LocalContext.current
     val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
     val focusLock by repository.screenFocusLock.collectAsState()
     val performanceMode by repository.performanceMode.collectAsState()
@@ -558,11 +609,13 @@ private fun buildQuickSettingTileModels(
     val forceLandscape by repository.forceLandscape.collectAsState()
     val themeMode by repository.themeMode.collectAsState()
     val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
+    val isClusterTuneInstalled by repository.isClusterTuneInstalled.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val wifiEnabled by repository.wifiEnabled.collectAsState()
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
     val dndEnabled by repository.dndEnabled.collectAsState()
     val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
+    val screenCastState by repository.screenCastState.collectAsState()
     val touchLockEnabled by repository.touchLockEnabled.collectAsState()
     val triggerMode by repository.triggerMode.collectAsState()
     val chargeLimit80 by repository.chargeLimit80.collectAsState()
@@ -570,6 +623,7 @@ private fun buildQuickSettingTileModels(
     val keyMapperEnabled by repository.keyMapperEnabled.collectAsState()
     val keepScreenOn by repository.keepScreenOn.collectAsState()
     val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
+    val screenshotTargetMode by repository.screenshotTargetMode.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
     val quickTileOrder by repository.quickTileOrder.collectAsState()
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
@@ -578,7 +632,7 @@ private fun buildQuickSettingTileModels(
 
     return buildList {
         for (tileId in quickTileOrder) {
-            if (!tileId.isSupportedOn(profile) || tileId in disabledQuickTiles) continue
+            if (!tileId.isSupportedOn(profile, isClusterTuneInstalled) || tileId in disabledQuickTiles) continue
             when (tileId) {
                 QuickSettingTileId.FOCUS_LOCK -> if (dualScreenMode == 0) {
                     val (focusLabel, focusSelected) = when (focusLock) {
@@ -618,13 +672,7 @@ private fun buildQuickSettingTileModels(
                 QuickSettingTileId.CONTROLLER_STYLE -> {
                     val (ctrlLabel, ctrlSelected) = when (controllerStyle) {
                         0 -> stringResource(R.string.fan_option_xbox_style) to true
-                        1 -> stringResource(
-                            if (profile == DeviceProfile.RETROID_POCKET_DUO) {
-                                R.string.fan_option_retro_style
-                            } else {
-                                R.string.fan_option_odin_style
-                            }
-                        ) to true
+                        1 -> stringResource(profile.controllerStyleOptionLabelRes) to true
                         else -> stringResource(R.string.fan_option_disable) to false
                     }
                     add(QuickSettingTileModel(ctrlLabel, R.drawable.ic_qs_controller_style, ctrlSelected) {
@@ -670,42 +718,64 @@ private fun buildQuickSettingTileModels(
                         AppThemeOption.STOCK_SYSTEM -> stringResource(R.string.text_system_theme) to false
                         AppThemeOption.STOCK_LIGHT -> stringResource(R.string.text_light_theme) to false
                         AppThemeOption.STOCK_DARK -> stringResource(R.string.text_dark_theme) to true
-                        else -> currentThemeOpt.shortTileLabel(LocalContext.current) to true
+                        else -> stringResource(currentThemeOpt.shortTileLabelRes) to true
                     }
                     add(QuickSettingTileModel(themeLabel, R.drawable.ic_qs_theme_mode, themeSelected) {
                         onOpenDialog(ActiveDialog.THEME_MODE)
                     })
                 }
                 QuickSettingTileId.WIFI -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_wifi_title), R.drawable.ic_qs_wifi, wifiEnabled) { repository.toggleWifi() }
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_wifi, wifiEnabled) { repository.toggleWifi() }
                 )
                 QuickSettingTileId.BLUETOOTH -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_bluetooth_title), R.drawable.ic_bluetooth, bluetoothEnabled) { repository.toggleBluetooth() }
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_bluetooth, bluetoothEnabled) { repository.toggleBluetooth() }
                 )
                 QuickSettingTileId.DO_NOT_DISTURB -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_dnd_title), R.drawable.ic_qs_dnd, dndEnabled) { repository.toggleDnd() }
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_dnd, dndEnabled) { repository.toggleDnd() }
                 )
                 QuickSettingTileId.AIRPLANE_MODE -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_airplane_mode_title), R.drawable.ic_qs_airplane, airplaneModeEnabled) { repository.toggleAirplaneMode() }
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_airplane, airplaneModeEnabled) { repository.toggleAirplaneMode() }
                 )
+                QuickSettingTileId.SCREEN_CAST -> {
+                    val isCastActive = screenCastState.isActiveOrConnecting
+                    add(
+                        QuickSettingTileModel(
+                            label = formatScreenCastTileLabel(context, screenCastState),
+                            iconRes = R.drawable.ic_qs_cast,
+                            selected = isCastActive
+                        ) {
+                            if (isCastActive) onDisconnectScreenCast() else onOpenScreenCast()
+                        }
+                    )
+                }
                 QuickSettingTileId.TOUCH_LOCK -> add(
                     QuickSettingTileModel(
-                        stringResource(if (touchLockEnabled) R.string.qs_tile_touch_locked_short else R.string.qs_tile_touch_lock_title),
+                        if (touchLockEnabled) stringResource(R.string.qs_label_touch_locked) else tileId.gridTitle(context),
                         R.drawable.ic_qs_touch_lock,
                         touchLockEnabled,
                         onToggleTouchLock
                     )
                 )
                 QuickSettingTileId.SCREENSHOT -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_screenshot_title), R.drawable.ic_qs_screenshot, false) {
-                        onOpenDialog(ActiveDialog.SCREENSHOT)
-                    }
+                    QuickSettingTileModel(
+                        label = formatScreenshotTileLabel(context, screenshotTargetMode),
+                        iconRes = R.drawable.ic_qs_screenshot,
+                        selected = false,
+                        onClick = {
+                            if (screenshotTargetMode in SystemSettingsRepository.SCREENSHOT_TARGET_TOP..SystemSettingsRepository.SCREENSHOT_TARGET_BOTH) {
+                                onCaptureScreenshot(screenshotTargetMode)
+                            } else {
+                                onOpenDialog(ActiveDialog.SCREENSHOT)
+                            }
+                        },
+                        onLongClick = { onOpenDialog(ActiveDialog.SCREENSHOT) }
+                    )
                 )
                 QuickSettingTileId.SCREEN_RECORD -> {
                     val tileLabel = if (isRecordingScreen) {
-                        stringResource(R.string.qs_tile_record_stop_fmt, recordingElapsedText.ifEmpty { "00:00" })
+                        stringResource(R.string.qs_label_screen_record_stop, recordingElapsedText.ifEmpty { "00:00" })
                     } else {
-                        stringResource(R.string.qs_tile_screen_record_title)
+                        tileId.gridTitle(context)
                     }
                     add(QuickSettingTileModel(tileLabel, R.drawable.ic_qs_screen_record, isRecordingScreen) {
                         if (isRecordingScreen) onStopScreenRecording() else onOpenDialog(ActiveDialog.SCREEN_RECORD)
@@ -713,41 +783,44 @@ private fun buildQuickSettingTileModels(
                 }
                 QuickSettingTileId.TRIGGER_MODE -> {
                     val triggerLabel = when (triggerMode) {
-                        1 -> stringResource(R.string.qs_tile_trigger_analog)
-                        0 -> stringResource(R.string.qs_tile_trigger_digital)
-                        else -> stringResource(R.string.qs_tile_trigger_both)
+                        1 -> stringResource(R.string.qs_label_trigger_analog)
+                        0 -> stringResource(R.string.qs_label_trigger_digital)
+                        else -> stringResource(R.string.qs_label_trigger_both)
                     }
                     add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != 2) {
                         onOpenDialog(ActiveDialog.TRIGGER_MODE)
                     })
                 }
                 QuickSettingTileId.CHARGE_LIMIT_80 -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_charge_limit_title), R.drawable.ic_qs_charge_limit, chargeLimit80) {
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_charge_limit, chargeLimit80) {
                         repository.toggleChargeLimit80()
                     }
                 )
                 QuickSettingTileId.GAMEPAD_MOUSE_MODE -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_mouse_mode_title), R.drawable.ic_qs_mouse_mode, gamepadMouseMode) {
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_mouse_mode, gamepadMouseMode) {
                         repository.toggleGamepadMouseMode()
                     }
                 )
                 QuickSettingTileId.KEY_MAPPER -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_key_mapper_title), R.drawable.ic_qs_key_mapper, keyMapperEnabled) {
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_key_mapper, keyMapperEnabled) {
                         repository.toggleKeyMapper()
                     }
                 )
                 QuickSettingTileId.KEEP_SCREEN_ON -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_keep_screen_on_title), R.drawable.ic_qs_keep_awake, keepScreenOn) {
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_keep_awake, keepScreenOn) {
                         repository.toggleKeepScreenOn()
                     }
                 )
                 QuickSettingTileId.PREVENT_ACCIDENTAL_HOME -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_home_lock_title), R.drawable.ic_qs_prevent_home, preventAccidentalHome) {
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_prevent_home, preventAccidentalHome) {
                         repository.togglePreventAccidentalHome()
                     }
                 )
                 QuickSettingTileId.CLEAR_ALL_TASKS -> add(
-                    QuickSettingTileModel(stringResource(R.string.qs_tile_clear_tasks_title), R.drawable.ic_qs_clear_tasks, false, onClearAllTasks)
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_clear_tasks, false, onClearAllTasks)
+                )
+                QuickSettingTileId.CLUSTER_TUNE -> add(
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_clustertune, false, onOpenClusterTune)
                 )
             }
         }
@@ -758,16 +831,19 @@ private fun buildQuickSettingTileModels(
 private fun SystemSettingsTab(
     profile: DeviceProfile,
     repository: SystemSettingsRepository,
-    telemetry: HardwareTelemetryState,
+    telemetryMonitor: TelemetryMonitor,
     recordingElapsedText: String,
     onOpenDialog: (ActiveDialog) -> Unit,
+    onCaptureScreenshot: (Int) -> Unit,
     onStopScreenRecording: () -> Unit,
+    onOpenScreenCast: () -> Unit,
+    onDisconnectScreenCast: () -> Unit,
+    onOpenClusterTune: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
     onToggleTouchLock: () -> Unit
 ) {
     val refreshRate by repository.refreshRate.collectAsState()
-    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
     val rememberLastQuickTogglePage by repository.rememberLastQuickTogglePage.collectAsState()
     val lastQuickTogglePage by repository.lastQuickTogglePage.collectAsState()
     val dualScreenMode by repository.dualScreenDisplayMode.collectAsState()
@@ -783,7 +859,11 @@ private fun SystemSettingsTab(
         repository = repository,
         recordingElapsedText = recordingElapsedText,
         onOpenDialog = onOpenDialog,
+        onCaptureScreenshot = onCaptureScreenshot,
         onStopScreenRecording = onStopScreenRecording,
+        onOpenScreenCast = onOpenScreenCast,
+        onDisconnectScreenCast = onDisconnectScreenCast,
+        onOpenClusterTune = onOpenClusterTune,
         onCleanMemory = onCleanMemory,
         onClearAllTasks = onClearAllTasks,
         onToggleTouchLock = onToggleTouchLock
@@ -870,9 +950,9 @@ private fun SystemSettingsTab(
                     bottom = settingsSpec.topRowBottomPadding
                 )
         ) {
-            FrameRatePanelCard(
+            LiveFrameRatePanelCard(
                 refreshRate = refreshRate,
-                currentFps = telemetry.currentFps,
+                telemetryMonitor = telemetryMonitor,
                 onToggleRefreshRate = { repository.toggleRefreshRate() },
                 modifier = Modifier
                     .weight(leftColWeight)
@@ -926,163 +1006,206 @@ private fun SystemSettingsTab(
             }
         }
 
-        Row(
+        LiveTelemetryBottomRow(
+            repository = repository,
+            telemetryMonitor = telemetryMonitor,
+            leftColWeight = leftColWeight,
+            rightColWeight = rightColWeight,
+            cardHalfGap = cardHalfGap,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(settingsSpec.bottomRowWeight)
                 .padding(top = settingsSpec.bottomRowTopPadding, bottom = 0.dp)
-        ) {
-            val tempCelsiusInt = telemetry.cpuTempCelsius.roundToInt()
-            val tempTint = when {
-                colors.isMegingiardStyle -> when {
-                    tempCelsiusInt >= 86 -> colors.error
-                    tempCelsiusInt >= 71 -> colors.error.copy(alpha = 0.85f)
-                    tempCelsiusInt >= 51 -> colors.accent
-                    else -> colors.secondary
-                }
-                lookSpec.isRetroid -> when {
-                    tempCelsiusInt >= 86 -> Color(0xFFF64646)
-                    tempCelsiusInt >= 71 -> Color(0xFFF67474)
-                    else -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
-                }
-                else -> when {
-                    tempCelsiusInt >= 86 -> Color(0xFFF64646)
-                    tempCelsiusInt >= 71 -> Color(0xFFF67474)
-                    tempCelsiusInt >= 51 -> Color(0xFFF6A6A6)
-                    else -> Color(0xFF818184)
-                }
+        )
+    }
+}
+
+@Composable
+private fun LiveFrameRatePanelCard(
+    refreshRate: Int,
+    telemetryMonitor: TelemetryMonitor,
+    onToggleRefreshRate: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val fpsFlow = remember(telemetryMonitor) {
+        telemetryMonitor.state.map { it.currentFps }.distinctUntilChanged()
+    }
+    val currentFps by fpsFlow.collectAsState(initial = telemetryMonitor.state.value.currentFps)
+    FrameRatePanelCard(
+        refreshRate = refreshRate,
+        currentFps = currentFps,
+        onToggleRefreshRate = onToggleRefreshRate,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun LiveTelemetryBottomRow(
+    repository: SystemSettingsRepository,
+    telemetryMonitor: TelemetryMonitor,
+    leftColWeight: Float,
+    rightColWeight: Float,
+    cardHalfGap: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    val telemetry by telemetryMonitor.state.collectAsState()
+    val tempFahrenheit by repository.tempFahrenheit.collectAsState()
+    val colors = LocalTccColors.current
+    val lookSpec = LocalTccLookSpec.current
+    val settingsSpec = lookSpec.settingsTab
+    val cardShape = lookSpec.panelCardShape
+
+    Row(modifier = modifier) {
+        val tempCelsiusInt = telemetry.cpuTempCelsius.roundToInt()
+        val tempTint = when {
+            colors.isMegingiardStyle -> when {
+                tempCelsiusInt >= 86 -> colors.error
+                tempCelsiusInt >= 71 -> colors.error.copy(alpha = 0.85f)
+                tempCelsiusInt >= 51 -> colors.accent
+                else -> colors.secondary
             }
-            val fanTint = when {
-                colors.isMegingiardStyle -> colors.secondary
-                lookSpec.isRetroid -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+            lookSpec.isRetroid -> when {
+                tempCelsiusInt >= 86 -> Color(0xFFF64646)
+                tempCelsiusInt >= 71 -> Color(0xFFF67474)
+                else -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+            }
+            else -> when {
+                tempCelsiusInt >= 86 -> Color(0xFFF64646)
+                tempCelsiusInt >= 71 -> Color(0xFFF67474)
+                tempCelsiusInt >= 51 -> Color(0xFFF6A6A6)
                 else -> Color(0xFF818184)
             }
-            val rawTempText = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit)
-            val displayTempText = if (lookSpec.isRetroid) {
-                rawTempText.replace("℃", "°C").replace("℉", "°F")
-            } else {
-                rawTempText
-            }
+        }
+        val fanTint = when {
+            colors.isMegingiardStyle -> colors.secondary
+            lookSpec.isRetroid -> if (colors.isDark) Color(0xFFDFDFDF) else colors.primary
+            else -> Color(0xFF818184)
+        }
+        val rawTempText = formatCpuTemperature(telemetry.cpuTempCelsius, tempFahrenheit)
+        val displayTempText = if (lookSpec.isRetroid) {
+            rawTempText.replace("℃", "°C").replace("℉", "°F")
+        } else {
+            rawTempText
+        }
 
-            Row(
+        Row(
+            modifier = Modifier
+                .weight(leftColWeight)
+                .fillMaxHeight()
+                .padding(end = cardHalfGap),
+            horizontalArrangement = Arrangement.spacedBy(settingsSpec.tempFanGap)
+        ) {
+            HardwareInfoComponentCard(
+                title = stringResource(R.string.hardware_label_temp),
+                valueWithUnit = displayTempText,
+                iconRes = R.drawable.ic_temp,
+                iconTint = tempTint,
+                iconSizeRate = 0.20f,
+                onClick = { repository.toggleTempFahrenheit() },
                 modifier = Modifier
-                    .weight(leftColWeight)
+                    .weight(1f)
                     .fillMaxHeight()
-                    .padding(end = cardHalfGap),
-                horizontalArrangement = Arrangement.spacedBy(settingsSpec.tempFanGap)
-            ) {
-                HardwareInfoComponentCard(
-                    title = stringResource(R.string.telemetry_temp),
-                    valueWithUnit = displayTempText,
-                    iconRes = R.drawable.ic_temp,
-                    iconTint = tempTint,
-                    iconSizeRate = 0.20f,
-                    onClick = { repository.toggleTempFahrenheit() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
+            )
 
-                HardwareInfoComponentCard(
-                    title = stringResource(R.string.telemetry_fan),
-                    valueWithUnit = "${telemetry.fanSpeedPercent}%",
-                    iconRes = R.drawable.ic_fan_normal,
-                    iconTint = fanTint,
-                    iconSizeRate = 0.19f,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-            }
-
-            Row(
+            HardwareInfoComponentCard(
+                title = stringResource(R.string.hardware_label_fan),
+                valueWithUnit = "${telemetry.fanSpeedPercent}%",
+                iconRes = R.drawable.ic_fan_normal,
+                iconTint = fanTint,
+                iconSizeRate = 0.19f,
                 modifier = Modifier
-                    .weight(rightColWeight)
+                    .weight(1f)
                     .fillMaxHeight()
-                    .padding(start = cardHalfGap)
-                    .clip(cardShape)
-                    .background(colors.panelBackground)
-                    .padding(
-                        horizontal = settingsSpec.ringsHorizontalPadding,
-                        vertical = settingsSpec.ringsVerticalPadding
-                    ),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val cpuRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFFB125E3)
-                    else -> Color(0xFFEE188C)
-                }
-                val gpuRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFF373FC6)
-                    else -> Color(0xFF70E7FF)
-                }
-                val pwrRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFFE46D00)
-                    else -> Color(0xFFE26E01)
-                }
-                val ramRingColor = when {
-                    colors.isMegingiardStyle -> colors.accent
-                    lookSpec.isRetroid -> Color(0xFF86D100)
-                    else -> Color(0xFF76CA40)
-                }
+            )
+        }
 
-                HardwareRingGauge(
-                    title = stringResource(R.string.telemetry_cpu),
-                    valueText = formatRingValue(telemetry.cpuCurFreqGhz),
-                    unitText = telemetry.cpuUnit,
-                    value = telemetry.cpuCurFreqGhz,
-                    minValue = 0f,
-                    maxValue = telemetry.cpuMaxFreqGhz,
-                    ringColor = cpuRingColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                HardwareRingGauge(
-                    title = stringResource(R.string.telemetry_gpu),
-                    valueText = formatRingValue(telemetry.gpuCurFreqMhz),
-                    unitText = telemetry.gpuUnit,
-                    value = telemetry.gpuCurFreqMhz,
-                    minValue = 0f,
-                    maxValue = telemetry.gpuMaxFreqMhz,
-                    ringColor = gpuRingColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                HardwareRingGauge(
-                    title = stringResource(R.string.telemetry_pwr),
-                    valueText = formatRingValue(telemetry.powerWatts),
-                    unitText = "W",
-                    value = telemetry.powerWatts,
-                    minValue = -20f,
-                    maxValue = 25f,
-                    ringColor = pwrRingColor,
-                    bidirectional = true,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
-
-                HardwareRingGauge(
-                    title = "RAM",
-                    valueText = formatRingValue(telemetry.ramUsedGb),
-                    unitText = "GB",
-                    value = telemetry.ramUsedGb,
-                    minValue = 0f,
-                    maxValue = telemetry.ramTotalGb,
-                    ringColor = ramRingColor,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                )
+        Row(
+            modifier = Modifier
+                .weight(rightColWeight)
+                .fillMaxHeight()
+                .padding(start = cardHalfGap)
+                .clip(cardShape)
+                .background(colors.panelBackground)
+                .padding(
+                    horizontal = settingsSpec.ringsHorizontalPadding,
+                    vertical = settingsSpec.ringsVerticalPadding
+                ),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val cpuRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFFB125E3)
+                else -> Color(0xFFEE188C)
             }
+            val gpuRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFF373FC6)
+                else -> Color(0xFF70E7FF)
+            }
+            val pwrRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFFE46D00)
+                else -> Color(0xFFE26E01)
+            }
+            val ramRingColor = when {
+                colors.isMegingiardStyle -> colors.accent
+                lookSpec.isRetroid -> Color(0xFF86D100)
+                else -> Color(0xFF76CA40)
+            }
+
+            HardwareRingGauge(
+                title = stringResource(R.string.hardware_label_cpu),
+                valueText = formatRingValue(telemetry.cpuCurFreqGhz),
+                unitText = telemetry.cpuUnit,
+                value = telemetry.cpuCurFreqGhz,
+                minValue = 0f,
+                maxValue = telemetry.cpuMaxFreqGhz,
+                ringColor = cpuRingColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+
+            HardwareRingGauge(
+                title = stringResource(R.string.hardware_label_gpu),
+                valueText = formatRingValue(telemetry.gpuCurFreqMhz),
+                unitText = telemetry.gpuUnit,
+                value = telemetry.gpuCurFreqMhz,
+                minValue = 0f,
+                maxValue = telemetry.gpuMaxFreqMhz,
+                ringColor = gpuRingColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+
+            HardwareRingGauge(
+                title = stringResource(R.string.hardware_label_pwr),
+                valueText = formatRingValue(telemetry.powerWatts),
+                unitText = "W",
+                value = telemetry.powerWatts,
+                minValue = -20f,
+                maxValue = 25f,
+                ringColor = pwrRingColor,
+                bidirectional = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
+
+            HardwareRingGauge(
+                title = stringResource(R.string.hardware_label_ram),
+                valueText = formatRingValue(telemetry.ramUsedGb),
+                unitText = "GB",
+                value = telemetry.ramUsedGb,
+                minValue = 0f,
+                maxValue = telemetry.ramTotalGb,
+                ringColor = ramRingColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            )
         }
     }
 }
@@ -1378,6 +1501,7 @@ private fun QuickSettingsGridPage(
                                 iconRes = item.iconRes,
                                 selected = item.selected,
                                 onClick = item.onClick,
+                                onLongClick = item.onLongClick,
                                 variant = TccTileVariant.QUICK_SETTING,
                                 maxLabelWidth = cellAllowance
                             )

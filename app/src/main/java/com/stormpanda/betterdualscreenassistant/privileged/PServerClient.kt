@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.Parcel
+import android.os.SystemClock
 import android.util.Log
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.DirectBootPrefs
@@ -34,6 +35,12 @@ object PServerClient {
 
     @Volatile
     private var fallbackUnfrozenStockPid: String = ""
+
+    internal var stockSpawnWaitTimeoutMs: Long = 2_500L
+    internal var stockStartupWaitTimeoutMs: Long = 2_500L
+    internal var stockPollIntervalMs: Long = 80L
+    internal var stockStartupSettleMs: Long = 200L
+    internal var stockStartupFallbackSleepMs: Long = 800L
 
     fun hasFallbackUnfrozenStockPid(): Boolean = fallbackUnfrozenStockPid.isNotEmpty()
 
@@ -128,7 +135,23 @@ object PServerClient {
             .apply()
     }
 
+    private fun isTccServiceRunningFallback(stockPkg: String): Boolean {
+        val out = exec("dumpsys activity services $stockPkg | grep -c 'TccServices'", wait = true)
+            .getOrDefault("")
+            .trim()
+        return (out.toIntOrNull() ?: 0) > 0
+    }
+
+    private fun hasRegisteredStockReceiverFallback(pid: String, stockPkg: String): Boolean? {
+        val out = exec(
+            "dumpsys activity broadcasts | grep -cF ' $pid $stockPkg/'",
+            wait = true
+        ).getOrDefault("").trim()
+        return out.toIntOrNull()?.let { it > 0 }
+    }
+
     fun isStockAssistantEnabled(context: Context): Boolean = synchronized(stockAssistantLock) {
+        PrivilegedBridge.isStockAssistantActive()?.let { return it }
         val stockPkg = resolveStockPackageName(context)
         val pkgEnabled = try {
             val state = context.packageManager.getApplicationEnabledSetting(stockPkg)
@@ -142,6 +165,12 @@ object PServerClient {
         val pidOut = exec("pidof $stockPkg", wait = true).getOrDefault("")
         val firstPid = parseNumericPids(pidOut).firstOrNull().orEmpty()
         if (firstPid.isNotEmpty()) {
+            if (isTccServiceRunningFallback(stockPkg)) {
+                return true
+            }
+            if (firstPid == fallbackUnfrozenStockPid) {
+                return false
+            }
             val statOut = exec("cat /proc/$firstPid/stat", wait = true).getOrDefault("")
             // Format: pid (comm) state ... -> if state is NOT 'T', the persistent process is still running!
             if (!statOut.contains(") T ")) {
@@ -164,13 +193,15 @@ object PServerClient {
      * `PackageManager` across uninstalls or reboots):
      * 1. Transiently disable `TccServices` in `PackageManager` and ensure the package itself
      *    is enabled (recovering from any legacy `pm disable-user` state).
-     * 2. Kill (`SIGKILL`) the existing stock PID so `WindowManagerService` immediately destroys
+     * 2. Kill (`SIGKILL`) the existing stock PIDs so `WindowManagerService` immediately destroys
      *    any attached stock overlay windows and unbinds `TccServices`.
-     * 3. Wait ~350ms for `ActivityManagerService` to respawn the persistent process (whose
-     *    `ThisApplication.onCreate()` fails to bind the transiently disabled `TccServices`).
+     * 3. Wait for `ActivityManagerService` to respawn the persistent process (whose
+     *    `ThisApplication.onCreate()` fails to bind the transiently disabled `TccServices`) and
+     *    finish `ThisApplication.onCreate()` (`ScreenReceiver` registration) so it does not trip a
+     *    startup ANR.
      * 4. Suspend the fresh windowless PID in memory with `SIGSTOP` (`kill -STOP`).
-     * 5. Immediately re-enable `TccServices` (and the package) in `PackageManager` so the
-     *    stock app is never left disabled on disk.
+     * 5. Always re-enable `TccServices` (and the package) in `PackageManager` inside `finally`
+     *    so the stock app is never left disabled on disk, then verify the PID did not escape.
      */
     fun setStockAssistantEnabled(enabled: Boolean, context: Context? = null): Boolean = synchronized(stockAssistantLock) {
         val stockPkg = resolveStockPackageName(context)
@@ -201,28 +232,110 @@ object PServerClient {
             val r = exec("am startservice -n $stockPkg/.services.TccServices", wait = true)
             r.isSuccess
         } else {
-            exec("am stopservice -n $stockPkg/.services.TccServices", wait = true)
-            exec("pm disable $stockPkg/.services.TccServices", wait = true)
-            exec("pm enable $stockPkg", wait = true)
-            val oldPids = parseNumericPids(exec("pidof $stockPkg", wait = true).getOrDefault(""))
-            if (oldPids.isNotEmpty()) {
-                exec("kill -9 ${oldPids.joinToString(" ")}", wait = true)
+            if (PrivilegedBridge.suppressStockAssistant() == true) {
+                return true
+            }
+            var rEnable = Result.failure<String>(IllegalStateException("Not attempted"))
+            for (attempt in 0 until 2) {
+                var newPids: List<String> = emptyList()
                 try {
-                    Thread.sleep(350L)
-                } catch (_: InterruptedException) {
+                    exec("am stopservice -n $stockPkg/.services.TccServices", wait = true)
+                    exec("pm disable $stockPkg/.services.TccServices", wait = true)
+                    exec("pm enable $stockPkg", wait = true)
+                    val oldPids = parseNumericPids(
+                        exec("pidof $stockPkg", wait = true).getOrDefault("")
+                    ).toSet()
+                    if (oldPids.isNotEmpty()) {
+                        exec("kill -9 ${oldPids.joinToString(" ")}", wait = true)
+                    }
+
+                    val spawnDeadline = SystemClock.elapsedRealtime() + stockSpawnWaitTimeoutMs
+                    var spawnPolls = 0
+                    while (true) {
+                        val currentPids = parseNumericPids(
+                            exec("pidof $stockPkg", wait = true).getOrDefault("")
+                        )
+                        val freshPids = currentPids.filter { it !in oldPids }
+                        if (freshPids.isNotEmpty()) {
+                            newPids = freshPids
+                            break
+                        }
+                        spawnPolls++
+                        if (SystemClock.elapsedRealtime() >= spawnDeadline || spawnPolls >= 40) {
+                            break
+                        }
+                        if (stockPollIntervalMs > 0L) {
+                            try {
+                                Thread.sleep(stockPollIntervalMs)
+                            } catch (_: InterruptedException) {
+                                break
+                            }
+                        }
+                    }
+
+                    if (newPids.isNotEmpty()) {
+                        val targetPid = newPids.first()
+                        val startupDeadline =
+                            SystemClock.elapsedRealtime() + stockStartupWaitTimeoutMs
+                        var startupPolls = 0
+                        while (true) {
+                            val registered = hasRegisteredStockReceiverFallback(targetPid, stockPkg)
+                            if (registered == true) {
+                                if (stockStartupSettleMs > 0L) {
+                                    try {
+                                        Thread.sleep(stockStartupSettleMs)
+                                    } catch (_: InterruptedException) {
+                                    }
+                                }
+                                break
+                            }
+                            if (registered == null) {
+                                if (stockStartupFallbackSleepMs > 0L) {
+                                    try {
+                                        Thread.sleep(stockStartupFallbackSleepMs)
+                                    } catch (_: InterruptedException) {
+                                    }
+                                }
+                                break
+                            }
+                            startupPolls++
+                            if (SystemClock.elapsedRealtime() >= startupDeadline ||
+                                startupPolls >= 40
+                            ) {
+                                break
+                            }
+                            if (stockPollIntervalMs > 0L) {
+                                try {
+                                    Thread.sleep(stockPollIntervalMs)
+                                } catch (_: InterruptedException) {
+                                    break
+                                }
+                            }
+                        }
+                        exec("kill -STOP ${newPids.joinToString(" ")}", wait = true)
+                    }
+                } finally {
+                    // Always re-enable in PackageManager so the stock app is never left disabled on disk
+                    exec("pm enable $stockPkg", wait = true)
+                    rEnable = exec("pm enable $stockPkg/.services.TccServices", wait = true)
+                    exec("pm enable $stockPkg/.receivers.BootBroadcastReceiver", wait = true)
                 }
-            }
-            val newPids = parseNumericPids(exec("pidof $stockPkg", wait = true).getOrDefault(""))
-            if (newPids.isNotEmpty()) {
-                exec("kill -STOP ${newPids.joinToString(" ")}", wait = true)
-            }
-            // Immediately re-enable in PackageManager so the stock app is never left disabled on disk
-            exec("pm enable $stockPkg", wait = true)
-            val rEnable = exec("pm enable $stockPkg/.services.TccServices", wait = true)
-            exec("pm enable $stockPkg/.receivers.BootBroadcastReceiver", wait = true)
-            val verifyPids = parseNumericPids(exec("pidof $stockPkg", wait = true).getOrDefault(""))
-            if (verifyPids.isNotEmpty()) {
-                exec("kill -STOP ${verifyPids.joinToString(" ")}", wait = true)
+
+                val verifyPids = parseNumericPids(
+                    exec("pidof $stockPkg", wait = true).getOrDefault("")
+                )
+                if (newPids.isNotEmpty() && verifyPids == newPids) {
+                    if (isTccServiceRunningFallback(stockPkg)) {
+                        continue
+                    }
+                    exec("kill -STOP ${verifyPids.joinToString(" ")}", wait = true)
+                    break
+                } else if (verifyPids.isNotEmpty() && isTccServiceRunningFallback(stockPkg)) {
+                    // A different PID spawned after re-enabling TccServices; retry cleanly.
+                    continue
+                } else {
+                    break
+                }
             }
             rEnable.isSuccess
         }

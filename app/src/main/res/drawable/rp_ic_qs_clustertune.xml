@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- Top, bottom, left, right pixel pins -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,0H16V4H12V0ZM24,0H28V4H24V0ZM12,36H16V40H12V36ZM24,36H28V40H24V36ZM0,12H4V16H0V12ZM0,24H4V28H0V24ZM36,12H40V16H36V12ZM36,24H40V28H36V24Z" />
+    <!-- Stepped pixel chip frame -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,4H32V8H8V4ZM8,32H32V36H8V32ZM4,8H8V32H4V8ZM32,8H36V32H32V8Z" />
+    <!-- Inner CPU die square -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,14H26V18H14V14ZM14,22H26V26H14V22ZM14,18H18V22H14V18ZM22,18H26V22H22V18Z" />
+</vector>

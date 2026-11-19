@@ -1,6 +1,7 @@
 package com.stormpanda.betterdualscreenassistant.system
 
 import android.app.ActivityManager
+import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -14,6 +15,7 @@ import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.hardware.display.DisplayManager
 import android.media.AudioManager
+import android.media.MediaRouter
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -27,6 +29,7 @@ import android.provider.Settings
 import androidx.compose.ui.graphics.toArgb
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
 import com.stormpanda.betterdualscreenassistant.privileged.ScreenRecorderEngine
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.DEFAULT_MEGINGIARD_ACCENT_ARGB
@@ -47,6 +50,23 @@ data class ScreenRecordingState(
     val lastCompletedPath: String = "",
     val lastStopReason: String = ""
 )
+
+data class ScreenCastState(
+    val isCasting: Boolean = false,
+    val isConnecting: Boolean = false,
+    val deviceName: String = ""
+) {
+    val isActiveOrConnecting: Boolean
+        get() = isCasting || isConnecting
+}
+
+enum class ClusterTuneLaunchResult {
+    OPENED,
+    NOT_INSTALLED,
+    TOP_SCREEN_OFF,
+    OVERLAY_PERMISSION_DENIED,
+    FAILED
+}
 
 /**
  * Reactive repository for all AYN Thor dual-screen, performance, fan, controller,
@@ -102,7 +122,16 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_UI_LOOK_MODE = "ui_look_mode"
         const val PREF_RETROID_READABILITY_BOOST = "retroid_readability_boost"
         const val PREF_CUSTOM_ACCENT_ARGB = "custom_accent_argb"
+        const val PREF_SYNCED_MEGINGIARD_OPTION_ID = "synced_megingiard_option_id"
+        const val PREF_SYNCED_MEGINGIARD_ACCENT_ARGB = "synced_megingiard_accent_argb"
         const val ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT = "dual_screen_action.volume.key.event"
+        const val ACTION_WIFI_DISPLAY_STATUS_CHANGED =
+            "android.hardware.display.action.WIFI_DISPLAY_STATUS_CHANGED"
+        const val CLUSTER_TUNE_PACKAGE = "com.aure.clustertune"
+        const val CLUSTER_TUNE_OVERLAY_SERVICE = "com.aure.clustertune/.overlay.OverlayHostService"
+        const val ACTION_CLUSTER_TUNE_SHOW_PROFILE_PICKER =
+            "com.aure.clustertune.overlay.SHOW_PROFILE_PICKER"
+        private const val MEDIA_ROUTER_TYPE_REMOTE_DISPLAY = 4
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
         const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
         const val PREF_SAVED_OS_THEME_JSON = "saved_os_theme_json"
@@ -115,9 +144,19 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK = "saved_dual_screen_focus_lock"
         const val PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK = "saved_enable_system_key_focus_lock"
         const val PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE = "single_screen_focus_override_active"
+        const val PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE = "saved_dual_screen_ime_pin_mode"
+        const val PREF_KEYGUARD_SAVED_IME_PIN_MODE = "keyguard_saved_ime_pin_mode"
+        const val PREF_LAST_UNLOCKED_IME_PIN_MODE = "last_unlocked_ime_pin_mode"
+        const val PREF_LAST_IME_PIN_BOOT_COUNT = "last_ime_pin_boot_count"
         const val PREF_SCREEN_RECORD_INTERNAL_AUDIO = "screen_record_internal_audio"
         const val PREF_SCREEN_RECORD_MIC_AUDIO = "screen_record_mic_audio"
         const val PREF_SCREEN_RECORD_FPS = "screen_record_fps"
+        const val PREF_SCREENSHOT_TARGET_MODE = "screenshot_target_mode"
+
+        const val SCREENSHOT_TARGET_ASK = -1
+        const val SCREENSHOT_TARGET_TOP = 0
+        const val SCREENSHOT_TARGET_BOTTOM = 1
+        const val SCREENSHOT_TARGET_BOTH = 2
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -145,7 +184,9 @@ class SystemSettingsRepository(private val context: Context) {
     private val contentResolver = context.contentResolver
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val displayManager = context.getSystemService(DisplayManager::class.java)
+    private val mediaRouter = context.getSystemService(MediaRouter::class.java)
     private val powerManager = context.getSystemService(PowerManager::class.java)
+    private val keyguardManager = context.getSystemService(KeyguardManager::class.java)
     private val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
@@ -156,6 +197,13 @@ class SystemSettingsRepository(private val context: Context) {
     private val themeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "BDSA-ThemeSync").apply { isDaemon = true }
     }
+    private val castStateExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "BDSA-CastState").apply { isDaemon = true }
+    }
+    private val castStateEpoch = java.util.concurrent.atomic.AtomicInteger(0)
+
+    @Volatile
+    private var castDisconnectSettleUntilElapsedMs: Long = 0L
     private val refreshRateWriteLock = Any()
 
     @Volatile
@@ -287,14 +335,29 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val customAccentArgb: StateFlow<Int> = _customAccentArgb.asStateFlow()
 
-    private val _syncedMegingiardOption = MutableStateFlow(AppThemeOption.MEGINGIARD)
+    private val _syncedMegingiardOption = MutableStateFlow(
+        prefs.getInt(PREF_SYNCED_MEGINGIARD_OPTION_ID, AppThemeOption.MEGINGIARD.id)
+            .let { savedId ->
+                AppThemeOption.entries.firstOrNull { it.id == savedId && it.megingiardIpcName != null }
+                    ?: AppThemeOption.MEGINGIARD
+            }
+    )
     val syncedMegingiardOption: StateFlow<AppThemeOption> = _syncedMegingiardOption.asStateFlow()
 
-    private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(null)
+    private val _syncedMegingiardAccentArgb = MutableStateFlow<Int?>(
+        if (prefs.contains(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB)) {
+            prefs.getInt(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB, DEFAULT_MEGINGIARD_ACCENT_ARGB)
+        } else {
+            null
+        }
+    )
     val syncedMegingiardAccentArgb: StateFlow<Int?> = _syncedMegingiardAccentArgb.asStateFlow()
 
     private val _isMegingiardProviderAvailable = MutableStateFlow(isAnyMegingiardInstalled())
     val isMegingiardProviderAvailable: StateFlow<Boolean> = _isMegingiardProviderAvailable.asStateFlow()
+
+    private val _isClusterTuneInstalled = MutableStateFlow(isPackageInstalled(CLUSTER_TUNE_PACKAGE))
+    val isClusterTuneInstalled: StateFlow<Boolean> = _isClusterTuneInstalled.asStateFlow()
 
     private val _injectOsTheme = MutableStateFlow(
         prefs.getBoolean(PREF_INJECT_OS_THEME, false)
@@ -349,6 +412,12 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val tempFahrenheit: StateFlow<Boolean> = _tempFahrenheit.asStateFlow()
 
+    private val _screenshotTargetMode = MutableStateFlow(
+        prefs.getInt(PREF_SCREENSHOT_TARGET_MODE, SCREENSHOT_TARGET_ASK)
+            .coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
+    )
+    val screenshotTargetMode: StateFlow<Int> = _screenshotTargetMode.asStateFlow()
+
     private val _promotedToManager = MutableStateFlow(
         prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
     )
@@ -369,6 +438,9 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val _airplaneModeEnabled = MutableStateFlow(readAirplaneModeEnabled())
     val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
+
+    private val _screenCastState = MutableStateFlow(ScreenCastState())
+    val screenCastState: StateFlow<ScreenCastState> = _screenCastState.asStateFlow()
 
     // Tools Toggles
     private val _touchLockEnabled = MutableStateFlow(false)
@@ -487,6 +559,54 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
+    private val castRefreshRunnable = Runnable {
+        refreshScreenCastStateAsync()
+    }
+
+    private val castPostDisconnectRefreshRunnable = Runnable {
+        castDisconnectSettleUntilElapsedMs = 0L
+        refreshScreenCastStateAsync()
+    }
+
+    private val castDisplayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {
+            if (displayId == 0 || displayId == bottomDisplayId) return
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onDisplayRemoved(displayId: Int) {
+            if (displayId == 0 || displayId == bottomDisplayId) return
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == 0 || displayId == bottomDisplayId) return
+            if (!_screenCastState.value.isActiveOrConnecting && !isWifiDisplayId(displayId)) return
+            scheduleScreenCastStateRefresh()
+        }
+    }
+
+    private val mediaRouterCastCallback = object : MediaRouter.SimpleCallback() {
+        override fun onRouteSelected(router: MediaRouter?, type: Int, info: MediaRouter.RouteInfo?) {
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onRouteUnselected(router: MediaRouter?, type: Int, info: MediaRouter.RouteInfo?) {
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onRouteChanged(router: MediaRouter?, info: MediaRouter.RouteInfo?) {
+            scheduleScreenCastStateRefresh()
+        }
+
+        override fun onRoutePresentationDisplayChanged(
+            router: MediaRouter?,
+            info: MediaRouter.RouteInfo?
+        ) {
+            scheduleScreenCastStateRefresh()
+        }
+    }
+
     private val megingiardThemeObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             refreshMegingiardSyncedThemeAsync(
@@ -581,6 +701,11 @@ class SystemSettingsRepository(private val context: Context) {
                 _tempFahrenheit.value =
                     prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
             }
+            PREF_SCREENSHOT_TARGET_MODE -> {
+                _screenshotTargetMode.value =
+                    prefs.getInt(PREF_SCREENSHOT_TARGET_MODE, SCREENSHOT_TARGET_ASK)
+                        .coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
+            }
             PREF_PROMOTED_TO_MANAGER -> {
                 val saved = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
                 if (_promotedToManager.value != saved) {
@@ -632,6 +757,9 @@ class SystemSettingsRepository(private val context: Context) {
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                     _airplaneModeEnabled.value = readAirplaneModeEnabled()
                 }
+                ACTION_WIFI_DISPLAY_STATUS_CHANGED -> {
+                    scheduleScreenCastStateRefresh()
+                }
                 Intent.ACTION_USER_UNLOCKED -> {
                     registerMegingiardContentObservers()
                     refreshMegingiardSyncedTheme()
@@ -646,6 +774,8 @@ class SystemSettingsRepository(private val context: Context) {
             if (pkg == "com.stormpanda.megingiard" || pkg == "com.stormpanda.megingiard.debug") {
                 registerMegingiardContentObservers()
                 refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+            } else if (pkg == CLUSTER_TUNE_PACKAGE) {
+                refreshClusterTuneInstalled()
             }
         }
     }
@@ -782,6 +912,7 @@ class SystemSettingsRepository(private val context: Context) {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(ACTION_WIFI_DISPLAY_STATUS_CHANGED)
             addAction(Intent.ACTION_USER_UNLOCKED)
         }
         context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -807,6 +938,14 @@ class SystemSettingsRepository(private val context: Context) {
             }
         }
         registerDisplayBrightnessListener()
+        try {
+            displayManager?.registerDisplayListener(castDisplayListener, mainHandler)
+        } catch (_: Throwable) {
+        }
+        try {
+            mediaRouter?.addCallback(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY, mediaRouterCastCallback, 0)
+        } catch (_: Throwable) {
+        }
         refreshAll()
         dispatchOrDeferLauncherAliasSync()
         resyncFloatingIconGestureGuard()
@@ -821,6 +960,8 @@ class SystemSettingsRepository(private val context: Context) {
         mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
         mainHandler.removeCallbacks(floatingIconEarlyResyncRunnable)
         mainHandler.removeCallbacks(floatingIconLateResyncRunnable)
+        mainHandler.removeCallbacks(castRefreshRunnable)
+        mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
         if (pendingRefreshRateTarget != null) {
             commitPendingRefreshRate()
         }
@@ -828,6 +969,14 @@ class SystemSettingsRepository(private val context: Context) {
         isRegistered = false
         try {
             displayManager?.unregisterDisplayListener(displayBrightnessListener)
+        } catch (_: Throwable) {
+        }
+        try {
+            displayManager?.unregisterDisplayListener(castDisplayListener)
+        } catch (_: Throwable) {
+        }
+        try {
+            mediaRouter?.removeCallback(mediaRouterCastCallback)
         } catch (_: Throwable) {
         }
         try {
@@ -925,18 +1074,23 @@ class SystemSettingsRepository(private val context: Context) {
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
         _cpuFreqScalingMode.value = prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
         _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
+        _screenshotTargetMode.value =
+            prefs.getInt(PREF_SCREENSHOT_TARGET_MODE, SCREENSHOT_TARGET_ASK)
+                .coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
         _promotedToManager.value = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
         _bluetoothEnabled.value = readBluetoothEnabled()
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
+        refreshScreenCastStateAsync()
         _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
         _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
         _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
         _preventAccidentalHome.value = readPreventAccidentalHome()
+        refreshClusterTuneInstalled()
         _quickTileOrder.value = readSavedQuickTileOrder()
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         if (refreshMegingiardTheme) {
@@ -1045,6 +1199,253 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
+    private val imePinLock = Any()
+
+    @Volatile
+    private var preScreenOffImePinMode: Int = -1
+
+    internal var pinScreenModeReaderOverride: (() -> Int)? = null
+    internal var pinScreenModeWriterOverride: ((Int) -> Boolean)? = null
+    internal var isKeyguardLockedOverride: (() -> Boolean)? = null
+    internal var bootCountReaderOverride: (() -> Int)? = null
+
+    private fun readPinScreenMode(): Int =
+        pinScreenModeReaderOverride?.invoke() ?: PrivilegedBridge.getPinScreenMode(context)
+
+    private fun writePinScreenMode(mode: Int): Boolean =
+        pinScreenModeWriterOverride?.invoke(mode) ?: PrivilegedBridge.setPinScreenMode(context, mode)
+
+    private fun isKeyguardLockedNow(): Boolean =
+        isKeyguardLockedOverride?.invoke() ?: (keyguardManager?.isKeyguardLocked == true)
+
+    private fun readBootCount(): Int =
+        bootCountReaderOverride?.invoke() ?: try {
+            Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
+        } catch (_: Throwable) {
+            -1
+        }
+
+    /**
+     * Reconciles vendor IME pin screen mode (e.g. Gboard pinned to bottom screen on AYN Thor)
+     * after service startup or reboot.
+     *
+     * Stock `DualScreenAssistant`'s `ThisApplication.onCreate()` temporarily clears `pinScreenMode`
+     * to `0` when the device boots onto Keyguard, expecting its own `onUnlockedScreen()` to restore
+     * it. When BDSA replaces/freezes stock, this method takes ownership of saving and restoring the
+     * user's pinned keyboard state across reboots and Keyguard lock/unlock transitions.
+     */
+    fun reconcileImePinModeOnStartup() {
+        synchronized(imePinLock) {
+            val livePinMode = readPinScreenMode()
+            if (livePinMode < 0) return
+
+            val currentBootCount = readBootCount()
+            val lastBootCount = prefs.getInt(PREF_LAST_IME_PIN_BOOT_COUNT, -1)
+            val isFreshBoot =
+                currentBootCount >= 0 && lastBootCount >= 0 && currentBootCount != lastBootCount
+            if (currentBootCount >= 0 && currentBootCount != lastBootCount) {
+                prefs.edit().putInt(PREF_LAST_IME_PIN_BOOT_COUNT, currentBootCount).apply()
+            }
+
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+
+            val lastUnlocked = prefs.getInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, -1)
+            val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+
+            if (isKeyguardLockedNow()) {
+                if (pendingKeyguard < 0) {
+                    val modeToSave = when {
+                        livePinMode > 0 -> livePinMode
+                        isFreshBoot && lastUnlocked > 0 -> lastUnlocked
+                        else -> 0
+                    }
+                    val editor = prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, modeToSave)
+                    if (livePinMode > 0) {
+                        editor.putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, livePinMode)
+                    }
+                    editor.apply()
+                    if (livePinMode != 0) {
+                        writePinScreenMode(0)
+                    }
+                } else if (livePinMode != 0) {
+                    writePinScreenMode(0)
+                }
+            } else {
+                if (pendingKeyguard >= 0) {
+                    val restored = if (pendingKeyguard > 0 && livePinMode == 0) {
+                        writePinScreenMode(pendingKeyguard)
+                    } else {
+                        true
+                    }
+                    if (restored) {
+                        prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1).apply()
+                    }
+                } else if (isFreshBoot && livePinMode == 0 && lastUnlocked > 0) {
+                    writePinScreenMode(lastUnlocked)
+                } else {
+                    prefs.edit().putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, livePinMode).apply()
+                }
+            }
+        }
+    }
+
+    /**
+     * Captures the user's live IME pin screen mode before `ACTION_SCREEN_OFF`, `ACTION_SHUTDOWN`,
+     * or `REBOOT` temporarily unfreezes stock `DualScreenAssistant`.
+     */
+    fun captureImePinModeBeforePowerTransition(synchronous: Boolean = false) {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) >= 0) return
+            val live = readPinScreenMode()
+            if (live < 0) return
+            preScreenOffImePinMode = live
+            val editor = prefs.edit().putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, live)
+            if (synchronous) {
+                editor.commit()
+            } else {
+                editor.apply()
+            }
+        }
+    }
+
+    /**
+     * Re-asserts the pre-sleep IME pin screen mode after `ACTION_SCREEN_OFF` finishes delivering
+     * to the unfrozen stock process, preventing a queued stale stock `ACTION_USER_PRESENT`
+     * broadcast from resetting `pinScreenMode` to `0`.
+     */
+    fun reassertImePinModeAfterScreenOffBroadcast() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) >= 0) return
+            val expected = preScreenOffImePinMode
+            if (expected > 0 && readPinScreenMode() == 0) {
+                writePinScreenMode(expected)
+            }
+        }
+    }
+
+    /**
+     * Runs before stock receives `ACTION_SCREEN_ON`. If Keyguard is active, saves the user's
+     * pinned IME mode and temporarily resets `pinScreenMode` to `0` so lockscreen PIN/password
+     * entry works on the top screen (matching stock `ThisApplication.onScreenOn()`).
+     */
+    fun handlePreScreenOnImePinMode() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (!isKeyguardLockedNow()) return
+
+            val existingPending = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+            val live = readPinScreenMode()
+            if (live < 0) return
+
+            if (existingPending >= 0) {
+                if (live != 0) {
+                    writePinScreenMode(0)
+                }
+                return
+            }
+
+            val modeToSave = when {
+                live > 0 -> live
+                preScreenOffImePinMode > 0 -> preScreenOffImePinMode
+                else -> 0
+            }
+            val editor = prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, modeToSave)
+            if (modeToSave > 0) {
+                editor.putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, modeToSave)
+            }
+            editor.apply()
+            if (live != 0) {
+                writePinScreenMode(0)
+            }
+        }
+    }
+
+    /**
+     * Runs after stock finishes `ACTION_SCREEN_ON`. If the screen woke without Keyguard (e.g.
+     * lockscreen disabled or within the lock timeout grace period), ensures the user's IME pin
+     * mode was not cleared while sleeping.
+     */
+    fun handlePostScreenOnImePinMode() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (isKeyguardLockedNow()) return
+
+            val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+            if (pendingKeyguard >= 0) {
+                val restored = if (pendingKeyguard > 0) {
+                    writePinScreenMode(pendingKeyguard)
+                } else {
+                    true
+                }
+                if (restored) {
+                    prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1).apply()
+                    preScreenOffImePinMode = -1
+                }
+                return
+            }
+
+            val expected = preScreenOffImePinMode
+            if (expected > 0 && readPinScreenMode() == 0) {
+                writePinScreenMode(expected)
+            }
+            preScreenOffImePinMode = -1
+        }
+    }
+
+    /**
+     * Restores the saved IME pin screen mode when the user unlocks the device (`ACTION_USER_PRESENT`).
+     */
+    fun handleUserPresentImePinMode() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+
+            val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+            if (pendingKeyguard >= 0) {
+                val restored = if (pendingKeyguard > 0) {
+                    writePinScreenMode(pendingKeyguard)
+                } else {
+                    true
+                }
+                if (restored) {
+                    prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1).apply()
+                    preScreenOffImePinMode = -1
+                }
+                return
+            }
+
+            val expected = preScreenOffImePinMode
+            if (expected > 0 && readPinScreenMode() == 0) {
+                writePinScreenMode(expected)
+            }
+            preScreenOffImePinMode = -1
+        }
+    }
+
+    /**
+     * Lightweight snapshot of the live IME pin screen mode while unlocked in Dual-Screen mode,
+     * so the user's current pin choice is preserved even after an abrupt reboot without
+     * `ACTION_SHUTDOWN`.
+     */
+    fun syncUnlockedImePinModeSnapshot() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0 || isKeyguardLockedNow()) return
+            if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) >= 0) return
+            val live = readPinScreenMode()
+            if (live >= 0) {
+                prefs.edit().putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, live).apply()
+            }
+        }
+    }
+
     fun setDualScreenDisplayMode(mode: Int) {
         val previousMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
         isTransitioningDisplayMode = true
@@ -1055,21 +1456,56 @@ class SystemSettingsRepository(private val context: Context) {
                 if (!overrideAlreadyActive) {
                     val currentFocusLock = getInt(KEY_SCREEN_FOCUS_LOCK, _screenFocusLock.value)
                     val currentEnableKeyFocus = getInt(KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0)
-                    prefs.edit()
+                    val currentPinMode = synchronized(imePinLock) {
+                        val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+                        if (pendingKeyguard >= 0) {
+                            pendingKeyguard
+                        } else {
+                            readPinScreenMode()
+                        }
+                    }
+                    val editor = prefs.edit()
                         .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, currentFocusLock)
                         .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, currentEnableKeyFocus)
                         .putBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, true)
-                        .apply()
+                    if (currentPinMode >= 0) {
+                        editor.putInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, currentPinMode)
+                        if (!isKeyguardLockedNow() &&
+                            prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) < 0
+                        ) {
+                            editor.putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, currentPinMode)
+                        }
+                    } else {
+                        editor.putInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, -1)
+                    }
+                    editor.apply()
                 }
             }
             when (mode) {
                 0 -> {
+                    val overrideWasActive =
+                        prefs.getBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, false)
+                    val savedDualPinMode = prefs.getInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, -1)
                     restoreDualScreenFocusLock()
+                    prefs.edit().putInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, -1).apply()
                     PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
                     _dualScreenDisplayMode.value = 0
                     val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
                     PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
-                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    if (overrideWasActive && savedDualPinMode >= 0) {
+                        synchronized(imePinLock) {
+                            if (isKeyguardLockedNow()) {
+                                if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) < 0) {
+                                    prefs.edit()
+                                        .putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, savedDualPinMode)
+                                        .apply()
+                                }
+                                writePinScreenMode(0)
+                            } else {
+                                writePinScreenMode(savedDualPinMode)
+                            }
+                        }
+                    }
                 }
                 1 -> {
                     _touchLockEnabled.value = false
@@ -1078,7 +1514,7 @@ class SystemSettingsRepository(private val context: Context) {
                     PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
                     PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                     PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
-                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    writePinScreenMode(0)
                     _screenFocusLock.value = 1
                 }
                 2 -> {
@@ -1088,7 +1524,7 @@ class SystemSettingsRepository(private val context: Context) {
                     PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
                     PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                     PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
-                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    writePinScreenMode(0)
                     _screenFocusLock.value = 2
                 }
             }
@@ -1443,6 +1879,14 @@ class SystemSettingsRepository(private val context: Context) {
                             _syncedMegingiardOption.value = resolvedOption
                             _syncedMegingiardAccentArgb.value = accentInt
                             _isMegingiardProviderAvailable.value = true
+                            val editor = prefs.edit()
+                                .putInt(PREF_SYNCED_MEGINGIARD_OPTION_ID, resolvedOption.id)
+                            if (accentInt != null) {
+                                editor.putInt(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB, accentInt)
+                            } else {
+                                editor.remove(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB)
+                            }
+                            editor.apply()
                             if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
                                 (changed || forceScheduleOsSync || debounceOsSyncMs == 0L)
                             ) {
@@ -1486,17 +1930,24 @@ class SystemSettingsRepository(private val context: Context) {
     private fun isAnyMegingiardInstalled(): Boolean {
         return isProviderAuthorityInstalled(MEGINGIARD_RELEASE_THEME_URI) ||
             isProviderAuthorityInstalled(MEGINGIARD_DEBUG_THEME_URI) ||
-            isMegingiardPackageInstalled("com.stormpanda.megingiard") ||
-            isMegingiardPackageInstalled("com.stormpanda.megingiard.debug")
+            isPackageInstalled("com.stormpanda.megingiard") ||
+            isPackageInstalled("com.stormpanda.megingiard.debug")
     }
 
-    private fun isMegingiardPackageInstalled(pkg: String): Boolean {
+    private fun isPackageInstalled(pkg: String): Boolean {
         return try {
             @Suppress("DEPRECATION")
-            context.packageManager.getPackageInfo(pkg, 0) != null
+            val info = context.packageManager.getPackageInfo(pkg, 0)
+            info != null && info.applicationInfo?.enabled != false
         } catch (_: Throwable) {
             false
         }
+    }
+
+    fun refreshClusterTuneInstalled(): Boolean {
+        val installed = isPackageInstalled(CLUSTER_TUNE_PACKAGE)
+        _isClusterTuneInstalled.value = installed
+        return installed
     }
 
     private fun isProviderAuthorityInstalled(uri: Uri): Boolean {
@@ -1943,6 +2394,12 @@ class SystemSettingsRepository(private val context: Context) {
         setTempFahrenheit(!_tempFahrenheit.value)
     }
 
+    fun setScreenshotTargetMode(mode: Int) {
+        val clamped = mode.coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
+        prefs.edit().putInt(PREF_SCREENSHOT_TARGET_MODE, clamped).apply()
+        _screenshotTargetMode.value = clamped
+    }
+
     fun setPromotedToManager(promoted: Boolean) {
         prefs.edit().putBoolean(PREF_PROMOTED_TO_MANAGER, promoted).apply()
         _promotedToManager.value = promoted
@@ -2132,7 +2589,7 @@ class SystemSettingsRepository(private val context: Context) {
         val currentOrder = _quickTileOrder.value
         val disabled = _disabledQuickTiles.value
         fun isActiveOnDevice(tile: QuickSettingTileId): Boolean =
-            tile !in disabled && tile.isSupportedOn(profile)
+            tile !in disabled && tile.isSupportedOn(profile, _isClusterTuneInstalled.value)
 
         val activeList = currentOrder.filter(::isActiveOnDevice).toMutableList()
         if (fromActiveIndex !in activeList.indices || toActiveIndex !in activeList.indices) return
@@ -2153,7 +2610,10 @@ class SystemSettingsRepository(private val context: Context) {
         if (enabled) {
             current.remove(tile)
         } else {
-            val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+            val supportedTiles = QuickSettingTileId.supportedEntries(
+                DeviceProfile.current(context),
+                _isClusterTuneInstalled.value
+            )
             val enabledCount = supportedTiles.count { it !in current }
             if (tile !in current && enabledCount <= 1) {
                 // Keep at least 1 supported toggle enabled
@@ -2262,7 +2722,10 @@ class SystemSettingsRepository(private val context: Context) {
                 .apply()
         }
 
-        val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+        val supportedTiles = QuickSettingTileId.supportedEntries(
+            DeviceProfile.current(context),
+            _isClusterTuneInstalled.value
+        )
         if (supportedTiles.isNotEmpty() && supportedTiles.all { it in parsed }) {
             parsed.remove(supportedTiles.first())
             prefs.edit()
@@ -2315,10 +2778,10 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
         }
-        val memInfo = ActivityManager.MemoryInfo()
-        am?.getMemoryInfo(memInfo)
-        val availGb = memInfo.availMem / (1024.0 * 1024.0 * 1024.0)
-        val formattedMem = String.format("%.2f GB", availGb)
+        val ramSnapshot = TelemetryMonitor.readRamUsageSnapshot(am)
+        val availGb = ramSnapshot.availableBytes / 1_000_000_000.0
+        val activeLocale = context.resources.configuration.locales.get(0) ?: java.util.Locale.getDefault()
+        val formattedMem = String.format(activeLocale, "%.2f GB", availGb)
         return killedCount to formattedMem
     }
 
@@ -2544,6 +3007,191 @@ class SystemSettingsRepository(private val context: Context) {
                 null
             )
         } catch (_: Throwable) {
+        }
+    }
+
+    private fun isWifiDisplayId(displayId: Int): Boolean {
+        return try {
+            val d = displayManager?.getDisplay(displayId) ?: return false
+            val type = d.javaClass.getMethod("getType").invoke(d) as? Int ?: 0
+            type == 3
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun scheduleScreenCastStateRefresh(delayMs: Long = 0L) {
+        val now = SystemClock.elapsedRealtime()
+        val settleRemainingMs = castDisconnectSettleUntilElapsedMs - now
+        if (settleRemainingMs > 0L && delayMs < settleRemainingMs) {
+            return
+        }
+        mainHandler.removeCallbacks(castRefreshRunnable)
+        if (delayMs <= 0L) {
+            mainHandler.post(castRefreshRunnable)
+        } else {
+            mainHandler.postDelayed(castRefreshRunnable, delayMs)
+        }
+    }
+
+    private fun mergeScreenCastStates(
+        helperStatus: PrivilegedBridge.ScreenCastHelperStatus,
+        mrStatus: ScreenCastState
+    ): ScreenCastState {
+        val isCasting = helperStatus.isCasting || mrStatus.isCasting
+        val isConnecting = !isCasting && (helperStatus.isConnecting || mrStatus.isConnecting)
+        val deviceName = if (isCasting || isConnecting) {
+            helperStatus.deviceName.ifBlank { mrStatus.deviceName }
+        } else {
+            ""
+        }
+        return ScreenCastState(
+            isCasting = isCasting,
+            isConnecting = isConnecting,
+            deviceName = deviceName
+        )
+    }
+
+    fun refreshScreenCastStateAsync() {
+        val epochSnapshot = castStateEpoch.get()
+        castStateExecutor.execute {
+            if (epochSnapshot != castStateEpoch.get()) return@execute
+            val helperStatus = PrivilegedBridge.getScreenCastState(context)
+            mainHandler.post {
+                if (epochSnapshot != castStateEpoch.get()) return@post
+                if (SystemClock.elapsedRealtime() < castDisconnectSettleUntilElapsedMs) return@post
+                val mrStatus = readMediaRouterRemoteDisplayState()
+                _screenCastState.value = mergeScreenCastStates(helperStatus, mrStatus)
+            }
+        }
+    }
+
+    fun refreshScreenCastState(): ScreenCastState {
+        castDisconnectSettleUntilElapsedMs = 0L
+        val epochSnapshot = castStateEpoch.incrementAndGet()
+        val helperStatus = PrivilegedBridge.getScreenCastState(context)
+        val mrStatus = readMediaRouterRemoteDisplayState()
+        val updated = mergeScreenCastStates(helperStatus, mrStatus)
+        if (epochSnapshot == castStateEpoch.get()) {
+            _screenCastState.value = updated
+        }
+        return updated
+    }
+
+    private fun readMediaRouterRemoteDisplayState(): ScreenCastState {
+        val mr = mediaRouter ?: return ScreenCastState()
+        return try {
+            val route = mr.getSelectedRoute(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY)
+                ?: return ScreenCastState()
+            if (route === mr.defaultRoute ||
+                (route.supportedTypes and MEDIA_ROUTER_TYPE_REMOTE_DISPLAY) == 0
+            ) {
+                return ScreenCastState()
+            }
+            val connecting = try {
+                route.javaClass.getMethod("isConnecting").invoke(route) as? Boolean ?: false
+            } catch (_: Throwable) {
+                false
+            }
+            val rawName = try {
+                route.getName(context)?.toString()
+            } catch (_: Throwable) {
+                null
+            }
+            ScreenCastState(
+                isCasting = !connecting,
+                isConnecting = connecting,
+                deviceName = PrivilegedHelperMain.sanitizeCastDeviceName(rawName)
+            )
+        } catch (_: Throwable) {
+            ScreenCastState()
+        }
+    }
+
+    private fun unselectMediaRouterRemoteDisplayRouteOnMain(): Boolean {
+        return try {
+            val mr = mediaRouter ?: return false
+            val selected = mr.getSelectedRoute(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY) ?: return false
+            val defRoute = mr.defaultRoute ?: return false
+            if (selected !== defRoute &&
+                (selected.supportedTypes and MEDIA_ROUTER_TYPE_REMOTE_DISPLAY) != 0
+            ) {
+                mr.selectRoute(MEDIA_ROUTER_TYPE_REMOTE_DISPLAY, defRoute)
+                true
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun disconnectScreenCast(): Boolean {
+        castStateEpoch.incrementAndGet()
+        castDisconnectSettleUntilElapsedMs = SystemClock.elapsedRealtime() + 350L
+        mainHandler.removeCallbacks(castRefreshRunnable)
+        mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
+        _screenCastState.value = ScreenCastState()
+
+        var routeUnselected = false
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            routeUnselected = unselectMediaRouterRemoteDisplayRouteOnMain()
+        } else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            mainHandler.post {
+                try {
+                    routeUnselected = unselectMediaRouterRemoteDisplayRouteOnMain()
+                } finally {
+                    latch.countDown()
+                }
+            }
+            try {
+                latch.await(200L, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
+        val helperDisconnected = PrivilegedBridge.disconnectScreenCast(context)
+        mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
+        mainHandler.postDelayed(castPostDisconnectRefreshRunnable, 350L)
+        return helperDisconnected || routeUnselected
+    }
+
+    fun openClusterTuneProfilePicker(): ClusterTuneLaunchResult {
+        if (!refreshClusterTuneInstalled()) {
+            return ClusterTuneLaunchResult.NOT_INSTALLED
+        }
+        if (_dualScreenDisplayMode.value == 2) {
+            return ClusterTuneLaunchResult.TOP_SCREEN_OFF
+        }
+        val appOpsResult = PServerClient.exec(
+            "appops get $CLUSTER_TUNE_PACKAGE SYSTEM_ALERT_WINDOW 2>&1 | tr '\\n' ' '",
+            wait = true
+        )
+        if (appOpsResult.isSuccess) {
+            val lower = appOpsResult.getOrDefault("").lowercase(java.util.Locale.US)
+            if ("allow" !in lower &&
+                ("default" in lower || "ignore" in lower || "deny" in lower || "no operations" in lower)
+            ) {
+                return ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED
+            }
+        }
+        // Flatten newlines into a single line because AYN/Retroid pservice reads stdout via single-line fgets().
+        val cmd = "{ am start-foreground-service --user 0 " +
+            "-n $CLUSTER_TUNE_OVERLAY_SERVICE " +
+            "-a $ACTION_CLUSTER_TUNE_SHOW_PROFILE_PICKER 2>&1; echo __EXIT=\$?; } | tr '\\n' ' '"
+        val result = PServerClient.exec(cmd, wait = true)
+        val output = result.getOrNull() ?: return ClusterTuneLaunchResult.FAILED
+        val exitZero = output.split(Regex("\\s+")).any { it == "__EXIT=0" }
+        val hasStartingService = output.contains("Starting service:", ignoreCase = true)
+        val hasError = output.contains("Error:", ignoreCase = true) ||
+            output.contains("SecurityException", ignoreCase = true) ||
+            output.contains("Unable to start service", ignoreCase = true)
+        return if ((exitZero || hasStartingService) && !hasError) {
+            ClusterTuneLaunchResult.OPENED
+        } else {
+            ClusterTuneLaunchResult.FAILED
         }
     }
 }
