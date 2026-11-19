@@ -45,6 +45,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
@@ -56,6 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.core.content.res.ResourcesCompat
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.plugin.BdsaPluginContract
+import com.stormpanda.betterdualscreenassistant.plugin.PluginIconLoader
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.ScreenCastState
@@ -178,6 +182,8 @@ fun AssistantOverlayScreen(
 
     var activeDialog by remember { mutableStateOf(ActiveDialog.NONE) }
     val coroutineScope = rememberCoroutineScope()
+    val pluginRegistry = remember(context) { PluginRegistry.getInstance(context) }
+    val activePluginPicker by pluginRegistry.activePickerRequest.collectAsState()
 
     DisposableEffect(activeTab) {
         if (activeTab == 1) {
@@ -217,6 +223,9 @@ fun AssistantOverlayScreen(
                             if (activeDialog != ActiveDialog.NONE) {
                                 activeDialog = ActiveDialog.NONE
                                 true
+                            } else if (activePluginPicker != null) {
+                                pluginRegistry.clearActivePicker()
+                                true
                             } else {
                                 onDismissOverlayRequest()
                                 true
@@ -238,7 +247,7 @@ fun AssistantOverlayScreen(
 
                 Column(
                     modifier = contentWidthModifier.focusProperties {
-                        canFocus = activeDialog == ActiveDialog.NONE
+                        canFocus = activeDialog == ActiveDialog.NONE && activePluginPicker == null
                     }
                 ) {
                     StatusBarRow(
@@ -318,6 +327,16 @@ fun AssistantOverlayScreen(
                     onCaptureScreenshotRequest = onCaptureScreenshotRequest,
                     onStartScreenRecordingRequest = onStartScreenRecordingRequest
                 )
+
+                val currentPluginPicker = activePluginPicker
+                if (activeDialog == ActiveDialog.NONE && currentPluginPicker != null) {
+                    PluginPickerDialogOverlay(
+                        request = currentPluginPicker,
+                        pluginRegistry = pluginRegistry,
+                        coroutineScope = coroutineScope,
+                        onDismiss = { pluginRegistry.clearActivePicker() }
+                    )
+                }
             }
         }
     }
@@ -572,6 +591,8 @@ private data class QuickSettingTileModel(
     @param:DrawableRes val iconRes: Int,
     val selected: Boolean,
     val onLongClick: (() -> Unit)? = null,
+    val iconBitmap: ImageBitmap? = null,
+    val enabled: Boolean = true,
     val onClick: () -> Unit
 ) {
     constructor(
@@ -579,7 +600,15 @@ private data class QuickSettingTileModel(
         @DrawableRes iconRes: Int,
         selected: Boolean,
         onClick: () -> Unit
-    ) : this(label = label, iconRes = iconRes, selected = selected, onLongClick = null, onClick = onClick)
+    ) : this(
+        label = label,
+        iconRes = iconRes,
+        selected = selected,
+        onLongClick = null,
+        iconBitmap = null,
+        enabled = true,
+        onClick = onClick
+    )
 }
 
 @Composable
@@ -625,13 +654,74 @@ private fun buildQuickSettingTileModels(
     val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
     val screenshotTargetMode by repository.screenshotTargetMode.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
-    val quickTileOrder by repository.quickTileOrder.collectAsState()
+    val unifiedQuickTileOrder by repository.unifiedQuickTileOrder.collectAsState()
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
+    val pluginRegistry = remember(context) { PluginRegistry.getInstance(context) }
+    val plugins by pluginRegistry.plugins.collectAsState()
+    val enabledPluginTileKeys by pluginRegistry.enabledPluginTileKeys.collectAsState()
+    val pluginRuntimeStates by pluginRegistry.tileRuntimeStates.collectAsState()
+    val isDarkTheme = LocalTccColors.current.isDark
+    val isRetroidLook = LocalTccLookSpec.current.isRetroid
+
+    val activePluginTiles = remember(plugins, enabledPluginTileKeys, profile) {
+        pluginRegistry.activePluginTilesMap(profile)
+    }
+    val orderedKeys = remember(unifiedQuickTileOrder, activePluginTiles) {
+        val list = unifiedQuickTileOrder.toMutableList()
+        for (pluginKey in activePluginTiles.keys) {
+            if (pluginKey !in list) {
+                list.add(pluginKey)
+            }
+        }
+        list
+    }
 
     val isRecordingScreen = screenRecordingState.isRecording
 
     return buildList {
-        for (tileId in quickTileOrder) {
+        for (rawKey in orderedKeys) {
+            if (BdsaPluginContract.isPluginTileKey(rawKey)) {
+                val (plugin, tileDef) = activePluginTiles[rawKey] ?: continue
+                val runtimeState = pluginRuntimeStates[rawKey]
+                val effectiveLabel = runtimeState?.label ?: tileDef.gridTitle
+                val effectiveSelected = runtimeState?.selected ?: false
+                val effectiveEnabled = runtimeState?.enabled ?: true
+                val desiredResId = if (isRetroidLook) {
+                    (runtimeState?.pixelIconResId?.takeIf { it != 0 })
+                        ?: tileDef.pixelIconResId.takeIf { it != 0 }
+                        ?: (runtimeState?.iconResId?.takeIf { it != 0 })
+                        ?: tileDef.iconResId
+                } else {
+                    (runtimeState?.iconResId?.takeIf { it != 0 })
+                        ?: tileDef.iconResId
+                }
+                val iconBitmap = remember(plugin.packageName, plugin.versionCode, desiredResId) {
+                    PluginIconLoader.loadIconBitmap(
+                        context = context,
+                        packageName = plugin.packageName,
+                        versionCode = plugin.versionCode,
+                        resId = desiredResId
+                    )
+                }
+                add(
+                    QuickSettingTileModel(
+                        label = effectiveLabel,
+                        iconRes = R.drawable.ic_qs_plugin_default,
+                        selected = effectiveSelected,
+                        onLongClick = if (tileDef.supportsLongPress) {
+                            { pluginRegistry.dispatchTileLongClick(tileDef, isDarkTheme) }
+                        } else {
+                            null
+                        },
+                        iconBitmap = iconBitmap,
+                        enabled = effectiveEnabled,
+                        onClick = { pluginRegistry.dispatchTileClick(tileDef, isDarkTheme) }
+                    )
+                )
+                continue
+            }
+
+            val tileId = QuickSettingTileId.fromKey(rawKey) ?: continue
             if (!tileId.isSupportedOn(profile, isClusterTuneInstalled) || tileId in disabledQuickTiles) continue
             when (tileId) {
                 QuickSettingTileId.FOCUS_LOCK -> if (dualScreenMode == 0) {
@@ -1503,7 +1593,9 @@ private fun QuickSettingsGridPage(
                                 onClick = item.onClick,
                                 onLongClick = item.onLongClick,
                                 variant = TccTileVariant.QUICK_SETTING,
-                                maxLabelWidth = cellAllowance
+                                maxLabelWidth = cellAllowance,
+                                iconBitmap = item.iconBitmap,
+                                enabled = item.enabled
                             )
                         }
                     }

@@ -474,4 +474,37 @@
     <string name="help_settings_add_to_obtainium_desc">Open Obtainium to track and install Better Dual Screen Assistant updates automatically from GitHub</string>
     <string name="help_settings_add_to_obtainium_manager_desc">Open Obtainium to track and install Better Dual Screen Manager updates automatically from GitHub</string>
     <string name="gamepad_action_checking">Checking</string>
+
+    <!-- Third-Party Plugins -->
+    <string name="settings_cat_plugins">Plugins</string>
+    <string name="settings_plugins_info_title">Third-Party Plugins — Use at Your Own Risk</string>
+    <string name="settings_plugins_info_desc">Third-party plugins are external Android apps not affiliated with BDSA. They run in their own sandbox and never receive BDSA root access. Activate individual plugin toggles under Quick Toggles → Enable / Disable Toggles.</string>
+    <string name="settings_plugins_refresh_title">Rescan Installed Plugins</string>
+    <string name="settings_plugins_refresh_desc">Check installed apps for newly added or updated BDSA quick-toggle plugins</string>
+    <string name="settings_plugins_action_rescan">Rescan</string>
+    <string name="settings_plugins_rescan_toast" tools:ignore="PluralsCandidate">Found %1$d installed plugin(s)</string>
+    <string name="settings_plugins_empty_title">No Third-Party Plugins Installed</string>
+    <string name="settings_plugins_empty_desc">Compatible plugin apps register automatically once installed. Enable their toggles from Quick Toggles → Enable / Disable Toggles.</string>
+    <string name="settings_plugins_section_installed">INSTALLED PLUGINS (%1$d)</string>
+    <string name="settings_plugins_no_description">No description provided by this plugin.</string>
+    <string name="settings_plugins_meta_by_author">By %1$s</string>
+    <string name="settings_plugins_meta_version">v%1$s</string>
+    <string name="settings_plugins_meta_tiles_count" tools:ignore="PluralsCandidate">%1$d toggle(s): %2$s</string>
+    <string name="settings_plugins_meta_no_supported_tiles">No toggles supported on %1$s</string>
+    <string name="settings_plugins_incompatible_title">Incompatible Plugin (API v%1$d)</string>
+    <string name="settings_plugins_incompatible_desc">This plugin targets BDSA Plugin API v%1$d, but this build requires API v%2$d. Update the plugin or BDSA.</string>
+    <string name="settings_plugins_configure_title">Configure %1$s</string>
+    <string name="settings_plugins_configure_desc">Open this plugin\'s settings screen</string>
+    <string name="settings_plugins_action_configure">Configure</string>
+    <string name="settings_plugins_app_info_title">App Info &amp; Uninstall (%1$s)</string>
+    <string name="settings_plugins_app_info_desc">Manage Android permissions or uninstall %1$s</string>
+    <string name="settings_plugins_action_app_info">App Info</string>
+    <string name="settings_qs_third_party_header">Third-Party Plugins — Use at Your Own Risk (%1$d/%2$d)</string>
+    <string name="settings_qs_third_party_warning_title">Third-Party Toggles — Use at Your Own Risk</string>
+    <string name="settings_qs_third_party_warning_desc">Toggles below are provided by third-party apps installed on your device. They start disabled by default and are not verified by BDSA.</string>
+    <string name="settings_qs_third_party_empty_title">No Third-Party Plugin Toggles Registered</string>
+    <string name="settings_qs_third_party_empty_desc">Install a compatible third-party plugin APK to add custom toggles here.</string>
+    <string name="settings_qs_third_party_tile_desc_format">%1$s • %2$s</string>
+    <string name="settings_qs_third_party_plugin_disabled_desc">%1$s — Plugin is disabled in Settings → Plugins</string>
+    <string name="settings_qs_third_party_badge">3RD PARTY</string>
 </resources>

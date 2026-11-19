@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import android.view.KeyEvent
 import androidx.compose.ui.res.stringResource
@@ -44,6 +45,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.plugin.PluginIconLoader
+import com.stormpanda.betterdualscreenassistant.plugin.PluginPickerRequest
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogCheckboxRow
@@ -520,6 +524,77 @@ internal fun AssistantOverlayDialogHost(
             )
         }
     }
+}
+
+@Composable
+internal fun PluginPickerDialogOverlay(
+    request: PluginPickerRequest,
+    pluginRegistry: PluginRegistry,
+    coroutineScope: CoroutineScope,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val isDark = LocalTccColors.current.isDark
+    val pluginVersionCode = remember(request.packageName) {
+        pluginRegistry.findPluginForPackage(request.packageName)?.versionCode ?: 0L
+    }
+    val titleIconBitmap = remember(request.packageName, pluginVersionCode, request.titleIconResId) {
+        PluginIconLoader.loadIconBitmap(
+            context = context,
+            packageName = request.packageName,
+            versionCode = pluginVersionCode,
+            resId = request.titleIconResId
+        )
+    }
+    val dialogOptions = remember(request.requestId, pluginVersionCode) {
+        request.options.mapIndexed { index, option ->
+            val optBitmap = if (option.iconResId != 0) {
+                PluginIconLoader.loadIconBitmap(
+                    context = context,
+                    packageName = request.packageName,
+                    versionCode = pluginVersionCode,
+                    resId = option.iconResId
+                )
+            } else {
+                null
+            }
+            TccDialogOption(
+                id = index,
+                label = option.label,
+                iconRes = 0,
+                subtitle = option.subtitle,
+                iconBitmap = optBitmap
+            )
+        }
+    }
+    val initialSelectedIdx = remember(request.requestId) {
+        request.selectedOptionId?.let { selId ->
+            request.options.indexOfFirst { it.id == selId }
+        } ?: -1
+    }
+    var selectedIdx by remember(request.requestId) { mutableStateOf(initialSelectedIdx) }
+
+    TccOptionDialog(
+        title = request.title,
+        titleIconRes = if (titleIconBitmap == null) R.drawable.ic_qs_plugin_default else null,
+        titleIconBitmap = titleIconBitmap,
+        options = dialogOptions,
+        selectedId = selectedIdx,
+        onSelectOption = { idx ->
+            val picked = request.options.getOrNull(idx) ?: return@TccOptionDialog
+            selectedIdx = idx
+            pluginRegistry.dispatchOptionSelected(
+                request = request,
+                optionId = picked.id,
+                isDarkTheme = isDark
+            )
+            coroutineScope.launch {
+                delay(180L)
+                onDismiss()
+            }
+        },
+        onDismiss = onDismiss
+    )
 }
 
 @Composable

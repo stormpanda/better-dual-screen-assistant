@@ -43,6 +43,9 @@
             <action android:name="android.settings.WIFI_DISPLAY_SETTINGS" />
         </intent>
         <intent>
+            <action android:name="com.stormpanda.betterdualscreenassistant.action.PLUGIN_TILE" />
+        </intent>
+        <intent>
             <action android:name="android.settings.CONNECTED_DEVICE_SETTINGS" />
         </intent>
     </queries>
@@ -141,6 +144,14 @@
             android:exported="true"
             android:permission="android.permission.INTERNAL_SYSTEM_WINDOW"
             tools:ignore="ProtectedPermissions" />
+
+        <provider
+            android:name=".plugin.BdsaPluginProvider"
+            android:authorities="com.stormpanda.betterdualscreenassistant.plugin"
+            android:directBootAware="true"
+            android:enabled="true"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
 
     </application>
 

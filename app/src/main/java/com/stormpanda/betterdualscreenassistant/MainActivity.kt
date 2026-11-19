@@ -1,10 +1,15 @@
 package com.stormpanda.betterdualscreenassistant
 
 import android.annotation.SuppressLint
+import android.app.ActivityOptions
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
+import android.provider.Settings
 import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -61,6 +66,7 @@ import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FormatColorFill
 import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.GridView
@@ -85,6 +91,7 @@ import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -119,9 +126,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
@@ -145,6 +154,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stormpanda.betterdualscreenassistant.plugin.BdsaPluginContract
+import com.stormpanda.betterdualscreenassistant.plugin.PluginIconLoader
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
+import com.stormpanda.betterdualscreenassistant.plugin.PluginTileDefinition
+import com.stormpanda.betterdualscreenassistant.plugin.RegisteredPlugin
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.system.AppLanguage
@@ -520,6 +534,7 @@ private enum class LauncherCategory(
     GENERAL(R.string.settings_cat_general, Icons.Rounded.Tune),
     QUICK_TOGGLES(R.string.settings_cat_quick_toggles, Icons.Rounded.GridView),
     APPEARANCE(R.string.settings_cat_appearance, Icons.Rounded.Palette),
+    PLUGINS(R.string.settings_cat_plugins, Icons.Rounded.Extension),
     UPDATES(R.string.settings_cat_updates, Icons.Rounded.SystemUpdate),
     DIAGNOSTICS(R.string.settings_cat_diagnostics, Icons.Rounded.HealthAndSafety)
 }
@@ -592,7 +607,11 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val isClusterTuneInstalled by repo.isClusterTuneInstalled.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
+    val unifiedQuickTileOrder by repo.unifiedQuickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
+    val pluginRegistry = remember(context) { PluginRegistry.getInstance(context) }
+    val registeredPlugins by pluginRegistry.plugins.collectAsState()
+    val enabledPluginTileKeys by pluginRegistry.enabledPluginTileKeys.collectAsState()
 
     val autoUpdateCheckEnabled by UpdateManager.autoUpdateCheckEnabled.collectAsStateWithLifecycle()
     val updateAvailable by UpdateManager.updateAvailable.collectAsStateWithLifecycle()
@@ -651,6 +670,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 repo.refreshAll()
+                pluginRegistry.refreshPlugins()
                 scope.launch { refreshStatus() }
             }
         }
@@ -884,10 +904,16 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                             QuickTogglesSettingsTabContent(
                                                 profile = profile,
                                                 isClusterTuneInstalled = isClusterTuneInstalled,
-                                                quickTileOrder = quickTileOrder,
+                                                unifiedQuickTileOrder = unifiedQuickTileOrder,
                                                 disabledQuickTiles = disabledQuickTiles,
-                                                onMoveActiveTile = { fromIndex, toIndex ->
-                                                    repo.moveActiveQuickTile(fromIndex, toIndex)
+                                                registeredPlugins = registeredPlugins,
+                                                enabledPluginTileKeys = enabledPluginTileKeys,
+                                                onMoveActiveTile = { fromIndex, toIndex, activeKeys ->
+                                                    repo.moveActiveUnifiedQuickTile(
+                                                        fromActiveIndex = fromIndex,
+                                                        toActiveIndex = toIndex,
+                                                        activeOrderedKeys = activeKeys
+                                                    )
                                                 },
                                                 onOpenEnableDisableSubPage = {
                                                     subPageStack = listOf(LauncherSubPage.ENABLE_DISABLE_TOGGLES)
@@ -923,6 +949,27 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                     subPageStack = listOf(LauncherSubPage.CUSTOM_ACCENT)
                                                 },
                                                 onToggleInjectSystemTheme = { repo.setInjectOsTheme(it) }
+                                            )
+                                        }
+
+                                        LauncherCategory.PLUGINS -> {
+                                            PluginsSettingsTabContent(
+                                                profile = profile,
+                                                plugins = registeredPlugins,
+                                                onTogglePluginEnabled = { pkg, enabled ->
+                                                    pluginRegistry.setPluginEnabled(pkg, enabled)
+                                                    val activePluginCount = pluginRegistry.activePluginTilesMap(profile).size
+                                                    repo.ensureAtLeastOneTileEnabled(activePluginCount)
+                                                },
+                                                onRescanPlugins = {
+                                                    pluginRegistry.refreshPlugins()
+                                                    DialogToastManager.show(
+                                                        context.getString(
+                                                            R.string.settings_plugins_rescan_toast,
+                                                            pluginRegistry.plugins.value.size
+                                                        )
+                                                    )
+                                                }
                                             )
                                         }
 
@@ -1006,9 +1053,19 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                         isClusterTuneInstalled = isClusterTuneInstalled,
                                         quickTileOrder = quickTileOrder,
                                         disabledQuickTiles = disabledQuickTiles,
+                                        registeredPlugins = registeredPlugins,
+                                        enabledPluginTileKeys = enabledPluginTileKeys,
                                         promotedToManager = promotedToManager,
                                         onSetTileEnabled = { tile, enabled ->
-                                            repo.setQuickTileEnabled(tile, enabled)
+                                            val activePluginCount = pluginRegistry.activePluginTilesMap(profile).size
+                                            repo.setQuickTileEnabled(tile, enabled, activePluginCount)
+                                        },
+                                        onSetPluginTileEnabled = { tileKey, enabled ->
+                                            if (pluginRegistry.setPluginTileEnabled(tileKey, enabled) && enabled) {
+                                                repo.ensureQuickTileKeyInOrder(tileKey)
+                                            }
+                                            val activePluginCount = pluginRegistry.activePluginTilesMap(profile).size
+                                            repo.ensureAtLeastOneTileEnabled(activePluginCount)
                                         }
                                     )
                                 }
@@ -1311,25 +1368,109 @@ private fun GeneralSettingsTabContent(
     )
 }
 
+private data class ReorderTileItem(
+    val key: String,
+    val title: String,
+    val gridTitle: String,
+    val iconRes: Int,
+    val iconBitmap: ImageBitmap? = null,
+    val isThirdParty: Boolean = false
+)
+
 @Composable
 private fun QuickTogglesSettingsTabContent(
     profile: DeviceProfile,
     isClusterTuneInstalled: Boolean,
-    quickTileOrder: List<QuickSettingTileId>,
+    unifiedQuickTileOrder: List<String>,
     disabledQuickTiles: Set<QuickSettingTileId>,
-    onMoveActiveTile: (fromIndex: Int, toIndex: Int) -> Unit,
+    registeredPlugins: List<RegisteredPlugin>,
+    enabledPluginTileKeys: Set<String>,
+    onMoveActiveTile: (fromIndex: Int, toIndex: Int, activeKeys: List<String>) -> Unit,
     onOpenEnableDisableSubPage: () -> Unit,
     onResetDefaults: () -> Unit,
     onGridActiveChanged: (Boolean) -> Unit
 ) {
-    val supportedTiles = remember(profile, isClusterTuneInstalled) {
+    val context = LocalContext.current
+    val isRetroidLook = LocalTccUiLook.current == TccUiLook.RETROID
+    val supportedBuiltIns = remember(profile, isClusterTuneInstalled) {
         QuickSettingTileId.supportedEntries(profile, isClusterTuneInstalled)
     }
-    val supportedSet = remember(supportedTiles) { supportedTiles.toSet() }
-    val activeTiles = remember(quickTileOrder, disabledQuickTiles, supportedSet) {
-        quickTileOrder.filter { it in supportedSet && it !in disabledQuickTiles }
+    val supportedBuiltInSet = remember(supportedBuiltIns) { supportedBuiltIns.toSet() }
+
+    val availablePluginTiles = remember(registeredPlugins, profile) {
+        buildList {
+            for (plugin in registeredPlugins) {
+                if (!plugin.isApiCompatible) continue
+                for (tile in plugin.supportedTilesOn(profile)) {
+                    add(plugin to tile)
+                }
+            }
+        }
     }
-    val totalCount = supportedTiles.size
+    val activePluginTilesByKey = remember(availablePluginTiles, enabledPluginTileKeys) {
+        buildMap {
+            for ((plugin, tile) in availablePluginTiles) {
+                if (plugin.isPluginEnabled && tile.tileKey in enabledPluginTileKeys) {
+                    put(tile.tileKey, plugin to tile)
+                }
+            }
+        }
+    }
+
+    val activeTiles: List<ReorderTileItem> = remember(
+        unifiedQuickTileOrder,
+        disabledQuickTiles,
+        supportedBuiltInSet,
+        activePluginTilesByKey,
+        isRetroidLook
+    ) {
+        val orderedKeys = unifiedQuickTileOrder.toMutableList()
+        for (pluginKey in activePluginTilesByKey.keys) {
+            if (pluginKey !in orderedKeys) orderedKeys.add(pluginKey)
+        }
+        buildList {
+            for (key in orderedKeys) {
+                if (BdsaPluginContract.isPluginTileKey(key)) {
+                    val (plugin, tileDef) = activePluginTilesByKey[key] ?: continue
+                    val desiredRes = if (isRetroidLook && tileDef.pixelIconResId != 0) {
+                        tileDef.pixelIconResId
+                    } else {
+                        tileDef.iconResId
+                    }
+                    val bitmap = PluginIconLoader.loadIconBitmap(
+                        context = context,
+                        packageName = plugin.packageName,
+                        versionCode = plugin.versionCode,
+                        resId = desiredRes
+                    )
+                    add(
+                        ReorderTileItem(
+                            key = tileDef.tileKey,
+                            title = tileDef.listTitle,
+                            gridTitle = tileDef.gridTitle,
+                            iconRes = R.drawable.ic_qs_plugin_default,
+                            iconBitmap = bitmap,
+                            isThirdParty = true
+                        )
+                    )
+                } else {
+                    val builtIn = QuickSettingTileId.fromKey(key) ?: continue
+                    if (builtIn in supportedBuiltInSet && builtIn !in disabledQuickTiles) {
+                        add(
+                            ReorderTileItem(
+                                key = builtIn.key,
+                                title = builtIn.title(context),
+                                gridTitle = builtIn.gridTitle(context),
+                                iconRes = builtIn.iconRes
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val totalCount = supportedBuiltIns.size + availablePluginTiles.size
     val activeCount = activeTiles.size
     val supportedDefaultOrder = remember(profile, isClusterTuneInstalled) {
         QuickSettingTileId.defaultOrder.filter { it.isSupportedOn(profile, isClusterTuneInstalled) }
@@ -1339,24 +1480,31 @@ private fun QuickTogglesSettingsTabContent(
             .filter { it.isSupportedOn(profile, isClusterTuneInstalled) }
             .toSet()
     }
-    val supportedDisabled = remember(disabledQuickTiles, supportedSet) {
-        disabledQuickTiles.intersect(supportedSet)
+    val supportedDisabled = remember(disabledQuickTiles, supportedBuiltInSet) {
+        disabledQuickTiles.intersect(supportedBuiltInSet)
     }
+    val currentBuiltInOrder = remember(unifiedQuickTileOrder, supportedBuiltInSet) {
+        unifiedQuickTileOrder.mapNotNull { QuickSettingTileId.fromKey(it) }
+            .filter { it in supportedBuiltInSet }
+    }
+    val hasActivePluginTiles = activePluginTilesByKey.isNotEmpty()
     val isModified = remember(
-        quickTileOrder,
+        currentBuiltInOrder,
         supportedDisabled,
-        supportedSet,
         supportedDefaultOrder,
-        supportedDefaultDisabled
+        supportedDefaultDisabled,
+        hasActivePluginTiles
     ) {
-        quickTileOrder.filter { it in supportedSet } != supportedDefaultOrder ||
-            supportedDisabled != supportedDefaultDisabled
+        currentBuiltInOrder != supportedDefaultOrder ||
+            supportedDisabled != supportedDefaultDisabled ||
+            hasActivePluginTiles
     }
 
-    val context = LocalContext.current
     QuickTogglesVisualReorderCard(
         activeTiles = activeTiles,
-        onMoveActiveTile = onMoveActiveTile,
+        onMoveActiveTile = { fromIndex, toIndex ->
+            onMoveActiveTile(fromIndex, toIndex, activeTiles.map { it.key })
+        },
         onGridActiveChanged = onGridActiveChanged,
         modifier = Modifier.firstDeckItem()
     )
@@ -1376,7 +1524,7 @@ private fun QuickTogglesSettingsTabContent(
                     activeCount,
                     totalCount
                 ),
-                isAccent = supportedDisabled != supportedDefaultDisabled
+                isAccent = supportedDisabled != supportedDefaultDisabled || hasActivePluginTiles
             )
         },
         onClick = onOpenEnableDisableSubPage
@@ -1404,7 +1552,7 @@ private fun QuickTogglesSettingsTabContent(
 
 @Composable
 private fun QuickTogglesVisualReorderCard(
-    activeTiles: List<QuickSettingTileId>,
+    activeTiles: List<ReorderTileItem>,
     onMoveActiveTile: (fromIndex: Int, toIndex: Int) -> Unit,
     onGridActiveChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
@@ -1510,14 +1658,13 @@ private fun QuickTogglesVisualReorderCard(
         handleBackStep()
     }
 
-    val context = LocalContext.current
     val currentTile = activeTiles.getOrNull(cursorIndex)
     val subtitle = when {
         !isGridActive -> stringResource(R.string.settings_qs_reorder_idle)
         isGrabbed && currentTile != null ->
-            stringResource(R.string.settings_qs_reorder_moving, currentTile.title(context))
+            stringResource(R.string.settings_qs_reorder_moving, currentTile.title)
         currentTile != null ->
-            stringResource(R.string.settings_qs_reorder_selected, cursorIndex + 1, currentTile.title(context))
+            stringResource(R.string.settings_qs_reorder_selected, cursorIndex + 1, currentTile.title)
         else -> stringResource(R.string.settings_qs_reorder_fallback)
     }
     val pillText = when {
@@ -1811,13 +1958,12 @@ private fun QuickTogglesVisualReorderCard(
  */
 @Composable
 private fun ReorderableTccTile(
-    tile: QuickSettingTileId,
+    tile: ReorderTileItem,
     positionIndex: Int,
     isCursorSelected: Boolean,
     isGrabbed: Boolean,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
     val tccColors = LocalTccColors.current
     val appColors = LocalAppColors.current
     val lookSpec = LocalTccLookSpec.current
@@ -1895,9 +2041,14 @@ private fun ReorderableTccTile(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
+                    val tilePainter = if (tile.iconBitmap != null) {
+                        remember(tile.iconBitmap) { BitmapPainter(tile.iconBitmap) }
+                    } else {
+                        painterResource(id = tccDrawable(tile.iconRes))
+                    }
                     Image(
-                        painter = painterResource(id = tccDrawable(tile.iconRes)),
-                        contentDescription = tile.title(context),
+                        painter = tilePainter,
+                        contentDescription = tile.title,
                         colorFilter = ColorFilter.tint(iconTint),
                         modifier = Modifier.size(18.dp),
                         contentScale = ContentScale.Fit
@@ -1944,7 +2095,7 @@ private fun ReorderableTccTile(
                 contentAlignment = Alignment.TopCenter
             ) {
                 Text(
-                    text = tile.gridTitle(context),
+                    text = tile.gridTitle,
                     color = textColor,
                     fontSize = if (boost) 14.5.sp else 10.sp,
                     lineHeight = if (boost) 16.sp else 11.sp,
@@ -1969,16 +2120,33 @@ private fun EnableDisableTogglesSubPageContent(
     isClusterTuneInstalled: Boolean,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
+    registeredPlugins: List<RegisteredPlugin>,
+    enabledPluginTileKeys: Set<String>,
     promotedToManager: Boolean,
-    onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit
+    onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit,
+    onSetPluginTileEnabled: (String, Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val appColors = LocalAppColors.current
     val supportedTiles = remember(profile, isClusterTuneInstalled) {
         QuickSettingTileId.supportedEntries(profile, isClusterTuneInstalled)
     }
     val supportedSet = remember(supportedTiles) { supportedTiles.toSet() }
-    val totalCount = supportedTiles.size
-    val enabledCount = supportedTiles.count { it !in disabledQuickTiles }
+    val availablePluginTiles = remember(registeredPlugins, profile) {
+        buildList {
+            for (plugin in registeredPlugins) {
+                if (!plugin.isApiCompatible) continue
+                for (tile in plugin.supportedTilesOn(profile)) {
+                    add(plugin to tile)
+                }
+            }
+        }
+    }
+    val enabledPluginCount = availablePluginTiles.count { (plugin, tile) ->
+        plugin.isPluginEnabled && tile.tileKey in enabledPluginTileKeys
+    }
+    val totalCount = supportedTiles.size + availablePluginTiles.size
+    val enabledCount = supportedTiles.count { it !in disabledQuickTiles } + enabledPluginCount
 
     GamepadInfoBox(
         text = pluralStringResource(
@@ -2035,6 +2203,208 @@ private fun EnableDisableTogglesSubPageContent(
                 modifier = itemModifier
             )
         }
+    }
+
+    // Separate third-party plugins section at the very bottom, clearly marked as use at your own risk.
+    GamepadSectionHeader(
+        text = stringResource(
+            R.string.settings_qs_third_party_header,
+            enabledPluginCount,
+            availablePluginTiles.size
+        )
+    )
+
+    GamepadInfoBox(
+        text = stringResource(R.string.settings_qs_third_party_warning_title),
+        description = stringResource(R.string.settings_qs_third_party_warning_desc),
+        icon = Icons.Rounded.WarningAmber,
+        iconTint = appColors.error
+    )
+
+    if (availablePluginTiles.isEmpty()) {
+        GamepadInfoBox(
+            text = stringResource(R.string.settings_qs_third_party_empty_title),
+            description = stringResource(R.string.settings_qs_third_party_empty_desc),
+            icon = Icons.Rounded.Extension
+        )
+    } else {
+        availablePluginTiles.forEach { (plugin, tile) ->
+            val isTileEnabled = plugin.isPluginEnabled && (tile.tileKey in enabledPluginTileKeys)
+            val canToggle = plugin.isPluginEnabled && (!isTileEnabled || enabledCount > 1)
+            val description = when {
+                !plugin.isPluginEnabled -> stringResource(
+                    R.string.settings_qs_third_party_plugin_disabled_desc,
+                    plugin.appName
+                )
+                tile.description.isNotBlank() -> stringResource(
+                    R.string.settings_qs_third_party_tile_desc_format,
+                    plugin.appName,
+                    tile.description
+                )
+                else -> plugin.appName
+            }
+            GamepadToggleCard(
+                title = tile.listTitle,
+                description = if (plugin.isPluginEnabled && !canToggle) {
+                    stringResource(R.string.settings_qs_min_one_required, description)
+                } else {
+                    description
+                },
+                icon = Icons.Rounded.Extension,
+                checked = isTileEnabled,
+                enabled = canToggle,
+                itemKey = "toggle_visibility_${tile.tileKey}",
+                onCheckedChange = { nextEnabled ->
+                    onSetPluginTileEnabled(tile.tileKey, nextEnabled)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PluginsSettingsTabContent(
+    profile: DeviceProfile,
+    plugins: List<RegisteredPlugin>,
+    onTogglePluginEnabled: (packageName: String, enabled: Boolean) -> Unit,
+    onRescanPlugins: () -> Unit
+) {
+    val context = LocalContext.current
+    val appColors = LocalAppColors.current
+
+    GamepadInfoBox(
+        text = stringResource(R.string.settings_plugins_info_title),
+        description = stringResource(R.string.settings_plugins_info_desc),
+        icon = Icons.Rounded.WarningAmber,
+        iconTint = appColors.error
+    )
+
+    GamepadActionCard(
+        title = stringResource(R.string.settings_plugins_refresh_title),
+        description = stringResource(R.string.settings_plugins_refresh_desc),
+        icon = Icons.Rounded.Refresh,
+        actionText = stringResource(R.string.settings_plugins_action_rescan),
+        itemKey = "plugins_rescan",
+        onClick = onRescanPlugins,
+        modifier = Modifier.firstDeckItem()
+    )
+
+    if (plugins.isEmpty()) {
+        GamepadInfoBox(
+            text = stringResource(R.string.settings_plugins_empty_title),
+            description = stringResource(R.string.settings_plugins_empty_desc),
+            icon = Icons.Rounded.Extension
+        )
+        return
+    }
+
+    GamepadSectionHeader(
+        text = stringResource(R.string.settings_plugins_section_installed, plugins.size)
+    )
+
+    plugins.forEach { plugin ->
+        val supportedTiles = remember(plugin, profile) { plugin.supportedTilesOn(profile) }
+        val metaParts = buildList {
+            if (plugin.versionName.isNotBlank()) {
+                add(stringResource(R.string.settings_plugins_meta_version, plugin.versionName))
+            }
+            if (plugin.author.isNotBlank()) {
+                add(stringResource(R.string.settings_plugins_meta_by_author, plugin.author))
+            }
+            add(plugin.packageName)
+        }
+        val tileSummary = if (supportedTiles.isEmpty()) {
+            stringResource(R.string.settings_plugins_meta_no_supported_tiles, profile.displayName)
+        } else {
+            stringResource(
+                R.string.settings_plugins_meta_tiles_count,
+                supportedTiles.size,
+                supportedTiles.joinToString(", ") { it.listTitle }
+            )
+        }
+        val bodyDesc = plugin.description.ifBlank {
+            stringResource(R.string.settings_plugins_no_description)
+        }
+        val fullDesc = "$bodyDesc\n${metaParts.joinToString(" • ")} • $tileSummary"
+
+        if (!plugin.isApiCompatible) {
+            GamepadInfoBox(
+                text = "${plugin.appName} — ${stringResource(R.string.settings_plugins_incompatible_title, plugin.apiVersion)}",
+                description = "${stringResource(R.string.settings_plugins_incompatible_desc, plugin.apiVersion, BdsaPluginContract.API_VERSION)}\n$fullDesc",
+                icon = Icons.Rounded.WarningAmber,
+                iconTint = appColors.error
+            )
+        } else {
+            GamepadToggleCard(
+                title = plugin.appName,
+                description = fullDesc,
+                checked = plugin.isPluginEnabled,
+                icon = Icons.Rounded.Extension,
+                itemKey = "plugin_toggle_${plugin.packageName}",
+                onCheckedChange = { nextEnabled ->
+                    onTogglePluginEnabled(plugin.packageName, nextEnabled)
+                }
+            )
+        }
+
+        val settingsComponent = plugin.settingsActivity
+        if (settingsComponent != null && plugin.isApiCompatible) {
+            GamepadActionCard(
+                title = stringResource(R.string.settings_plugins_configure_title, plugin.appName),
+                description = stringResource(R.string.settings_plugins_configure_desc),
+                icon = Icons.Rounded.Tune,
+                actionText = stringResource(R.string.settings_plugins_action_configure),
+                itemKey = "plugin_configure_${plugin.packageName}",
+                onClick = {
+                    launchPluginSettingsOnPrimaryDisplay(context, settingsComponent)
+                }
+            )
+        }
+
+        GamepadActionCard(
+            title = stringResource(R.string.settings_plugins_app_info_title, plugin.appName),
+            description = stringResource(R.string.settings_plugins_app_info_desc, plugin.packageName),
+            icon = Icons.Rounded.Info,
+            actionText = stringResource(R.string.settings_plugins_action_app_info),
+            itemKey = "plugin_app_info_${plugin.packageName}",
+            onClick = {
+                openAppDetailsOnPrimaryDisplay(context, plugin.packageName)
+            }
+        )
+    }
+}
+
+private fun launchPluginSettingsOnPrimaryDisplay(
+    context: Context,
+    componentName: ComponentName
+) {
+    try {
+        val intent = Intent().apply {
+            component = componentName
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val options = ActivityOptions.makeBasic()
+        options.setLaunchDisplayId(Display.DEFAULT_DISPLAY)
+        context.startActivity(intent, options.toBundle())
+    } catch (_: Throwable) {
+    }
+}
+
+private fun openAppDetailsOnPrimaryDisplay(
+    context: Context,
+    packageName: String
+) {
+    try {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null)
+        ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val options = ActivityOptions.makeBasic()
+        options.setLaunchDisplayId(Display.DEFAULT_DISPLAY)
+        context.startActivity(intent, options.toBundle())
+    } catch (_: Throwable) {
     }
 }
 

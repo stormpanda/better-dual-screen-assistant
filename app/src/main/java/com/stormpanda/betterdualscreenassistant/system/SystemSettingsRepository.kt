@@ -27,6 +27,8 @@ import android.app.UiModeManager
 import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.compose.ui.graphics.toArgb
+import com.stormpanda.betterdualscreenassistant.plugin.BdsaPluginContract
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
@@ -465,7 +467,10 @@ class SystemSettingsRepository(private val context: Context) {
     private val _preventAccidentalHome = MutableStateFlow(readPreventAccidentalHome())
     val preventAccidentalHome: StateFlow<Boolean> = _preventAccidentalHome.asStateFlow()
 
-    private val _quickTileOrder = MutableStateFlow(readSavedQuickTileOrder())
+    private val _unifiedQuickTileOrder = MutableStateFlow(readSavedUnifiedQuickTileOrder())
+    val unifiedQuickTileOrder: StateFlow<List<String>> = _unifiedQuickTileOrder.asStateFlow()
+
+    private val _quickTileOrder = MutableStateFlow(extractBuiltInTileOrder(_unifiedQuickTileOrder.value))
     val quickTileOrder: StateFlow<List<QuickSettingTileId>> = _quickTileOrder.asStateFlow()
 
     private val _disabledQuickTiles = MutableStateFlow(readSavedDisabledQuickTiles())
@@ -714,7 +719,9 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
             PREF_QUICK_TILE_ORDER -> {
-                _quickTileOrder.value = readSavedQuickTileOrder()
+                val unified = readSavedUnifiedQuickTileOrder()
+                _unifiedQuickTileOrder.value = unified
+                _quickTileOrder.value = extractBuiltInTileOrder(unified)
             }
             PREF_DISABLED_QUICK_TILES -> {
                 _disabledQuickTiles.value = readSavedDisabledQuickTiles()
@@ -1091,7 +1098,9 @@ class SystemSettingsRepository(private val context: Context) {
         _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
         _preventAccidentalHome.value = readPreventAccidentalHome()
         refreshClusterTuneInstalled()
-        _quickTileOrder.value = readSavedQuickTileOrder()
+        val unifiedOrder = readSavedUnifiedQuickTileOrder()
+        _unifiedQuickTileOrder.value = unifiedOrder
+        _quickTileOrder.value = extractBuiltInTileOrder(unifiedOrder)
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         if (refreshMegingiardTheme) {
             refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
@@ -2576,12 +2585,36 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setQuickTileOrder(newOrder: List<QuickSettingTileId>) {
-        val normalized = normalizeQuickTileOrder(newOrder)
-        _quickTileOrder.value = normalized
+        val normalizedBuiltIn = normalizeQuickTileOrder(newOrder)
+        val existingPlugins = _unifiedQuickTileOrder.value.filter { BdsaPluginContract.isPluginTileKey(it) }
+        setUnifiedQuickTileOrder(normalizedBuiltIn.map { it.key } + existingPlugins)
+    }
+
+    fun setUnifiedQuickTileOrder(newOrder: List<String>) {
+        val normalized = normalizeUnifiedQuickTileOrder(newOrder)
+        _unifiedQuickTileOrder.value = normalized
+        _quickTileOrder.value = extractBuiltInTileOrder(normalized)
         prefs.edit().putString(
             PREF_QUICK_TILE_ORDER,
-            normalized.joinToString(",") { it.key }
+            normalized.joinToString(",")
         ).apply()
+    }
+
+    fun ensureQuickTileKeyInOrder(tileKey: String) {
+        if (!BdsaPluginContract.isPluginTileKey(tileKey)) return
+        val current = _unifiedQuickTileOrder.value
+        if (tileKey !in current) {
+            setUnifiedQuickTileOrder(current + tileKey)
+        }
+    }
+
+    fun prunePluginTilesFromOrder(removedKeys: Set<String>) {
+        if (removedKeys.isEmpty()) return
+        val current = _unifiedQuickTileOrder.value
+        val filtered = current.filterNot { it in removedKeys }
+        if (filtered.size != current.size) {
+            setUnifiedQuickTileOrder(filtered)
+        }
     }
 
     fun moveActiveQuickTile(fromActiveIndex: Int, toActiveIndex: Int) {
@@ -2605,7 +2638,38 @@ class SystemSettingsRepository(private val context: Context) {
         setQuickTileOrder(rebuilt)
     }
 
-    fun setQuickTileEnabled(tile: QuickSettingTileId, enabled: Boolean) {
+    fun moveActiveUnifiedQuickTile(
+        fromActiveIndex: Int,
+        toActiveIndex: Int,
+        activeOrderedKeys: List<String>
+    ) {
+        if (fromActiveIndex !in activeOrderedKeys.indices || toActiveIndex !in activeOrderedKeys.indices) return
+        if (fromActiveIndex == toActiveIndex) return
+
+        // Ensure all active keys exist in the unified list before permuting them in-place.
+        val baseOrder = _unifiedQuickTileOrder.value.toMutableList()
+        for (key in activeOrderedKeys) {
+            if (key !in baseOrder) {
+                baseOrder.add(key)
+            }
+        }
+        val activeSet = activeOrderedKeys.toSet()
+        val reorderedActive = activeOrderedKeys.toMutableList()
+        val moved = reorderedActive.removeAt(fromActiveIndex)
+        reorderedActive.add(toActiveIndex, moved)
+
+        val activeIterator = reorderedActive.iterator()
+        val rebuilt = baseOrder.map { item ->
+            if (item !in activeSet) item else activeIterator.next()
+        }
+        setUnifiedQuickTileOrder(rebuilt)
+    }
+
+    fun setQuickTileEnabled(
+        tile: QuickSettingTileId,
+        enabled: Boolean,
+        activePluginTileCount: Int = 0
+    ) {
         val current = _disabledQuickTiles.value.toMutableSet()
         if (enabled) {
             current.remove(tile)
@@ -2614,8 +2678,9 @@ class SystemSettingsRepository(private val context: Context) {
                 DeviceProfile.current(context),
                 _isClusterTuneInstalled.value
             )
-            val enabledCount = supportedTiles.count { it !in current }
-            if (tile !in current && enabledCount <= 1) {
+            val enabledBuiltInCount = supportedTiles.count { it !in current }
+            val totalEnabledCount = enabledBuiltInCount + activePluginTileCount.coerceAtLeast(0)
+            if (tile !in current && totalEnabledCount <= 1) {
                 // Keep at least 1 supported toggle enabled
                 return
             }
@@ -2635,8 +2700,22 @@ class SystemSettingsRepository(private val context: Context) {
             .apply()
     }
 
+    fun ensureAtLeastOneTileEnabled(activePluginTileCount: Int) {
+        if (activePluginTileCount > 0) return
+        val supportedTiles = QuickSettingTileId.supportedEntries(
+            DeviceProfile.current(context),
+            _isClusterTuneInstalled.value
+        )
+        val disabled = _disabledQuickTiles.value
+        if (supportedTiles.isNotEmpty() && supportedTiles.all { it in disabled }) {
+            setQuickTileEnabled(supportedTiles.first(), enabled = true)
+        }
+    }
+
     fun resetQuickTilesToDefault() {
         val defaultDisabled = QuickSettingTileId.defaultDisabled
+        val defaultUnified = QuickSettingTileId.defaultOrder.map { it.key }
+        _unifiedQuickTileOrder.value = defaultUnified
         _quickTileOrder.value = QuickSettingTileId.defaultOrder
         _disabledQuickTiles.value = defaultDisabled
         prefs.edit()
@@ -2650,6 +2729,7 @@ class SystemSettingsRepository(private val context: Context) {
                 QuickSettingTileId.entries.joinToString(",") { it.key }
             )
             .apply()
+        PluginRegistry.getInstance(context).disableAllPluginTiles()
     }
 
     private fun normalizeQuickTileOrder(order: List<QuickSettingTileId>): List<QuickSettingTileId> {
@@ -2667,12 +2747,40 @@ class SystemSettingsRepository(private val context: Context) {
         return result
     }
 
-    private fun readSavedQuickTileOrder(): List<QuickSettingTileId> {
-        val raw = prefs.getString(PREF_QUICK_TILE_ORDER, null)
-        if (raw.isNullOrBlank()) return QuickSettingTileId.defaultOrder
-        val parsed = raw.split(",").mapNotNull { QuickSettingTileId.fromKey(it.trim()) }
+    private fun normalizeUnifiedQuickTileOrder(order: List<String>): List<String> {
+        val result = mutableListOf<String>()
+        val seen = HashSet<String>()
+        for (raw in order) {
+            val token = raw.trim()
+            if (token.isEmpty()) continue
+            val isValid = QuickSettingTileId.fromKey(token) != null ||
+                BdsaPluginContract.parsePluginTileKey(token) != null
+            if (isValid && seen.add(token)) {
+                result.add(token)
+            }
+        }
+        for (fallback in QuickSettingTileId.defaultOrder) {
+            if (seen.add(fallback.key)) {
+                result.add(fallback.key)
+            }
+        }
+        return result
+    }
+
+    private fun extractBuiltInTileOrder(unified: List<String>): List<QuickSettingTileId> {
+        val parsed = unified.mapNotNull { QuickSettingTileId.fromKey(it) }
         return normalizeQuickTileOrder(parsed)
     }
+
+    private fun readSavedUnifiedQuickTileOrder(): List<String> {
+        val raw = prefs.getString(PREF_QUICK_TILE_ORDER, null)
+        if (raw.isNullOrBlank()) return QuickSettingTileId.defaultOrder.map { it.key }
+        val tokens = raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        return normalizeUnifiedQuickTileOrder(tokens)
+    }
+
+    private fun readSavedQuickTileOrder(): List<QuickSettingTileId> =
+        extractBuiltInTileOrder(readSavedUnifiedQuickTileOrder())
 
     private fun readSavedDisabledQuickTiles(): Set<QuickSettingTileId> {
         val allKnownKeysStr = QuickSettingTileId.entries.joinToString(",") { it.key }
