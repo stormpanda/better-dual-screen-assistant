@@ -922,12 +922,19 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
-        val stockPkgsRegex = DeviceProfile.allStockAssistantPackages.joinToString("|") {
-            it.replace(".", """\.""")
+        val excludedPackages = LinkedHashSet<String>().apply {
+            add(PrivilegedHelperMain.APP_PACKAGE_NAME)
+            addAll(DeviceProfile.allStockAssistantPackages)
+            add("com.android.systemui")
+            addAll(resolveLauncherPackages(context))
         }
+        val pkgNameRegex = Regex("^[A-Za-z0-9._]+$")
+        val excludedPkgsAwkRegex = excludedPackages
+            .filter { pkgNameRegex.matches(it) }
+            .joinToString("|") { it.replace(".", """\.""") }
         val script = """
             count=0
-            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|com\.stormpanda\.betterdualscreenassistant|${stockPkgsRegex}|com\.android\.systemui)/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
+            for id in $(dumpsys activity recents | awk '/\* Recent #/{in_rec=1; id=""; skip=0} in_rec && /type=standard/ && match($0, /#[0-9]+/){id=substr($0, RSTART+1, RLENGTH-1)} in_rec && /(autoRemoveRecents=true|${excludedPkgsAwkRegex})/{skip=1} in_rec && /realActivity=/{if (id != "" && !skip) print id; in_rec=0}'); do
                 am stack remove "${'$'}id" >/dev/null 2>&1 && count=${'$'}((count + 1))
             done
             echo "CLEARED:${'$'}count"
@@ -937,6 +944,30 @@ object PrivilegedBridge {
         val out = res.getOrDefault("")
         val match = Regex("""CLEARED:(\d+)""").find(out) ?: return -1
         return match.groupValues[1].toIntOrNull() ?: 0
+    }
+
+    internal fun resolveLauncherPackages(context: Context): Set<String> {
+        val pm = context.packageManager ?: return emptySet()
+        val packages = LinkedHashSet<String>()
+        val categories = listOf(
+            android.content.Intent.CATEGORY_HOME,
+            android.content.Intent.CATEGORY_SECONDARY_HOME
+        )
+        for (category in categories) {
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                    .addCategory(category)
+                val matches = pm.queryIntentActivities(intent, 0)
+                for (ri in matches) {
+                    val pkg = ri.activityInfo?.packageName
+                    if (!pkg.isNullOrEmpty()) {
+                        packages.add(pkg)
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return packages
     }
 
     internal fun resolvePhysicalDisplayId(context: Context, logicalDisplayId: Int): String? {

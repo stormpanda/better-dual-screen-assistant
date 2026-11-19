@@ -918,9 +918,33 @@ class PrivilegedBinderProviderAndHelperTest {
     }
 
     @Test
-    fun `HelperBinder TRANSACTION_CLEAR_ALL_RECENT_TASKS invokes removeAllVisibleRecentTasks and counts clearable tasks`() {
+    fun `HelperBinder TRANSACTION_CLEAR_ALL_RECENT_TASKS removes non-launcher tasks via removeTask and preserves CATEGORY_HOME launchers`() {
         val helperBinder = createAuthorizedHelperBinder()
+        val removedTaskIds = mutableListOf<Int>()
         var removeAllCalled = false
+
+        val fakePm = object {
+            @Suppress("unused")
+            fun queryIntentActivities(
+                intent: android.content.Intent,
+                resolvedType: String?,
+                flags: Long,
+                userId: Int
+            ): List<android.content.pm.ResolveInfo> {
+                assertEquals(0, userId)
+                val pkg = when {
+                    intent.hasCategory(android.content.Intent.CATEGORY_HOME) -> "com.example.duallauncher"
+                    intent.hasCategory(android.content.Intent.CATEGORY_SECONDARY_HOME) -> "com.example.secondarylauncher"
+                    else -> return emptyList()
+                }
+                val ri = android.content.pm.ResolveInfo().apply {
+                    activityInfo = android.content.pm.ActivityInfo().apply {
+                        packageName = pkg
+                    }
+                }
+                return listOf(ri)
+            }
+        }
 
         val fakeAtm = object {
             @Suppress("unused")
@@ -943,7 +967,29 @@ class PrivilegedBinderProviderAndHelperTest {
                         "${PrivilegedHelperMain.APP_PACKAGE_NAME}.MainActivity"
                     )
                 }
-                return listOf(appTask1, appTask2, bdsaTask)
+                val homeLauncherBottomTask = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 104
+                    topActivity = android.content.ComponentName(
+                        "com.example.duallauncher",
+                        "com.example.duallauncher.BottomScreenActivity"
+                    )
+                }
+                val secondaryLauncherTask = android.app.ActivityManager.RecentTaskInfo().apply {
+                    taskId = 105
+                    baseIntent = android.content.Intent().setComponent(
+                        android.content.ComponentName(
+                            "com.example.secondarylauncher",
+                            "com.example.secondarylauncher.SecondaryActivity"
+                        )
+                    )
+                }
+                return listOf(appTask1, appTask2, bdsaTask, homeLauncherBottomTask, secondaryLauncherTask)
+            }
+
+            @Suppress("unused")
+            fun removeTask(taskId: Int): Boolean {
+                removedTaskIds.add(taskId)
+                return true
             }
 
             @Suppress("unused")
@@ -951,6 +997,7 @@ class PrivilegedBinderProviderAndHelperTest {
                 removeAllCalled = true
             }
         }
+        helperBinder.packageManagerOverride = fakePm
         helperBinder.activityTaskManagerOverride = fakeAtm
 
         val data = Parcel.obtain().apply {
@@ -968,7 +1015,11 @@ class PrivilegedBinderProviderAndHelperTest {
         reply.setDataPosition(0)
         reply.readException()
         assertEquals(2, reply.readInt())
-        assertTrue(removeAllCalled)
+        assertEquals(listOf(101, 102), removedTaskIds)
+        assertFalse(
+            "Must use per-task removeTask instead of blanket removeAllVisibleRecentTasks so launcher tasks survive",
+            removeAllCalled
+        )
         data.recycle()
         reply.recycle()
     }

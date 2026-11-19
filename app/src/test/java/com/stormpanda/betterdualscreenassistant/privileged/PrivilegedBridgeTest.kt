@@ -440,14 +440,29 @@ class PrivilegedBridgeTest {
         setHelperBinder(helper)
         assertEquals(4, PrivilegedBridge.clearAllRecentTasks(context))
 
-        // Fallback to PServerClient when helper binder is absent
+        // Fallback to PServerClient when helper binder is absent (excludes CATEGORY_HOME launchers)
         setHelperBinder(null)
+        val shadowPm = org.robolectric.Shadows.shadowOf(context.packageManager)
+        val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_HOME)
+        shadowPm.addResolveInfoForIntent(
+            homeIntent,
+            android.content.pm.ResolveInfo().apply {
+                activityInfo = android.content.pm.ActivityInfo().apply {
+                    packageName = "com.example.customlauncher"
+                }
+            }
+        )
         pServerCommands.clear()
         pServerResponder = { cmd ->
             if (cmd.contains("dumpsys activity recents")) "CLEARED:2\n" else ""
         }
         assertEquals(2, PrivilegedBridge.clearAllRecentTasks(context))
         assertTrue(pServerCommands.any { it.contains("am stack remove") })
+        assertTrue(
+            "Fallback shell script must exclude installed CATEGORY_HOME launcher packages",
+            pServerCommands.any { it.contains("""com\.example\.customlauncher""") }
+        )
     }
 
     @Test

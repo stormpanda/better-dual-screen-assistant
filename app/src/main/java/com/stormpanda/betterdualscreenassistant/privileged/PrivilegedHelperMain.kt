@@ -90,7 +90,7 @@ object PrivilegedHelperMain {
     const val TRANSACTION_SUPPRESS_STOCK_ASSISTANT = IBinder.FIRST_CALL_TRANSACTION + 31
     const val TRANSACTION_GET_PIN_SCREEN_MODE = IBinder.FIRST_CALL_TRANSACTION + 32
 
-    const val HELPER_PROTOCOL_VERSION = 27
+    const val HELPER_PROTOCOL_VERSION = 28
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
 
     internal val CAST_PROJECTION_PACKAGES: Set<String> = setOf(
@@ -534,6 +534,8 @@ object PrivilegedHelperMain {
         internal var stockStartupFallbackSleepMsOverride: Long? = null
         internal var stockWorkerExecutorOverride: ((Runnable) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
+        internal var packageManagerOverride: Any? = null
+        internal var launcherPackagesOverride: (() -> Set<String>)? = null
         internal var windowManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
@@ -1547,45 +1549,105 @@ object PrivilegedHelperMain {
         }
 
         /**
-         * Closes all visible recent app tasks via `IActivityTaskManager.removeAllVisibleRecentTasks()`
-         * (the exact system call invoked by Android SystemUI Recents' "Clear all" button), returning
-         * the number of clearable recent tasks (`>= 0`) or `-1` on error.
+         * Closes all visible recent non-launcher app tasks via per-task
+         * `IActivityTaskManager.removeTask(taskId)`, skipping any package that declares an
+         * Android Home / Secondary Home launcher activity (`CATEGORY_HOME` /
+         * `CATEGORY_SECONDARY_HOME`) so dual-screen launchers running a standard task on the
+         * secondary display are never terminated.
+         *
+         * Returns the number of cleared tasks (`>= 0`) or `-1` on error.
          */
         private fun clearAllRecentTasksInternal(): Int {
             val atm = activityTaskManagerOverride ?: activityTaskManagerProxy ?: return -1
             return try {
-                val candidateTaskIds = queryClearableRecentTaskIds(atm)
-                val removeAllMethod = atm.javaClass.methods.firstOrNull { m ->
-                    m.name == "removeAllVisibleRecentTasks" && m.parameterTypes.isEmpty()
-                }
-                if (removeAllMethod != null) {
-                    removeAllMethod.invoke(atm)
-                    return candidateTaskIds.size
-                }
+                val launcherPackages = resolveLauncherPackagesInternal()
+                val queryResult = queryClearableRecentTasks(atm, launcherPackages)
                 val removeTaskMethod = atm.javaClass.methods.firstOrNull { m ->
                     m.name == "removeTask" &&
                         m.parameterTypes.size == 1 &&
                         m.parameterTypes[0] == Int::class.javaPrimitiveType
-                } ?: return -1
-                var removed = 0
-                for (taskId in candidateTaskIds) {
-                    val ok = removeTaskMethod.invoke(atm, taskId) as? Boolean ?: false
-                    if (ok) removed++
                 }
-                removed
+                if (removeTaskMethod != null) {
+                    var removed = 0
+                    for (taskId in queryResult.clearableTaskIds) {
+                        val ok = removeTaskMethod.invoke(atm, taskId) as? Boolean ?: false
+                        if (ok) removed++
+                    }
+                    return removed
+                }
+                if (queryResult.skippedLauncherTask) {
+                    return 0
+                }
+                val removeAllMethod = atm.javaClass.methods.firstOrNull { m ->
+                    m.name == "removeAllVisibleRecentTasks" && m.parameterTypes.isEmpty()
+                } ?: return -1
+                removeAllMethod.invoke(atm)
+                queryResult.clearableTaskIds.size
             } catch (t: Throwable) {
                 Log.w(TAG, "clearAllRecentTasksInternal failed", t)
                 -1
             }
         }
 
-        private fun queryClearableRecentTaskIds(atm: Any): List<Int> {
+        private data class ClearableRecentTasksResult(
+            val clearableTaskIds: List<Int>,
+            val skippedLauncherTask: Boolean
+        )
+
+        private fun resolveLauncherPackagesInternal(): Set<String> {
+            launcherPackagesOverride?.let { return it() }
+            val pm = packageManagerOverride ?: packageManagerProxy ?: return emptySet()
+            val queryMethod = pm.javaClass.methods.firstOrNull { m ->
+                m.name == "queryIntentActivities" && m.parameterTypes.size == 4
+            } ?: return emptySet()
+            val flagsParam: Any = if (queryMethod.parameterTypes[2] == Long::class.javaPrimitiveType) {
+                0L
+            } else {
+                0
+            }
+            val categories = listOf(
+                android.content.Intent.CATEGORY_HOME,
+                android.content.Intent.CATEGORY_SECONDARY_HOME
+            )
+            val packages = LinkedHashSet<String>()
+            for (category in categories) {
+                try {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                        .addCategory(category)
+                    val rawResult = queryMethod.invoke(pm, intent, null, flagsParam, 0) ?: continue
+                    val resolveInfos: List<*> = when (rawResult) {
+                        is List<*> -> rawResult
+                        else -> {
+                            val getList = rawResult.javaClass.methods.firstOrNull { m ->
+                                m.name == "getList" && m.parameterTypes.isEmpty()
+                            }
+                            getList?.invoke(rawResult) as? List<*> ?: emptyList<Any?>()
+                        }
+                    }
+                    for (info in resolveInfos) {
+                        val ri = info as? android.content.pm.ResolveInfo ?: continue
+                        val pkg = ri.activityInfo?.packageName
+                        if (!pkg.isNullOrEmpty()) {
+                            packages.add(pkg)
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            return packages
+        }
+
+        private fun queryClearableRecentTasks(
+            atm: Any,
+            launcherPackages: Set<String>
+        ): ClearableRecentTasksResult {
             return try {
                 val getRecentMethod = atm.javaClass.methods.firstOrNull { m ->
                     m.name == "getRecentTasks" && m.parameterTypes.size == 3
-                } ?: return emptyList()
+                } ?: return ClearableRecentTasksResult(emptyList(), false)
                 // ActivityManager.RECENT_IGNORE_UNAVAILABLE == 2 (returns tasks visible in Recents)
-                val rawResult = getRecentMethod.invoke(atm, 256, 2, 0) ?: return emptyList()
+                val rawResult = getRecentMethod.invoke(atm, 256, 2, 0)
+                    ?: return ClearableRecentTasksResult(emptyList(), false)
                 val tasks: List<*> = when (rawResult) {
                     is List<*> -> rawResult
                     else -> {
@@ -1596,24 +1658,21 @@ object PrivilegedHelperMain {
                     }
                 }
                 val ids = LinkedHashSet<Int>()
+                var skippedLauncherTask = false
                 for (task in tasks) {
                     if (task == null) continue
                     try {
                         val taskId = task.javaClass.getField("taskId").getInt(task)
                         if (taskId <= 0) continue
-                        val topPkg = (task.javaClass.getField("topActivity").get(task)
-                            as? android.content.ComponentName)?.packageName
-                        val basePkg = try {
-                            (task.javaClass.getField("baseIntent").get(task) as? android.content.Intent)
-                                ?.component?.packageName
-                        } catch (_: Throwable) {
-                            null
-                        }
-                        val pkg = topPkg ?: basePkg ?: ""
+                        val pkg = extractTaskPackageName(task)
                         if (pkg == APP_PACKAGE_NAME ||
                             isStockAssistantPackage(pkg) ||
                             pkg == SYSUI_PACKAGE
                         ) {
+                            continue
+                        }
+                        if (pkg.isNotEmpty() && pkg in launcherPackages) {
+                            skippedLauncherTask = true
                             continue
                         }
                         val actType = try {
@@ -1630,9 +1689,28 @@ object PrivilegedHelperMain {
                     } catch (_: Throwable) {
                     }
                 }
-                ids.toList()
+                ClearableRecentTasksResult(ids.toList(), skippedLauncherTask)
             } catch (_: Throwable) {
-                emptyList()
+                ClearableRecentTasksResult(emptyList(), false)
+            }
+        }
+
+        private fun extractTaskPackageName(task: Any): String {
+            val componentFields = arrayOf("topActivity", "baseActivity", "realActivity", "origActivity")
+            for (fieldName in componentFields) {
+                val pkg = try {
+                    (task.javaClass.getField(fieldName).get(task) as? android.content.ComponentName)
+                        ?.packageName
+                } catch (_: Throwable) {
+                    null
+                }
+                if (!pkg.isNullOrEmpty()) return pkg
+            }
+            return try {
+                val intent = task.javaClass.getField("baseIntent").get(task) as? android.content.Intent
+                intent?.component?.packageName ?: intent?.`package` ?: ""
+            } catch (_: Throwable) {
+                ""
             }
         }
 
