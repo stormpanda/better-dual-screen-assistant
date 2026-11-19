@@ -293,4 +293,46 @@ class TelemetryMonitorTest {
             TelemetryMonitor.resolveCpuThermalPath()
         )
     }
+
+    @Test
+    fun `computeRamUsageSnapshot prefers proc meminfo MemAvailable with stock nominal scaling`() {
+        val memInfoSample = """
+            MemTotal:       11520000 kB
+            MemFree:          650000 kB
+            MemAvailable:    6720000 kB
+            Buffers:          120000 kB
+            Cached:          2100000 kB
+        """.trimIndent()
+
+        // Even when ActivityManager.MemoryInfo.availMem lags behind after a heavy crash (2.17 GB),
+        // computeRamUsageSnapshot reflects /proc/meminfo MemAvailable scaled to nominal 12 GB (~5.00 GB used)
+        val snapshot = TelemetryMonitor.computeRamUsageSnapshot(
+            memInfoText = memInfoSample,
+            amTotalBytes = 11_796_480_000L,
+            amAvailBytes = 2_170_000_000L
+        )
+        assertEquals(12_000_000_000L, snapshot.totalBytes)
+        assertEquals(7_000_000_000L, snapshot.availableBytes)
+        assertEquals(5_000_000_000L, snapshot.usedBytes)
+    }
+
+    @Test
+    fun `computeRamUsageSnapshot falls back to ActivityManager MemoryInfo when proc meminfo is unavailable`() {
+        val snapshot = TelemetryMonitor.computeRamUsageSnapshot(
+            memInfoText = null,
+            amTotalBytes = 12_000_000_000L,
+            amAvailBytes = 7_250_000_000L
+        )
+        assertEquals(12_000_000_000L, snapshot.totalBytes)
+        assertEquals(7_250_000_000L, snapshot.availableBytes)
+        assertEquals(4_750_000_000L, snapshot.usedBytes)
+    }
+
+    @Test
+    fun `roundNominalMemoryBytes matches stock nominal decimal capacity rounding`() {
+        assertEquals(8_000_000_000L, TelemetryMonitor.roundNominalMemoryBytes(7_650_000_000L))
+        assertEquals(12_000_000_000L, TelemetryMonitor.roundNominalMemoryBytes(11_796_480_000L))
+        assertEquals(16_000_000_000L, TelemetryMonitor.roundNominalMemoryBytes(15_600_000_000L))
+        assertEquals(0L, TelemetryMonitor.roundNominalMemoryBytes(0L))
+    }
 }

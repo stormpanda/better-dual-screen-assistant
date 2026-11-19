@@ -2721,10 +2721,9 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
         }
-        val memInfo = ActivityManager.MemoryInfo()
-        am?.getMemoryInfo(memInfo)
-        val availGb = memInfo.availMem / (1024.0 * 1024.0 * 1024.0)
-        val formattedMem = String.format("%.2f GB", availGb)
+        val ramSnapshot = TelemetryMonitor.readRamUsageSnapshot(am)
+        val availGb = ramSnapshot.availableBytes / 1_000_000_000.0
+        val formattedMem = String.format(java.util.Locale.US, "%.2f GB", availGb)
         return killedCount to formattedMem
     }
 
