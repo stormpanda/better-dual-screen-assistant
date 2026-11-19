@@ -337,34 +337,19 @@ class ScreenOverlayManager(
             }
 
             // Replicate TccServices.u(): exact pixel dimensions of bottom display (Display 4 on AYN Thor,
-            // Display 2 on Retroid Pocket Duo), Gravity.CENTER, and no FLAG_LAYOUT_NO_LIMITS so it never overflows.
-            var overlayFlags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
-                WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-            if (currentProfile.useLocalFocusMode) {
-                overlayFlags = overlayFlags or WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
-            }
-            val lp = WindowManager.LayoutParams(
-                realSize.x,
-                realSize.y,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                overlayFlags,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.CENTER
-                softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
-                windowAnimations = R.style.tcc_anim
-                fitInsetsTypes = 0
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
+            // Display 2 on Retroid Pocket Duo), Gravity.CENTER, FLAG_FULLSCREEN, SOFT_INPUT_ADJUST_NOTHING,
+            // and no FLAG_LAYOUT_NO_LIMITS so it never overflows onto the secondary display.
+            val lp = createAssistantOverlayLayoutParams(
+                width = realSize.x,
+                height = realSize.y,
+                useLocalFocusMode = currentProfile.useLocalFocusMode
+            )
 
             try {
                 if (!android.provider.Settings.canDrawOverlays(context)) {
                     PServerClient.ensurePermissionsGranted(context)
                 }
                 addOverlayViewWithPrivilegeFallback(wm, composeView, lp)
-                applyImmersiveFullscreen(composeView)
                 composeView.requestFocus()
                 composeView.animate()
                     .withLayer()
@@ -1027,6 +1012,35 @@ class ScreenOverlayManager(
                 })
                 start()
             }
+        }
+    }
+
+    internal fun createAssistantOverlayLayoutParams(
+        width: Int,
+        height: Int,
+        useLocalFocusMode: Boolean
+    ): WindowManager.LayoutParams {
+        @Suppress("DEPRECATION")
+        var overlayFlags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
+            WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        if (useLocalFocusMode) {
+            overlayFlags = overlayFlags or WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE
+        }
+        return WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            overlayFlags,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            windowAnimations = R.style.tcc_anim
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
     }
 

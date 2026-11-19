@@ -74,6 +74,23 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
+ * Formats network receive throughput for the status bar, suppressing tiny idle background packet
+ * trickle (`< 0.5 KB/s`) so quiescent Wi-Fi keepalives do not continuously dirty and re-composite
+ * the secondary 60 Hz display (which interferes with OLED static-screen detection and 120 Hz
+ * top-screen game frame pacing).
+ */
+internal fun formatNetworkSpeedText(bytesDelta: Long, elapsedMs: Long): String {
+    if (bytesDelta <= 0L || elapsedMs <= 0L) return "0.0KB/S"
+    val dtSec = (elapsedMs / 1000f).coerceAtLeast(0.1f)
+    val kbPerSec = (bytesDelta / 1024f) / dtSec
+    return when {
+        kbPerSec < 0.5f -> "0.0KB/S"
+        kbPerSec >= 1000f -> String.format(Locale.US, "%.1fMB/S", kbPerSec / 1024f)
+        else -> String.format(Locale.US, "%.1fKB/S", kbPerSec)
+    }
+}
+
+/**
  * Replicates `StatusBar` (`status_bar.xml`) across AYN Smooth and Retroid Pixel UI looks.
  * Left: `TimeView` (tapping triggers memory cleanup just like the stock app) + optional recording badge.
  * Right: `BluetoothView`, `InternetSpeedView`, `WifiView`, and `BatteryView`.
@@ -211,16 +228,11 @@ fun StatusBarRow(
             delay(2000L)
             val nowRx = TrafficStats.getTotalRxBytes()
             val nowTime = System.currentTimeMillis()
-            val dtSec = ((nowTime - lastTime) / 1000f).coerceAtLeast(0.1f)
+            val elapsedMs = nowTime - lastTime
             val diffBytes = (nowRx - lastRx).coerceAtLeast(0L)
             lastRx = nowRx
             lastTime = nowTime
-            val kbPerSec = (diffBytes / 1024f) / dtSec
-            netSpeedText = if (kbPerSec >= 1000f) {
-                String.format(Locale.US, "%.1fMB/S", kbPerSec / 1024f)
-            } else {
-                String.format(Locale.US, "%.1fKB/S", kbPerSec)
-            }
+            netSpeedText = formatNetworkSpeedText(diffBytes, elapsedMs)
         }
     }
 

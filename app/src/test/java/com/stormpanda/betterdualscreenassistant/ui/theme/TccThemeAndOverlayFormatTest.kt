@@ -569,4 +569,51 @@ class TccThemeAndOverlayFormatTest {
             com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenCastTileLabel(namedCast)
         )
     }
+
+    @Test
+    fun `formatNetworkSpeedText suppresses idle keepalive trickle and formats active throughput`() {
+        assertEquals(
+            "0.0KB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(0L, 2000L)
+        )
+        // 500 bytes over 2s = 0.24 KB/s (< 0.5 KB/s threshold) -> stays quiet at 0.0KB/S
+        assertEquals(
+            "0.0KB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(500L, 2000L)
+        )
+        // 10240 bytes over 2s = 5.0 KB/s
+        assertEquals(
+            "5.0KB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(10_240L, 2000L)
+        )
+        // 4 MiB over 2s = 2.0 MB/S
+        assertEquals(
+            "2.0MB/S",
+            com.stormpanda.betterdualscreenassistant.ui.statusbar.formatNetworkSpeedText(4L * 1024L * 1024L, 2000L)
+        )
+    }
+
+    @Test
+    fun `resolveRingUpdateAction skips micro-jitter, snaps small fluctuations, and animates large transitions`() {
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.SKIP,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.50f, 0.502f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.SNAP,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.50f, 0.52f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.ANIMATE,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0f, 0.35f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.ANIMATE,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.30f, 0.45f)
+        )
+        assertEquals(
+            com.stormpanda.betterdualscreenassistant.ui.components.RingUpdateAction.SNAP,
+            com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.003f, 0f)
+        )
+    }
 }

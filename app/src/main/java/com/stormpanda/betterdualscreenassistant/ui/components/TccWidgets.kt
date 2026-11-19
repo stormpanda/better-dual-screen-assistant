@@ -694,6 +694,33 @@ private val RingDecelerateEasing = Easing { fraction ->
     1f - (1f - fraction) * (1f - fraction)
 }
 
+internal enum class RingUpdateAction {
+    SKIP,
+    SNAP,
+    ANIMATE
+}
+
+/**
+ * Decides how [HardwareRingGauge] should transition from [currentFraction] to [targetFraction].
+ * Animates on initial ring fill or substantial load steps (`>= 5%`), snaps in a single frame for
+ * modest fluctuations (`0.5%..5%`), and skips sub-pixel jitter (`< 0.5%`) to avoid committing
+ * continuous 60 Hz animation frames on the secondary display during 120 Hz top-screen gameplay.
+ */
+internal fun resolveRingUpdateAction(
+    currentFraction: Float,
+    targetFraction: Float
+): RingUpdateAction {
+    val delta = kotlin.math.abs(targetFraction - currentFraction)
+    if (delta == 0f) return RingUpdateAction.SKIP
+    if (delta < 0.005f && kotlin.math.abs(targetFraction) > 0.001f) return RingUpdateAction.SKIP
+    val isInitialFill = kotlin.math.abs(currentFraction) < 0.001f && kotlin.math.abs(targetFraction) >= 0.005f
+    return if (isInitialFill || delta >= 0.05f) {
+        RingUpdateAction.ANIMATE
+    } else {
+        RingUpdateAction.SNAP
+    }
+}
+
 /**
  * Replicates `HardwareInfoRingView` (`CPU`, `GPU`, `PWR`, `RAM` circular telemetry gauges),
  * scaling diameter and typography dynamically from `min(maxWidth, maxHeight)`.
@@ -733,17 +760,20 @@ fun HardwareRingGauge(
     val animatedRingProgress = remember { Animatable(0f) }
 
     LaunchedEffect(targetFraction) {
-        val delta = kotlin.math.abs(animatedRingProgress.value - targetFraction)
-        if (delta >= 0.002f) {
-            animatedRingProgress.animateTo(
-                targetValue = targetFraction,
-                animationSpec = tween(
-                    durationMillis = 300,
-                    easing = RingDecelerateEasing
+        when (resolveRingUpdateAction(animatedRingProgress.value, targetFraction)) {
+            RingUpdateAction.ANIMATE -> {
+                animatedRingProgress.animateTo(
+                    targetValue = targetFraction,
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = RingDecelerateEasing
+                    )
                 )
-            )
-        } else if (delta > 0f) {
-            animatedRingProgress.snapTo(targetFraction)
+            }
+            RingUpdateAction.SNAP -> {
+                animatedRingProgress.snapTo(targetFraction)
+            }
+            RingUpdateAction.SKIP -> Unit
         }
     }
 

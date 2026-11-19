@@ -113,6 +113,44 @@ class ScreenOverlayManagerTest {
     }
 
     @Test
+    fun `createAssistantOverlayLayoutParams matches stock TccServices fullscreen flags without NO_LIMITS`() {
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+
+        val thorLp = manager.createAssistantOverlayLayoutParams(
+            width = 1240,
+            height = 1080,
+            useLocalFocusMode = true
+        )
+        assertEquals(1240, thorLp.width)
+        assertEquals(1080, thorLp.height)
+        assertEquals(0, thorLp.flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        @Suppress("DEPRECATION")
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM) != 0)
+        assertTrue((thorLp.flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE) != 0)
+        assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING, thorLp.softInputMode)
+        assertEquals(Gravity.CENTER, thorLp.gravity)
+        assertEquals(0, thorLp.fitInsetsTypes)
+
+        val duoLp = manager.createAssistantOverlayLayoutParams(
+            width = 1280,
+            height = 960,
+            useLocalFocusMode = false
+        )
+        assertEquals(0, duoLp.flags and WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE)
+        @Suppress("DEPRECATION")
+        assertTrue((duoLp.flags and WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0)
+        assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING, duoLp.softInputMode)
+    }
+
+    @Test
     fun `performToggleTouchLockWithToast toggles touch lock in repository`() {
         val manager = ScreenOverlayManager(
             context = context,
