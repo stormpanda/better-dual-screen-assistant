@@ -108,9 +108,10 @@ See [`docs/BUILD_AND_RELEASE.md`](docs/BUILD_AND_RELEASE.md) for keystore setup,
 
 ## License
 
-Better Dual Screen Assistant is a proprietary, source-available project. It is licensed under the custom **Better Dual Screen Assistant Source-Available License (Version 1.0)**.
+Better Dual Screen Assistant is a proprietary, source-available project. It is licensed under the custom **Better Dual Screen Assistant Source-Available License (Version 1.1)**.
 
 - **Source Code & Binaries:** You are permitted to view the source code, compile it, and run the application solely for your own **personal, non-commercial use**.
+- **Third-Party Plugins:** Independent third-party plugins integrating with the [Plugin API](docs/PLUGIN_API.md) are permitted only if they are completely free and non-commercial (optional non-gated donations allowed), publicly source-available for user inspection, and link back to this repository (unless granted separate written permission).
 - **Prohibitions:** Any commercial exploitation, redistribution of modified source/binaries, and pre-installation or bundling on commercial hardware/devices without prior written consent are strictly prohibited.
 - **Open Source Transition Commitment:** The Copyright Holder commits to transitioning the entire codebase to a fully permissive, OSI-approved open-source license (such as MIT or Apache 2.0) with full redistribution rights in the event that active development is permanently discontinued without a successor.
 

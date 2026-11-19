@@ -3,7 +3,7 @@ Third-Party Notices — Better Dual Screen Assistant
 
 IMPORTANT — APPLICATION LICENSE SCOPE:
 Better Dual Screen Assistant itself is proprietary, source-available software
-governed by the Better Dual Screen Assistant Source-Available License v1.0
+governed by the Better Dual Screen Assistant Source-Available License v1.1
 (see LICENSE / APP_LICENSE.txt). It is NOT licensed under MIT or any OSI
 open-source license.
 

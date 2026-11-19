@@ -2,6 +2,14 @@
 
 Third-party Android apps can add quick toggles directly to Better Dual Screen Assistant (BDSA) with **no SDK dependency** and **no background service required**.
 
+## Licensing Requirements
+
+Per **Section 2.4** of the [BDSA Source-Available License v1.1](../LICENSE), third-party plugins integrating with BDSA (without separate written permission) must:
+1. **Be completely free and non-commercial** — no paid installs, in-app purchases, subscriptions, paywalls, ads, or monetized tracking SDKs (optional, non-gated voluntary donations like Ko-fi / GitHub Sponsors are fine).
+2. **Keep their source code publicly available** for every distributed release so users can inspect it (open-source or source-available).
+3. **Link back to BDSA** (`https://github.com/Stormpanda/better-dual-screen-assistant`) in the app UI and/or public README.
+4. **Stay standalone** — do not bundle/redistribute BDSA or imply official endorsement.
+
 ---
 
 ## How It Works

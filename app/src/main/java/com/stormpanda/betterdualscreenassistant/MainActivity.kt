@@ -2953,7 +2953,7 @@ private fun ColumnScope.LicenseDetailSubPageContent(subPage: LauncherSubPage) {
                 val appLicenseRaw = runCatching {
                     context.assets.open("APP_LICENSE.txt").bufferedReader().use { it.readText() }
                 }.getOrDefault(
-                    "Better Dual Screen Assistant Source-Available License v1.0\n\n" +
+                    "Better Dual Screen Assistant Source-Available License v1.1\n\n" +
                         "Copyright (c) 2026 Maik Thomalla / Stormpanda\n\n" +
                         "Free for personal, non-commercial use. See repository LICENSE for full terms."
                 )
