@@ -32,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -112,12 +113,18 @@ class AssistantForegroundService : Service() {
             val appCtx = context ?: this@AssistantForegroundService
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> {
+                    if (::repository.isInitialized) {
+                        repository.handlePreScreenOnImePinMode()
+                    }
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                     if (usesModernParallelBroadcastQueue() && PServerClient.hasFallbackUnfrozenStockPid()) {
                         scheduleFallbackBroadcastRefreeze(appCtx)
                     }
                 }
                 Intent.ACTION_SCREEN_OFF -> {
+                    if (::repository.isInitialized) {
+                        repository.captureImePinModeBeforePowerTransition(synchronous = false)
+                    }
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                     if (usesModernParallelBroadcastQueue() && PServerClient.hasFallbackUnfrozenStockPid()) {
                         scheduleFallbackBroadcastRefreeze(appCtx)
@@ -126,6 +133,9 @@ class AssistantForegroundService : Service() {
                 }
                 Intent.ACTION_SHUTDOWN,
                 "android.intent.action.REBOOT" -> {
+                    if (::repository.isInitialized) {
+                        repository.captureImePinModeBeforePowerTransition(synchronous = true)
+                    }
                     fallbackBroadcastRefreezeJob?.cancel()
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
                     stopActiveRecordingOnPowerTransition("shutdown")
@@ -152,6 +162,9 @@ class AssistantForegroundService : Service() {
                 Intent.ACTION_SCREEN_ON -> {
                     if (!modernQueue) {
                         PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                        if (::repository.isInitialized) {
+                            repository.handlePostScreenOnImePinMode()
+                        }
                     }
                     if (::overlayManager.isInitialized) {
                         overlayManager.reassertBlankedHardwareStateIfNeeded()
@@ -160,6 +173,9 @@ class AssistantForegroundService : Service() {
                 Intent.ACTION_SCREEN_OFF -> {
                     if (!modernQueue) {
                         PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                        if (::repository.isInitialized) {
+                            repository.reassertImePinModeAfterScreenOffBroadcast()
+                        }
                     }
                 }
             }
@@ -183,8 +199,13 @@ class AssistantForegroundService : Service() {
                     stopActiveRecordingOnPowerTransition("screen_off")
                     overlayManager.onDeviceScreenInteractiveChanged(false)
                 }
-                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_SCREEN_ON -> {
+                    overlayManager.onDeviceScreenInteractiveChanged(true)
+                    repository.resyncFloatingIconGestureGuard()
+                    schedulePostScreenBroadcastStockCheck()
+                }
                 Intent.ACTION_USER_PRESENT -> {
+                    repository.handleUserPresentImePinMode()
                     overlayManager.onDeviceScreenInteractiveChanged(true)
                     repository.resyncFloatingIconGestureGuard()
                     schedulePostScreenBroadcastStockCheck()
@@ -229,6 +250,12 @@ class AssistantForegroundService : Service() {
             }
         }.also { it.bind() }
 
+        serviceScope.launch {
+            PrivilegedBridge.isHelperConnected.first { it }
+            withContext(Dispatchers.IO) {
+                repository.reconcileImePinModeOnStartup()
+            }
+        }
         serviceScope.launch {
             repository.dualScreenDisplayMode.collectLatest { mode ->
                 overlayManager.applyDisplayModeOverlays(mode)
@@ -416,6 +443,9 @@ class AssistantForegroundService : Service() {
         if (now - lastTccToggleElapsedMs > TCC_TOGGLE_DEBOUNCE_MS) {
             lastTccToggleElapsedMs = now
             overlayManager.toggleAssistantOverlay()
+            serviceScope.launch(Dispatchers.IO) {
+                repository.syncUnlockedImePinModeSnapshot()
+            }
         }
     }
 

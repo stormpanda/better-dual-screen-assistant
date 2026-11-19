@@ -1714,6 +1714,64 @@ class PrivilegedBinderProviderAndHelperTest {
         dReply.recycle()
     }
 
+    @Test
+    fun `HelperBinder TRANSACTION_GET_PIN_SCREEN_MODE and SET_PIN_SCREEN_MODE round-trip and handle unsupported devices`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val fakeWm = object {
+            var pinMode: Int = 2
+            @Suppress("unused")
+            fun getPinScreenMode(): Int = pinMode
+            @Suppress("unused")
+            fun setPinScreenMode(mode: Int) {
+                pinMode = mode
+            }
+        }
+        helperBinder.windowManagerOverride = fakeWm
+
+        val getData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val getReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE, getData, getReply, 0))
+        getReply.setDataPosition(0)
+        getReply.readException()
+        assertEquals(2, getReply.readInt())
+        getData.recycle()
+        getReply.recycle()
+
+        val setData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0)
+        }
+        val setReply = Parcel.obtain()
+        assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_SET_PIN_SCREEN_MODE, setData, setReply, 0))
+        setReply.setDataPosition(0)
+        setReply.readException()
+        assertEquals(0, fakeWm.pinMode)
+        setData.recycle()
+        setReply.recycle()
+
+        // Unsupported device (no getPinScreenMode/setPinScreenMode methods) returns -1 cleanly
+        helperBinder.windowManagerOverride = Any()
+        val unsupportedData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+        }
+        val unsupportedReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE,
+                unsupportedData,
+                unsupportedReply,
+                0
+            )
+        )
+        unsupportedReply.setDataPosition(0)
+        unsupportedReply.readException()
+        assertEquals(-1, unsupportedReply.readInt())
+        unsupportedData.recycle()
+        unsupportedReply.recycle()
+    }
+
     private fun registerMockClientAndCaptureDeathRecipient(
         helperBinder: PrivilegedHelperMain.HelperBinder,
         replaceStock: Boolean

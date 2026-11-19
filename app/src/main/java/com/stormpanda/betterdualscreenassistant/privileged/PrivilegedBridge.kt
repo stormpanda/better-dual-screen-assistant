@@ -364,7 +364,28 @@ object PrivilegedBridge {
         return floatArrayOf(0.5f, 0f, 1f, 0.5f)
     }
 
-    fun setPinScreenMode(context: Context, mode: Int) {
+    fun getPinScreenMode(context: Context): Int {
+        val binder = helperBinder
+        if (binder != null && binder.isBinderAlive) {
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            try {
+                data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                binder.transact(PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE, data, reply, 0)
+                reply.readException()
+                return reply.readInt()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Helper getPinScreenMode failed", t)
+            } finally {
+                data.recycle()
+                reply.recycle()
+            }
+        }
+        ensureStarted(context)
+        return -1
+    }
+
+    fun setPinScreenMode(context: Context, mode: Int): Boolean {
         val binder = helperBinder
         if (binder != null && binder.isBinderAlive) {
             val data = Parcel.obtain()
@@ -374,7 +395,7 @@ object PrivilegedBridge {
                 data.writeInt(mode)
                 binder.transact(PrivilegedHelperMain.TRANSACTION_SET_PIN_SCREEN_MODE, data, reply, 0)
                 reply.readException()
-                return
+                return true
             } catch (t: Throwable) {
                 Log.w(TAG, "Helper setPinScreenMode failed", t)
             } finally {
@@ -383,6 +404,7 @@ object PrivilegedBridge {
             }
         }
         ensureStarted(context)
+        return false
     }
 
     fun setTopScreenBlanked(

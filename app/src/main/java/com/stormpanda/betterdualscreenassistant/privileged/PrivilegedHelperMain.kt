@@ -88,8 +88,9 @@ object PrivilegedHelperMain {
     const val TRANSACTION_DISCONNECT_SCREEN_CAST = IBinder.FIRST_CALL_TRANSACTION + 29
     const val TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE = IBinder.FIRST_CALL_TRANSACTION + 30
     const val TRANSACTION_SUPPRESS_STOCK_ASSISTANT = IBinder.FIRST_CALL_TRANSACTION + 31
+    const val TRANSACTION_GET_PIN_SCREEN_MODE = IBinder.FIRST_CALL_TRANSACTION + 32
 
-    const val HELPER_PROTOCOL_VERSION = 26
+    const val HELPER_PROTOCOL_VERSION = 27
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
 
     internal val CAST_PROJECTION_PACKAGES: Set<String> = setOf(
@@ -533,6 +534,7 @@ object PrivilegedHelperMain {
         internal var stockStartupFallbackSleepMsOverride: Long? = null
         internal var stockWorkerExecutorOverride: ((Runnable) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
+        internal var windowManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
         internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
@@ -1327,6 +1329,12 @@ object PrivilegedHelperMain {
                         }
                         reply?.writeNoException()
                         reply?.writeInt(if (ok) 1 else 0)
+                        true
+                    }
+                    TRANSACTION_GET_PIN_SCREEN_MODE -> {
+                        val mode = getPinScreenModeInternal()
+                        reply?.writeNoException()
+                        reply?.writeInt(mode)
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)
@@ -2291,7 +2299,7 @@ object PrivilegedHelperMain {
                     setDisplayBrightnessInternal(bottomDisplayId, restoreBottom, false)
                 }
 
-                // 2. Reset Dual-Screen mode (0), focus lock (0), touch disable ("0,0"), and pin screen mode (0)
+                // 2. Reset Dual-Screen mode (0), focus lock (0), and touch disable ("0,0")
                 putSystemSettingInternal("dual_screen_display_mode", "0")
                 putSystemSettingInternal("enable_system_key_focus_lock", "0")
                 putSystemSettingInternal("screen_focus_lock", "0")
@@ -2299,7 +2307,6 @@ object PrivilegedHelperMain {
                     sysPropsSet.invoke(null, "sys.temp.disabled.touch", "0,0")
                 } catch (_: Throwable) {
                 }
-                setPinScreenModeInternal(0)
 
                 // 2.5. Restore stock OS theme overlay and night mode if injected
                 clearOsThemeOverlayInternal(
@@ -2787,11 +2794,26 @@ object PrivilegedHelperMain {
             }
         }
 
+        private fun getPinScreenModeInternal(): Int {
+            val wm = windowManagerOverride ?: windowManagerProxy ?: return -1
+            return try {
+                val method = wm.javaClass.getMethod("getPinScreenMode")
+                (method.invoke(wm) as? Number)?.toInt() ?: -1
+            } catch (_: NoSuchMethodException) {
+                -1
+            } catch (t: Throwable) {
+                Log.w(TAG, "getPinScreenMode() failed", t)
+                -1
+            }
+        }
+
         private fun setPinScreenModeInternal(mode: Int) {
-            val wm = windowManagerProxy ?: return
+            val wm = windowManagerOverride ?: windowManagerProxy ?: return
             try {
                 val method = wm.javaClass.getMethod("setPinScreenMode", Int::class.javaPrimitiveType)
                 method.invoke(wm, mode)
+            } catch (_: NoSuchMethodException) {
+                // Not available on devices without vendor IME pin screen mode API (e.g. Retroid Pocket Duo)
             } catch (t: Throwable) {
                 Log.w(TAG, "setPinScreenMode($mode) failed", t)
             }

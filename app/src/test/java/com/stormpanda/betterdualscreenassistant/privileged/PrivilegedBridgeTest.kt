@@ -565,4 +565,32 @@ class PrivilegedBridgeTest {
         assertFalse(afterDisconnect.isCasting)
         assertEquals("", afterDisconnect.deviceName)
     }
+
+    @Test
+    fun `getPinScreenMode and setPinScreenMode delegate to helper binder and return fallback when disconnected`() {
+        assertEquals(-1, PrivilegedBridge.getPinScreenMode(context))
+        assertFalse(PrivilegedBridge.setPinScreenMode(context, 2))
+
+        var currentPinMode = 2
+        val helper = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_GET_PIN_SCREEN_MODE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    reply.writeNoException()
+                    reply.writeInt(currentPinMode)
+                }
+                PrivilegedHelperMain.TRANSACTION_SET_PIN_SCREEN_MODE -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    currentPinMode = data.readInt()
+                    reply.writeNoException()
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        assertEquals(2, PrivilegedBridge.getPinScreenMode(context))
+        assertTrue(PrivilegedBridge.setPinScreenMode(context, 0))
+        assertEquals(0, currentPinMode)
+        assertEquals(0, PrivilegedBridge.getPinScreenMode(context))
+    }
 }

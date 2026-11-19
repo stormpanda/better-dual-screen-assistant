@@ -1078,4 +1078,137 @@ class SystemSettingsRepositoryTest {
 
         repo.unregister()
     }
+
+    @Test
+    fun `IME pin screen mode is preserved across lock unlock and stale stock clobber`() {
+        var wmPinMode = 2
+        var keyguardLocked = false
+        val repo = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { keyguardLocked }
+            bootCountReaderOverride = { 10 }
+        }
+
+        // Initial startup while unlocked records boot count & live pin mode
+        repo.reconcileImePinModeOnStartup()
+        assertEquals(2, wmPinMode)
+
+        // Screen off -> stock drains stale ACTION_USER_PRESENT and clobbers pin mode to 0
+        repo.captureImePinModeBeforePowerTransition()
+        wmPinMode = 0
+        repo.reassertImePinModeAfterScreenOffBroadcast()
+        assertEquals("Post-SCREEN_OFF reassert must recover stock clobber", 2, wmPinMode)
+
+        // Wake onto Keyguard -> temporarily resets to 0 for PIN/password entry on top screen
+        keyguardLocked = true
+        repo.handlePreScreenOnImePinMode()
+        assertEquals(0, wmPinMode)
+        repo.handlePostScreenOnImePinMode()
+        assertEquals(0, wmPinMode)
+
+        // Screen times out while still locked -> must NOT overwrite saved pin mode with 0
+        repo.captureImePinModeBeforePowerTransition()
+        repo.handlePreScreenOnImePinMode()
+        assertEquals(0, wmPinMode)
+
+        // Unlock -> restores pinned keyboard mode (2)
+        keyguardLocked = false
+        repo.handleUserPresentImePinMode()
+        assertEquals(2, wmPinMode)
+
+        // User manually unpins Gboard -> lock/unlock must keep it unpinned (0)
+        wmPinMode = 0
+        repo.captureImePinModeBeforePowerTransition()
+        keyguardLocked = true
+        repo.handlePreScreenOnImePinMode()
+        keyguardLocked = false
+        repo.handleUserPresentImePinMode()
+        assertEquals(0, wmPinMode)
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `IME pin screen mode survives reboot when stock zeroes it during locked boot`() {
+        var wmPinMode = 2
+        var keyguardLocked = false
+        var bootCount = 15
+
+        val beforeReboot = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { keyguardLocked }
+            bootCountReaderOverride = { bootCount }
+        }
+        beforeReboot.reconcileImePinModeOnStartup()
+        beforeReboot.captureImePinModeBeforePowerTransition(synchronous = true)
+        beforeReboot.unregister()
+
+        // Simulate reboot: BOOT_COUNT increments, device boots locked, and stock already zeroed pin mode
+        bootCount = 16
+        keyguardLocked = true
+        wmPinMode = 0
+
+        val afterReboot = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { keyguardLocked }
+            bootCountReaderOverride = { bootCount }
+        }
+        afterReboot.reconcileImePinModeOnStartup()
+        assertEquals("Pin mode must stay 0 while on lockscreen", 0, wmPinMode)
+
+        // User unlocks -> restores pre-reboot pinned mode (2)
+        keyguardLocked = false
+        afterReboot.handleUserPresentImePinMode()
+        assertEquals("Pin mode must be restored after reboot + unlock", 2, wmPinMode)
+
+        // User unpins manually, then service restarts within the SAME boot -> must NOT re-pin
+        wmPinMode = 0
+        afterReboot.reconcileImePinModeOnStartup()
+        assertEquals("Same-boot restart must not override manual unpin", 0, wmPinMode)
+
+        afterReboot.unregister()
+    }
+
+    @Test
+    fun `setDualScreenDisplayMode preserves and restores IME pin screen mode across single-screen transitions`() {
+        var wmPinMode = 2
+        val repo = SystemSettingsRepository(context).apply {
+            pinScreenModeReaderOverride = { wmPinMode }
+            pinScreenModeWriterOverride = { mode ->
+                wmPinMode = mode
+                true
+            }
+            isKeyguardLockedOverride = { false }
+        }
+
+        // Dual (0) -> Only Top (1) saves pin mode (2) and temporarily clears to 0
+        repo.setDualScreenDisplayMode(1)
+        assertEquals(0, wmPinMode)
+
+        // Only Top (1) -> Only Bottom (2) must not clobber saved pin mode (2) with 0
+        repo.setDualScreenDisplayMode(2)
+        assertEquals(0, wmPinMode)
+
+        // Returning to Dual (0) restores pin mode (2)
+        repo.setDualScreenDisplayMode(0)
+        assertEquals(2, wmPinMode)
+
+        // Redundant setDualScreenDisplayMode(0) while already in Dual mode must not clear pin mode
+        repo.setDualScreenDisplayMode(0)
+        assertEquals(2, wmPinMode)
+
+        repo.unregister()
+    }
 }

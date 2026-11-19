@@ -1,6 +1,7 @@
 package com.stormpanda.betterdualscreenassistant.system
 
 import android.app.ActivityManager
+import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -131,6 +132,10 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK = "saved_dual_screen_focus_lock"
         const val PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK = "saved_enable_system_key_focus_lock"
         const val PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE = "single_screen_focus_override_active"
+        const val PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE = "saved_dual_screen_ime_pin_mode"
+        const val PREF_KEYGUARD_SAVED_IME_PIN_MODE = "keyguard_saved_ime_pin_mode"
+        const val PREF_LAST_UNLOCKED_IME_PIN_MODE = "last_unlocked_ime_pin_mode"
+        const val PREF_LAST_IME_PIN_BOOT_COUNT = "last_ime_pin_boot_count"
         const val PREF_SCREEN_RECORD_INTERNAL_AUDIO = "screen_record_internal_audio"
         const val PREF_SCREEN_RECORD_MIC_AUDIO = "screen_record_mic_audio"
         const val PREF_SCREEN_RECORD_FPS = "screen_record_fps"
@@ -163,6 +168,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val displayManager = context.getSystemService(DisplayManager::class.java)
     private val mediaRouter = context.getSystemService(MediaRouter::class.java)
     private val powerManager = context.getSystemService(PowerManager::class.java)
+    private val keyguardManager = context.getSystemService(KeyguardManager::class.java)
     private val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
@@ -1155,6 +1161,253 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
+    private val imePinLock = Any()
+
+    @Volatile
+    private var preScreenOffImePinMode: Int = -1
+
+    internal var pinScreenModeReaderOverride: (() -> Int)? = null
+    internal var pinScreenModeWriterOverride: ((Int) -> Boolean)? = null
+    internal var isKeyguardLockedOverride: (() -> Boolean)? = null
+    internal var bootCountReaderOverride: (() -> Int)? = null
+
+    private fun readPinScreenMode(): Int =
+        pinScreenModeReaderOverride?.invoke() ?: PrivilegedBridge.getPinScreenMode(context)
+
+    private fun writePinScreenMode(mode: Int): Boolean =
+        pinScreenModeWriterOverride?.invoke(mode) ?: PrivilegedBridge.setPinScreenMode(context, mode)
+
+    private fun isKeyguardLockedNow(): Boolean =
+        isKeyguardLockedOverride?.invoke() ?: (keyguardManager?.isKeyguardLocked == true)
+
+    private fun readBootCount(): Int =
+        bootCountReaderOverride?.invoke() ?: try {
+            Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
+        } catch (_: Throwable) {
+            -1
+        }
+
+    /**
+     * Reconciles vendor IME pin screen mode (e.g. Gboard pinned to bottom screen on AYN Thor)
+     * after service startup or reboot.
+     *
+     * Stock `DualScreenAssistant`'s `ThisApplication.onCreate()` temporarily clears `pinScreenMode`
+     * to `0` when the device boots onto Keyguard, expecting its own `onUnlockedScreen()` to restore
+     * it. When BDSA replaces/freezes stock, this method takes ownership of saving and restoring the
+     * user's pinned keyboard state across reboots and Keyguard lock/unlock transitions.
+     */
+    fun reconcileImePinModeOnStartup() {
+        synchronized(imePinLock) {
+            val livePinMode = readPinScreenMode()
+            if (livePinMode < 0) return
+
+            val currentBootCount = readBootCount()
+            val lastBootCount = prefs.getInt(PREF_LAST_IME_PIN_BOOT_COUNT, -1)
+            val isFreshBoot =
+                currentBootCount >= 0 && lastBootCount >= 0 && currentBootCount != lastBootCount
+            if (currentBootCount >= 0 && currentBootCount != lastBootCount) {
+                prefs.edit().putInt(PREF_LAST_IME_PIN_BOOT_COUNT, currentBootCount).apply()
+            }
+
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+
+            val lastUnlocked = prefs.getInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, -1)
+            val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+
+            if (isKeyguardLockedNow()) {
+                if (pendingKeyguard < 0) {
+                    val modeToSave = when {
+                        livePinMode > 0 -> livePinMode
+                        isFreshBoot && lastUnlocked > 0 -> lastUnlocked
+                        else -> 0
+                    }
+                    val editor = prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, modeToSave)
+                    if (livePinMode > 0) {
+                        editor.putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, livePinMode)
+                    }
+                    editor.apply()
+                    if (livePinMode != 0) {
+                        writePinScreenMode(0)
+                    }
+                } else if (livePinMode != 0) {
+                    writePinScreenMode(0)
+                }
+            } else {
+                if (pendingKeyguard >= 0) {
+                    val restored = if (pendingKeyguard > 0 && livePinMode == 0) {
+                        writePinScreenMode(pendingKeyguard)
+                    } else {
+                        true
+                    }
+                    if (restored) {
+                        prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1).apply()
+                    }
+                } else if (isFreshBoot && livePinMode == 0 && lastUnlocked > 0) {
+                    writePinScreenMode(lastUnlocked)
+                } else {
+                    prefs.edit().putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, livePinMode).apply()
+                }
+            }
+        }
+    }
+
+    /**
+     * Captures the user's live IME pin screen mode before `ACTION_SCREEN_OFF`, `ACTION_SHUTDOWN`,
+     * or `REBOOT` temporarily unfreezes stock `DualScreenAssistant`.
+     */
+    fun captureImePinModeBeforePowerTransition(synchronous: Boolean = false) {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) >= 0) return
+            val live = readPinScreenMode()
+            if (live < 0) return
+            preScreenOffImePinMode = live
+            val editor = prefs.edit().putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, live)
+            if (synchronous) {
+                editor.commit()
+            } else {
+                editor.apply()
+            }
+        }
+    }
+
+    /**
+     * Re-asserts the pre-sleep IME pin screen mode after `ACTION_SCREEN_OFF` finishes delivering
+     * to the unfrozen stock process, preventing a queued stale stock `ACTION_USER_PRESENT`
+     * broadcast from resetting `pinScreenMode` to `0`.
+     */
+    fun reassertImePinModeAfterScreenOffBroadcast() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) >= 0) return
+            val expected = preScreenOffImePinMode
+            if (expected > 0 && readPinScreenMode() == 0) {
+                writePinScreenMode(expected)
+            }
+        }
+    }
+
+    /**
+     * Runs before stock receives `ACTION_SCREEN_ON`. If Keyguard is active, saves the user's
+     * pinned IME mode and temporarily resets `pinScreenMode` to `0` so lockscreen PIN/password
+     * entry works on the top screen (matching stock `ThisApplication.onScreenOn()`).
+     */
+    fun handlePreScreenOnImePinMode() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (!isKeyguardLockedNow()) return
+
+            val existingPending = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+            val live = readPinScreenMode()
+            if (live < 0) return
+
+            if (existingPending >= 0) {
+                if (live != 0) {
+                    writePinScreenMode(0)
+                }
+                return
+            }
+
+            val modeToSave = when {
+                live > 0 -> live
+                preScreenOffImePinMode > 0 -> preScreenOffImePinMode
+                else -> 0
+            }
+            val editor = prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, modeToSave)
+            if (modeToSave > 0) {
+                editor.putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, modeToSave)
+            }
+            editor.apply()
+            if (live != 0) {
+                writePinScreenMode(0)
+            }
+        }
+    }
+
+    /**
+     * Runs after stock finishes `ACTION_SCREEN_ON`. If the screen woke without Keyguard (e.g.
+     * lockscreen disabled or within the lock timeout grace period), ensures the user's IME pin
+     * mode was not cleared while sleeping.
+     */
+    fun handlePostScreenOnImePinMode() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+            if (isKeyguardLockedNow()) return
+
+            val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+            if (pendingKeyguard >= 0) {
+                val restored = if (pendingKeyguard > 0) {
+                    writePinScreenMode(pendingKeyguard)
+                } else {
+                    true
+                }
+                if (restored) {
+                    prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1).apply()
+                    preScreenOffImePinMode = -1
+                }
+                return
+            }
+
+            val expected = preScreenOffImePinMode
+            if (expected > 0 && readPinScreenMode() == 0) {
+                writePinScreenMode(expected)
+            }
+            preScreenOffImePinMode = -1
+        }
+    }
+
+    /**
+     * Restores the saved IME pin screen mode when the user unlocks the device (`ACTION_USER_PRESENT`).
+     */
+    fun handleUserPresentImePinMode() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0) return
+
+            val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+            if (pendingKeyguard >= 0) {
+                val restored = if (pendingKeyguard > 0) {
+                    writePinScreenMode(pendingKeyguard)
+                } else {
+                    true
+                }
+                if (restored) {
+                    prefs.edit().putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1).apply()
+                    preScreenOffImePinMode = -1
+                }
+                return
+            }
+
+            val expected = preScreenOffImePinMode
+            if (expected > 0 && readPinScreenMode() == 0) {
+                writePinScreenMode(expected)
+            }
+            preScreenOffImePinMode = -1
+        }
+    }
+
+    /**
+     * Lightweight snapshot of the live IME pin screen mode while unlocked in Dual-Screen mode,
+     * so the user's current pin choice is preserved even after an abrupt reboot without
+     * `ACTION_SHUTDOWN`.
+     */
+    fun syncUnlockedImePinModeSnapshot() {
+        synchronized(imePinLock) {
+            val dualMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
+            if (dualMode != 0 || isKeyguardLockedNow()) return
+            if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) >= 0) return
+            val live = readPinScreenMode()
+            if (live >= 0) {
+                prefs.edit().putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, live).apply()
+            }
+        }
+    }
+
     fun setDualScreenDisplayMode(mode: Int) {
         val previousMode = getInt(KEY_DUAL_SCREEN_DISPLAY_MODE, _dualScreenDisplayMode.value)
         isTransitioningDisplayMode = true
@@ -1165,21 +1418,56 @@ class SystemSettingsRepository(private val context: Context) {
                 if (!overrideAlreadyActive) {
                     val currentFocusLock = getInt(KEY_SCREEN_FOCUS_LOCK, _screenFocusLock.value)
                     val currentEnableKeyFocus = getInt(KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 0)
-                    prefs.edit()
+                    val currentPinMode = synchronized(imePinLock) {
+                        val pendingKeyguard = prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1)
+                        if (pendingKeyguard >= 0) {
+                            pendingKeyguard
+                        } else {
+                            readPinScreenMode()
+                        }
+                    }
+                    val editor = prefs.edit()
                         .putInt(PREF_SAVED_DUAL_SCREEN_FOCUS_LOCK, currentFocusLock)
                         .putInt(PREF_SAVED_ENABLE_SYSTEM_KEY_FOCUS_LOCK, currentEnableKeyFocus)
                         .putBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, true)
-                        .apply()
+                    if (currentPinMode >= 0) {
+                        editor.putInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, currentPinMode)
+                        if (!isKeyguardLockedNow() &&
+                            prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) < 0
+                        ) {
+                            editor.putInt(PREF_LAST_UNLOCKED_IME_PIN_MODE, currentPinMode)
+                        }
+                    } else {
+                        editor.putInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, -1)
+                    }
+                    editor.apply()
                 }
             }
             when (mode) {
                 0 -> {
+                    val overrideWasActive =
+                        prefs.getBoolean(PREF_SINGLE_SCREEN_FOCUS_OVERRIDE_ACTIVE, false)
+                    val savedDualPinMode = prefs.getInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, -1)
                     restoreDualScreenFocusLock()
+                    prefs.edit().putInt(PREF_SAVED_DUAL_SCREEN_IME_PIN_MODE, -1).apply()
                     PrivilegedBridge.putSystemSettingInt(context, KEY_DUAL_SCREEN_DISPLAY_MODE, 0)
                     _dualScreenDisplayMode.value = 0
                     val touchProp = if (_touchLockEnabled.value) "0,1" else "0,0"
                     PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", touchProp)
-                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    if (overrideWasActive && savedDualPinMode >= 0) {
+                        synchronized(imePinLock) {
+                            if (isKeyguardLockedNow()) {
+                                if (prefs.getInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, -1) < 0) {
+                                    prefs.edit()
+                                        .putInt(PREF_KEYGUARD_SAVED_IME_PIN_MODE, savedDualPinMode)
+                                        .apply()
+                                }
+                                writePinScreenMode(0)
+                            } else {
+                                writePinScreenMode(savedDualPinMode)
+                            }
+                        }
+                    }
                 }
                 1 -> {
                     _touchLockEnabled.value = false
@@ -1188,7 +1476,7 @@ class SystemSettingsRepository(private val context: Context) {
                     PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 1)
                     PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                     PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "0,1")
-                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    writePinScreenMode(0)
                     _screenFocusLock.value = 1
                 }
                 2 -> {
@@ -1198,7 +1486,7 @@ class SystemSettingsRepository(private val context: Context) {
                     PrivilegedBridge.putSystemSettingInt(context, KEY_SCREEN_FOCUS_LOCK, 2)
                     PrivilegedBridge.putSystemSettingInt(context, KEY_ENABLE_SYSTEM_KEY_FOCUS_LOCK, 1)
                     PrivilegedBridge.setSystemProperty("sys.temp.disabled.touch", "1,0")
-                    PrivilegedBridge.setPinScreenMode(context, 0)
+                    writePinScreenMode(0)
                     _screenFocusLock.value = 2
                 }
             }
