@@ -121,7 +121,7 @@ install_release_apk() {
 
     if command -v "$ADB" >/dev/null 2>&1 || [[ -x "$ADB" ]]; then
         if [[ -z "$DEVICE" ]]; then
-            local raw_devices=(${(f)"$("$ADB" devices 2>/dev/null | grep -v "List of devices" | grep -E '[[:space:]]device$' | awk '{print $1}')"})
+            local raw_devices=(${(f)"$("$ADB" devices 2>/dev/null | awk -F'\t' '$2 == "device" {print $1}')"})
             local devices=(${raw_devices:#})
             if (( ${#devices} == 0 )); then
                 if [[ "$strict_mode" == "true" ]]; then
