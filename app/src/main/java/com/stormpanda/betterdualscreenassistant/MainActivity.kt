@@ -72,6 +72,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Screenshot
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsSuggest
 import androidx.compose.material.icons.rounded.Speed
@@ -580,6 +581,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val accurateGameFps by repo.accurateGameFps.collectAsState()
     val cpuFreqScalingMode by repo.cpuFreqScalingMode.collectAsState()
     val tempFahrenheit by repo.tempFahrenheit.collectAsState()
+    val screenshotTargetMode by repo.screenshotTargetMode.collectAsState()
     val promotedToManager by repo.promotedToManager.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
     val isClusterTuneInstalled by repo.isClusterTuneInstalled.collectAsState()
@@ -813,6 +815,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 accurateGameFps = accurateGameFps,
                                                 cpuFreqScalingMode = cpuFreqScalingMode,
                                                 tempFahrenheit = tempFahrenheit,
+                                                screenshotTargetMode = screenshotTargetMode,
                                                 promotedToManager = promotedToManager,
                                                 onToggleReplaceStock = { replaceStock ->
                                                     stockDisabled = replaceStock
@@ -847,6 +850,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onSetTempFahrenheit = { fahrenheit ->
                                                     repo.setTempFahrenheit(fahrenheit)
+                                                },
+                                                onSetScreenshotTargetMode = { mode ->
+                                                    repo.setScreenshotTargetMode(mode)
                                                 },
                                                 onTogglePromotedToManager = { promoted ->
                                                     repo.setPromotedToManager(promoted)
@@ -1076,6 +1082,7 @@ private fun GeneralSettingsTabContent(
     accurateGameFps: Boolean,
     cpuFreqScalingMode: Boolean,
     tempFahrenheit: Boolean,
+    screenshotTargetMode: Int,
     promotedToManager: Boolean,
     onToggleReplaceStock: (Boolean) -> Unit,
     onToggleCloseBottomScreenTip: (Boolean) -> Unit,
@@ -1087,6 +1094,7 @@ private fun GeneralSettingsTabContent(
     onToggleAccurateGameFps: (Boolean) -> Unit,
     onSetCpuFreqScalingMode: (Boolean) -> Unit,
     onSetTempFahrenheit: (Boolean) -> Unit,
+    onSetScreenshotTargetMode: (Int) -> Unit,
     onTogglePromotedToManager: (Boolean) -> Unit,
     onOpenLicenses: () -> Unit = {}
 ) {
@@ -1146,6 +1154,32 @@ private fun GeneralSettingsTabContent(
         icon = Icons.Rounded.Thermostat,
         onPrevious = { onSetTempFahrenheit(!tempFahrenheit) },
         onNext = { onSetTempFahrenheit(!tempFahrenheit) }
+    )
+
+    val screenshotTargetModes = remember {
+        listOf(
+            SystemSettingsRepository.SCREENSHOT_TARGET_ASK to "Ask Every Time",
+            SystemSettingsRepository.SCREENSHOT_TARGET_TOP to "Top Screen",
+            SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM to "Bottom Screen",
+            SystemSettingsRepository.SCREENSHOT_TARGET_BOTH to "Both Screens"
+        )
+    }
+    val currentScreenshotIndex = screenshotTargetModes
+        .indexOfFirst { it.first == screenshotTargetMode }
+        .coerceAtLeast(0)
+    GamepadChoiceCard(
+        title = "Screenshot Display",
+        description = "Choose which display the Screenshot quick toggle captures immediately, or Ask Every Time to pick on each tap",
+        selectedText = screenshotTargetModes[currentScreenshotIndex].second,
+        icon = Icons.Rounded.Screenshot,
+        onPrevious = {
+            val prevIdx = (currentScreenshotIndex - 1 + screenshotTargetModes.size) % screenshotTargetModes.size
+            onSetScreenshotTargetMode(screenshotTargetModes[prevIdx].first)
+        },
+        onNext = {
+            val nextIdx = (currentScreenshotIndex + 1) % screenshotTargetModes.size
+            onSetScreenshotTargetMode(screenshotTargetModes[nextIdx].first)
+        }
     )
 
     GamepadToggleCard(

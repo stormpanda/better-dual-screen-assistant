@@ -616,4 +616,32 @@ class TccThemeAndOverlayFormatTest {
             com.stormpanda.betterdualscreenassistant.ui.components.resolveRingUpdateAction(0.003f, 0f)
         )
     }
+
+    @Test
+    fun `formatScreenshotTileLabel formats Ask Every Time and direct target display modes`() {
+        assertEquals(
+            "Screenshot",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_ASK
+            )
+        )
+        assertEquals(
+            "Screenshot: Top",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_TOP
+            )
+        )
+        assertEquals(
+            "Screenshot: Bottom",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM
+            )
+        )
+        assertEquals(
+            "Screenshot: Both",
+            com.stormpanda.betterdualscreenassistant.ui.overlay.formatScreenshotTileLabel(
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository.SCREENSHOT_TARGET_BOTH
+            )
+        )
+    }
 }

@@ -151,6 +151,12 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SCREEN_RECORD_INTERNAL_AUDIO = "screen_record_internal_audio"
         const val PREF_SCREEN_RECORD_MIC_AUDIO = "screen_record_mic_audio"
         const val PREF_SCREEN_RECORD_FPS = "screen_record_fps"
+        const val PREF_SCREENSHOT_TARGET_MODE = "screenshot_target_mode"
+
+        const val SCREENSHOT_TARGET_ASK = -1
+        const val SCREENSHOT_TARGET_TOP = 0
+        const val SCREENSHOT_TARGET_BOTTOM = 1
+        const val SCREENSHOT_TARGET_BOTH = 2
 
         @Volatile
         private var lastAppliedOsThemeSignature: String = ""
@@ -405,6 +411,12 @@ class SystemSettingsRepository(private val context: Context) {
         prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
     )
     val tempFahrenheit: StateFlow<Boolean> = _tempFahrenheit.asStateFlow()
+
+    private val _screenshotTargetMode = MutableStateFlow(
+        prefs.getInt(PREF_SCREENSHOT_TARGET_MODE, SCREENSHOT_TARGET_ASK)
+            .coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
+    )
+    val screenshotTargetMode: StateFlow<Int> = _screenshotTargetMode.asStateFlow()
 
     private val _promotedToManager = MutableStateFlow(
         prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
@@ -688,6 +700,11 @@ class SystemSettingsRepository(private val context: Context) {
             PREF_TEMP_FAHRENHEIT -> {
                 _tempFahrenheit.value =
                     prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
+            }
+            PREF_SCREENSHOT_TARGET_MODE -> {
+                _screenshotTargetMode.value =
+                    prefs.getInt(PREF_SCREENSHOT_TARGET_MODE, SCREENSHOT_TARGET_ASK)
+                        .coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
             }
             PREF_PROMOTED_TO_MANAGER -> {
                 val saved = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
@@ -1057,6 +1074,9 @@ class SystemSettingsRepository(private val context: Context) {
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
         _cpuFreqScalingMode.value = prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
         _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
+        _screenshotTargetMode.value =
+            prefs.getInt(PREF_SCREENSHOT_TARGET_MODE, SCREENSHOT_TARGET_ASK)
+                .coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
         _promotedToManager.value = prefs.getBoolean(PREF_PROMOTED_TO_MANAGER, false)
         _ledBrightnessPercent.value = readLedBrightnessPercent(_ledBrightnessPercent.value)
         _wifiEnabled.value = readWifiEnabled()
@@ -2372,6 +2392,12 @@ class SystemSettingsRepository(private val context: Context) {
 
     fun toggleTempFahrenheit() {
         setTempFahrenheit(!_tempFahrenheit.value)
+    }
+
+    fun setScreenshotTargetMode(mode: Int) {
+        val clamped = mode.coerceIn(SCREENSHOT_TARGET_ASK, SCREENSHOT_TARGET_BOTH)
+        prefs.edit().putInt(PREF_SCREENSHOT_TARGET_MODE, clamped).apply()
+        _screenshotTargetMode.value = clamped
     }
 
     fun setPromotedToManager(promoted: Boolean) {

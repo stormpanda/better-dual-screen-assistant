@@ -103,6 +103,13 @@ internal fun formatScreenCastTileLabel(state: ScreenCastState): String = when {
     else -> "Screen Cast"
 }
 
+internal fun formatScreenshotTileLabel(targetMode: Int): String = when (targetMode) {
+    SystemSettingsRepository.SCREENSHOT_TARGET_TOP -> "Screenshot: Top"
+    SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM -> "Screenshot: Bottom"
+    SystemSettingsRepository.SCREENSHOT_TARGET_BOTH -> "Screenshot: Both"
+    else -> "Screenshot"
+}
+
 @Composable
 fun AssistantOverlayScreen(
     repository: SystemSettingsRepository,
@@ -249,6 +256,7 @@ fun AssistantOverlayScreen(
                                 telemetryMonitor = telemetryMonitor,
                                 recordingElapsedText = recordingElapsedText,
                                 onOpenDialog = { dialog -> activeDialog = dialog },
+                                onCaptureScreenshot = onCaptureScreenshotRequest,
                                 onStopScreenRecording = onStopScreenRecordingRequest,
                                 onOpenScreenCast = onOpenScreenCastRequest,
                                 onDisconnectScreenCast = onDisconnectScreenCastRequest,
@@ -555,6 +563,7 @@ private fun buildQuickSettingTileModels(
     repository: SystemSettingsRepository,
     recordingElapsedText: String,
     onOpenDialog: (ActiveDialog) -> Unit,
+    onCaptureScreenshot: (Int) -> Unit,
     onStopScreenRecording: () -> Unit,
     onOpenScreenCast: () -> Unit,
     onDisconnectScreenCast: () -> Unit,
@@ -588,6 +597,7 @@ private fun buildQuickSettingTileModels(
     val keyMapperEnabled by repository.keyMapperEnabled.collectAsState()
     val keepScreenOn by repository.keepScreenOn.collectAsState()
     val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
+    val screenshotTargetMode by repository.screenshotTargetMode.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
     val quickTileOrder by repository.quickTileOrder.collectAsState()
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
@@ -721,8 +731,16 @@ private fun buildQuickSettingTileModels(
                     )
                 )
                 QuickSettingTileId.SCREENSHOT -> add(
-                    QuickSettingTileModel("Screenshot", R.drawable.ic_qs_screenshot, false) {
-                        onOpenDialog(ActiveDialog.SCREENSHOT)
+                    QuickSettingTileModel(
+                        label = formatScreenshotTileLabel(screenshotTargetMode),
+                        iconRes = R.drawable.ic_qs_screenshot,
+                        selected = false
+                    ) {
+                        if (screenshotTargetMode in SystemSettingsRepository.SCREENSHOT_TARGET_TOP..SystemSettingsRepository.SCREENSHOT_TARGET_BOTH) {
+                            onCaptureScreenshot(screenshotTargetMode)
+                        } else {
+                            onOpenDialog(ActiveDialog.SCREENSHOT)
+                        }
                     }
                 )
                 QuickSettingTileId.SCREEN_RECORD -> {
@@ -788,6 +806,7 @@ private fun SystemSettingsTab(
     telemetryMonitor: TelemetryMonitor,
     recordingElapsedText: String,
     onOpenDialog: (ActiveDialog) -> Unit,
+    onCaptureScreenshot: (Int) -> Unit,
     onStopScreenRecording: () -> Unit,
     onOpenScreenCast: () -> Unit,
     onDisconnectScreenCast: () -> Unit,
@@ -812,6 +831,7 @@ private fun SystemSettingsTab(
         repository = repository,
         recordingElapsedText = recordingElapsedText,
         onOpenDialog = onOpenDialog,
+        onCaptureScreenshot = onCaptureScreenshot,
         onStopScreenRecording = onStopScreenRecording,
         onOpenScreenCast = onOpenScreenCast,
         onDisconnectScreenCast = onDisconnectScreenCast,

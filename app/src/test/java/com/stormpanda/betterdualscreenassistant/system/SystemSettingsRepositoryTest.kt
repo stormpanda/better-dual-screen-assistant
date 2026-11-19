@@ -1216,6 +1216,32 @@ class SystemSettingsRepositoryTest {
     }
 
     @Test
+    fun `screenshotTargetMode defaults to Ask Every Time, clamps out-of-range values, and persists across reloads`() {
+        val repo = SystemSettingsRepository(context)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_ASK, repo.screenshotTargetMode.value)
+
+        repo.setScreenshotTargetMode(SystemSettingsRepository.SCREENSHOT_TARGET_TOP)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_TOP, repo.screenshotTargetMode.value)
+
+        repo.setScreenshotTargetMode(SystemSettingsRepository.SCREENSHOT_TARGET_BOTH)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_BOTH, repo.screenshotTargetMode.value)
+
+        // Clamping out-of-range inputs
+        repo.setScreenshotTargetMode(99)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_BOTH, repo.screenshotTargetMode.value)
+        repo.setScreenshotTargetMode(-99)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_ASK, repo.screenshotTargetMode.value)
+
+        // Persists across reload
+        repo.setScreenshotTargetMode(SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM)
+        val reloaded = SystemSettingsRepository(context)
+        assertEquals(SystemSettingsRepository.SCREENSHOT_TARGET_BOTTOM, reloaded.screenshotTargetMode.value)
+
+        repo.unregister()
+        reloaded.unregister()
+    }
+
+    @Test
     fun `openClusterTuneProfilePicker checks install state top screen state overlay permission and launches service`() {
         val repo = SystemSettingsRepository(context)
         assertFalse(repo.isClusterTuneInstalled.value)
