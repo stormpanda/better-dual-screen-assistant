@@ -158,7 +158,11 @@ class GamepadScaffoldTouchNavigationTest {
         assertNotNull(findNodeWithTextOrNull(activity, "Enable / Disable Toggles"))
         assertNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
 
-        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId.entries.size
+        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+            .supportedEntries(
+                com.stormpanda.betterdualscreenassistant.system.DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            ).size
 
         // 2. Tap "Enable / Disable Toggles" via touch -> must open sub-menu, NOT jump back to General
         tapClickableNodeWithText(activity, "Enable / Disable Toggles")
@@ -362,7 +366,11 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 100)
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 450)
-        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId.entries.size
+        val totalTiles = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
+            .supportedEntries(
+                com.stormpanda.betterdualscreenassistant.system.DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            ).size
         assertNotNull(
             "D-pad Down from Quick Settings Layout must focus Enable / Disable Toggles directly",
             findNodeWithTextOrNull(activity, "Toggle Visibility (10 of $totalTiles Active)")
@@ -984,7 +992,10 @@ class GamepadScaffoldTouchNavigationTest {
         tapClickableNodeWithText(activity, "Quick Toggles")
         idleCompose(activity, 300)
         val supportedCount = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
-            .supportedEntries(com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO)
+            .supportedEntries(
+                com.stormpanda.betterdualscreenassistant.system.DeviceProfile.RETROID_POCKET_DUO,
+                isClusterTuneInstalled = false
+            )
             .size
         assertEquals(23, supportedCount)
         assertNotNull(findNodeWithTextOrNull(activity, "9 / 23 Active"))

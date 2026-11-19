@@ -43,6 +43,7 @@ class QuickSettingTileIdTest {
         assertTrue(QuickSettingTileId.SCREENSHOT in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.SCREEN_RECORD in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CLEAR_ALL_TASKS in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.CLUSTER_TUNE in QuickSettingTileId.defaultDisabled)
         assertEquals(QuickSettingCategory.ANDROID_SYSTEM, QuickSettingTileId.SCREEN_CAST.category)
         assertEquals("Screen Cast", QuickSettingTileId.SCREEN_CAST.title)
         assertEquals("screen_cast", QuickSettingTileId.SCREEN_CAST.key)
@@ -50,6 +51,9 @@ class QuickSettingTileIdTest {
         assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title)
         assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title)
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLEAR_ALL_TASKS.category)
+        assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLUSTER_TUNE.category)
+        assertEquals("ClusterTune", QuickSettingTileId.CLUSTER_TUNE.title)
+        assertEquals("cluster_tune", QuickSettingTileId.CLUSTER_TUNE.key)
     }
 
     @Test
@@ -74,6 +78,26 @@ class QuickSettingTileIdTest {
         assertFalse(QuickSettingTileId.AMBIENT_LIGHT in retroidSupported)
         assertFalse(QuickSettingTileId.PREVENT_ACCIDENTAL_HOME in retroidSupported)
         assertEquals(QuickSettingTileId.entries.size - 2, retroidSupported.size)
+
+        assertTrue(
+            QuickSettingTileId.CLUSTER_TUNE.isSupportedOn(
+                DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = true
+            )
+        )
+        assertFalse(
+            QuickSettingTileId.CLUSTER_TUNE.isSupportedOn(
+                DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            )
+        )
+        assertEquals(
+            QuickSettingTileId.entries.size - 1,
+            QuickSettingTileId.supportedEntries(
+                DeviceProfile.AYN_THOR,
+                isClusterTuneInstalled = false
+            ).size
+        )
 
         assertEquals(
             "Stock AYN Toggles",

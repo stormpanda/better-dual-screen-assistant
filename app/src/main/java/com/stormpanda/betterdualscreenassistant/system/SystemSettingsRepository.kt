@@ -60,6 +60,14 @@ data class ScreenCastState(
         get() = isCasting || isConnecting
 }
 
+enum class ClusterTuneLaunchResult {
+    OPENED,
+    NOT_INSTALLED,
+    TOP_SCREEN_OFF,
+    OVERLAY_PERMISSION_DENIED,
+    FAILED
+}
+
 /**
  * Reactive repository for all AYN Thor dual-screen, performance, fan, controller,
  * brightness, volume, and system settings.
@@ -119,6 +127,10 @@ class SystemSettingsRepository(private val context: Context) {
         const val ACTION_DUAL_SCREEN_VOLUME_KEY_EVENT = "dual_screen_action.volume.key.event"
         const val ACTION_WIFI_DISPLAY_STATUS_CHANGED =
             "android.hardware.display.action.WIFI_DISPLAY_STATUS_CHANGED"
+        const val CLUSTER_TUNE_PACKAGE = "com.aure.clustertune"
+        const val CLUSTER_TUNE_OVERLAY_SERVICE = "com.aure.clustertune/.overlay.OverlayHostService"
+        const val ACTION_CLUSTER_TUNE_SHOW_PROFILE_PICKER =
+            "com.aure.clustertune.overlay.SHOW_PROFILE_PICKER"
         private const val MEDIA_ROUTER_TYPE_REMOTE_DISPLAY = 4
         const val PREF_INJECT_OS_THEME = "inject_os_theme"
         const val PREF_SAVED_OS_NIGHT_MODE = "saved_os_night_mode"
@@ -337,6 +349,9 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val _isMegingiardProviderAvailable = MutableStateFlow(isAnyMegingiardInstalled())
     val isMegingiardProviderAvailable: StateFlow<Boolean> = _isMegingiardProviderAvailable.asStateFlow()
+
+    private val _isClusterTuneInstalled = MutableStateFlow(isPackageInstalled(CLUSTER_TUNE_PACKAGE))
+    val isClusterTuneInstalled: StateFlow<Boolean> = _isClusterTuneInstalled.asStateFlow()
 
     private val _injectOsTheme = MutableStateFlow(
         prefs.getBoolean(PREF_INJECT_OS_THEME, false)
@@ -742,6 +757,8 @@ class SystemSettingsRepository(private val context: Context) {
             if (pkg == "com.stormpanda.megingiard" || pkg == "com.stormpanda.megingiard.debug") {
                 registerMegingiardContentObservers()
                 refreshMegingiardSyncedThemeAsync(changedUri = null, debounceOsSyncMs = 0L)
+            } else if (pkg == CLUSTER_TUNE_PACKAGE) {
+                refreshClusterTuneInstalled()
             }
         }
     }
@@ -1053,6 +1070,7 @@ class SystemSettingsRepository(private val context: Context) {
         _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
         _keepScreenOn.value = getInt(KEY_KEEP_SCREEN_ON, 0) == 1
         _preventAccidentalHome.value = readPreventAccidentalHome()
+        refreshClusterTuneInstalled()
         _quickTileOrder.value = readSavedQuickTileOrder()
         _disabledQuickTiles.value = readSavedDisabledQuickTiles()
         if (refreshMegingiardTheme) {
@@ -1892,17 +1910,24 @@ class SystemSettingsRepository(private val context: Context) {
     private fun isAnyMegingiardInstalled(): Boolean {
         return isProviderAuthorityInstalled(MEGINGIARD_RELEASE_THEME_URI) ||
             isProviderAuthorityInstalled(MEGINGIARD_DEBUG_THEME_URI) ||
-            isMegingiardPackageInstalled("com.stormpanda.megingiard") ||
-            isMegingiardPackageInstalled("com.stormpanda.megingiard.debug")
+            isPackageInstalled("com.stormpanda.megingiard") ||
+            isPackageInstalled("com.stormpanda.megingiard.debug")
     }
 
-    private fun isMegingiardPackageInstalled(pkg: String): Boolean {
+    private fun isPackageInstalled(pkg: String): Boolean {
         return try {
             @Suppress("DEPRECATION")
-            context.packageManager.getPackageInfo(pkg, 0) != null
+            val info = context.packageManager.getPackageInfo(pkg, 0)
+            info != null && info.applicationInfo?.enabled != false
         } catch (_: Throwable) {
             false
         }
+    }
+
+    fun refreshClusterTuneInstalled(): Boolean {
+        val installed = isPackageInstalled(CLUSTER_TUNE_PACKAGE)
+        _isClusterTuneInstalled.value = installed
+        return installed
     }
 
     private fun isProviderAuthorityInstalled(uri: Uri): Boolean {
@@ -2538,7 +2563,7 @@ class SystemSettingsRepository(private val context: Context) {
         val currentOrder = _quickTileOrder.value
         val disabled = _disabledQuickTiles.value
         fun isActiveOnDevice(tile: QuickSettingTileId): Boolean =
-            tile !in disabled && tile.isSupportedOn(profile)
+            tile !in disabled && tile.isSupportedOn(profile, _isClusterTuneInstalled.value)
 
         val activeList = currentOrder.filter(::isActiveOnDevice).toMutableList()
         if (fromActiveIndex !in activeList.indices || toActiveIndex !in activeList.indices) return
@@ -2559,7 +2584,10 @@ class SystemSettingsRepository(private val context: Context) {
         if (enabled) {
             current.remove(tile)
         } else {
-            val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+            val supportedTiles = QuickSettingTileId.supportedEntries(
+                DeviceProfile.current(context),
+                _isClusterTuneInstalled.value
+            )
             val enabledCount = supportedTiles.count { it !in current }
             if (tile !in current && enabledCount <= 1) {
                 // Keep at least 1 supported toggle enabled
@@ -2668,7 +2696,10 @@ class SystemSettingsRepository(private val context: Context) {
                 .apply()
         }
 
-        val supportedTiles = QuickSettingTileId.supportedEntries(DeviceProfile.current(context))
+        val supportedTiles = QuickSettingTileId.supportedEntries(
+            DeviceProfile.current(context),
+            _isClusterTuneInstalled.value
+        )
         if (supportedTiles.isNotEmpty() && supportedTiles.all { it in parsed }) {
             parsed.remove(supportedTiles.first())
             prefs.edit()
@@ -3098,5 +3129,42 @@ class SystemSettingsRepository(private val context: Context) {
         mainHandler.removeCallbacks(castPostDisconnectRefreshRunnable)
         mainHandler.postDelayed(castPostDisconnectRefreshRunnable, 350L)
         return helperDisconnected || routeUnselected
+    }
+
+    fun openClusterTuneProfilePicker(): ClusterTuneLaunchResult {
+        if (!refreshClusterTuneInstalled()) {
+            return ClusterTuneLaunchResult.NOT_INSTALLED
+        }
+        if (_dualScreenDisplayMode.value == 2) {
+            return ClusterTuneLaunchResult.TOP_SCREEN_OFF
+        }
+        val appOpsResult = PServerClient.exec(
+            "appops get $CLUSTER_TUNE_PACKAGE SYSTEM_ALERT_WINDOW 2>&1 | tr '\\n' ' '",
+            wait = true
+        )
+        if (appOpsResult.isSuccess) {
+            val lower = appOpsResult.getOrDefault("").lowercase(java.util.Locale.US)
+            if ("allow" !in lower &&
+                ("default" in lower || "ignore" in lower || "deny" in lower || "no operations" in lower)
+            ) {
+                return ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED
+            }
+        }
+        // Flatten newlines into a single line because AYN/Retroid pservice reads stdout via single-line fgets().
+        val cmd = "{ am start-foreground-service --user 0 " +
+            "-n $CLUSTER_TUNE_OVERLAY_SERVICE " +
+            "-a $ACTION_CLUSTER_TUNE_SHOW_PROFILE_PICKER 2>&1; echo __EXIT=\$?; } | tr '\\n' ' '"
+        val result = PServerClient.exec(cmd, wait = true)
+        val output = result.getOrNull() ?: return ClusterTuneLaunchResult.FAILED
+        val exitZero = output.split(Regex("\\s+")).any { it == "__EXIT=0" }
+        val hasStartingService = output.contains("Starting service:", ignoreCase = true)
+        val hasError = output.contains("Error:", ignoreCase = true) ||
+            output.contains("SecurityException", ignoreCase = true) ||
+            output.contains("Unable to start service", ignoreCase = true)
+        return if ((exitZero || hasStartingService) && !hasError) {
+            ClusterTuneLaunchResult.OPENED
+        } else {
+            ClusterTuneLaunchResult.FAILED
+        }
     }
 }

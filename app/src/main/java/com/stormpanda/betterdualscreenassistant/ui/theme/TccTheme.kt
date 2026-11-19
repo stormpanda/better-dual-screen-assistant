@@ -992,6 +992,7 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_qs_charging_separation -> R.drawable.rp_ic_qs_charging_separation
     R.drawable.ic_qs_clean -> R.drawable.rp_ic_qs_clean
     R.drawable.ic_qs_clear_tasks -> R.drawable.rp_ic_qs_clear_tasks
+    R.drawable.ic_qs_clustertune -> R.drawable.rp_ic_qs_clustertune
     R.drawable.ic_qs_controller_style -> R.drawable.rp_ic_qs_controller_style
     R.drawable.ic_qs_dark_theme -> R.drawable.rp_ic_qs_dark_theme
     R.drawable.ic_qs_dnd -> R.drawable.rp_ic_qs_dnd

@@ -375,4 +375,44 @@ class ScreenOverlayManagerTest {
         assertEquals(4, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 2, bottomDisplayId = 4))
         assertEquals(2, ScreenOverlayManager.resolveCastSettingsTargetDisplayId(dualScreenMode = 2, bottomDisplayId = 2))
     }
+
+    @Test
+    fun `openClusterTuneProfilePickerOnTopScreen skips launch when uninstalled or top screen is off`() {
+        every { mockRepository.dualScreenDisplayMode } returns MutableStateFlow(0)
+        every { mockRepository.refreshClusterTuneInstalled() } returns false
+        val manager = ScreenOverlayManager(
+            context = context,
+            repository = mockRepository,
+            telemetryMonitor = mockTelemetryMonitor,
+            overviewProxyClient = mockOverviewProxyClient
+        )
+
+        manager.openClusterTuneProfilePickerOnTopScreen()
+        ShadowLooper.idleMainLooper()
+        verify(exactly = 0) { mockRepository.openClusterTuneProfilePicker() }
+
+        every { mockRepository.refreshClusterTuneInstalled() } returns true
+        every { mockRepository.dualScreenDisplayMode } returns MutableStateFlow(2)
+        manager.openClusterTuneProfilePickerOnTopScreen()
+        ShadowLooper.idleMainLooper()
+        verify(exactly = 0) { mockRepository.openClusterTuneProfilePicker() }
+
+        // When installed and top screen is on, launches ClusterTune without dismissing BDSA overlay
+        val launched = java.util.concurrent.CountDownLatch(1)
+        every { mockRepository.dualScreenDisplayMode } returns MutableStateFlow(0)
+        every { mockRepository.openClusterTuneProfilePicker() } answers {
+            launched.countDown()
+            com.stormpanda.betterdualscreenassistant.system.ClusterTuneLaunchResult.OPENED
+        }
+        val showingField = ScreenOverlayManager::class.java.getDeclaredField("isAssistantShowing").apply {
+            isAccessible = true
+        }
+        showingField.setBoolean(manager, true)
+
+        manager.openClusterTuneProfilePickerOnTopScreen()
+        assertTrue(launched.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        ShadowLooper.idleMainLooper()
+        assertTrue("BDSA overlay should remain open when opening ClusterTune", manager.isAssistantShowing)
+        verify(exactly = 1) { mockRepository.openClusterTuneProfilePicker() }
+    }
 }

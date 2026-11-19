@@ -306,6 +306,7 @@ class MainActivity : ComponentActivity() {
         val repo = SystemSettingsRepository.getInstance(applicationContext)
         repo.setSettingsUiActive(System.identityHashCode(this), active = true)
         repo.refreshMegingiardSyncedTheme()
+        repo.refreshClusterTuneInstalled()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -581,6 +582,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val tempFahrenheit by repo.tempFahrenheit.collectAsState()
     val promotedToManager by repo.promotedToManager.collectAsState()
     val isMegingiardAvailable by repo.isMegingiardProviderAvailable.collectAsState()
+    val isClusterTuneInstalled by repo.isClusterTuneInstalled.collectAsState()
     val quickTileOrder by repo.quickTileOrder.collectAsState()
     val disabledQuickTiles by repo.disabledQuickTiles.collectAsState()
 
@@ -865,6 +867,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                         LauncherCategory.QUICK_TOGGLES -> {
                                             QuickTogglesSettingsTabContent(
                                                 profile = profile,
+                                                isClusterTuneInstalled = isClusterTuneInstalled,
                                                 quickTileOrder = quickTileOrder,
                                                 disabledQuickTiles = disabledQuickTiles,
                                                 onMoveActiveTile = { fromIndex, toIndex ->
@@ -984,6 +987,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                 ) {
                                     EnableDisableTogglesSubPageContent(
                                         profile = profile,
+                                        isClusterTuneInstalled = isClusterTuneInstalled,
                                         quickTileOrder = quickTileOrder,
                                         disabledQuickTiles = disabledQuickTiles,
                                         promotedToManager = promotedToManager,
@@ -1219,6 +1223,7 @@ private fun GeneralSettingsTabContent(
 @Composable
 private fun QuickTogglesSettingsTabContent(
     profile: DeviceProfile,
+    isClusterTuneInstalled: Boolean,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     onMoveActiveTile: (fromIndex: Int, toIndex: Int) -> Unit,
@@ -1226,18 +1231,22 @@ private fun QuickTogglesSettingsTabContent(
     onResetDefaults: () -> Unit,
     onGridActiveChanged: (Boolean) -> Unit
 ) {
-    val supportedTiles = remember(profile) { QuickSettingTileId.supportedEntries(profile) }
+    val supportedTiles = remember(profile, isClusterTuneInstalled) {
+        QuickSettingTileId.supportedEntries(profile, isClusterTuneInstalled)
+    }
     val supportedSet = remember(supportedTiles) { supportedTiles.toSet() }
     val activeTiles = remember(quickTileOrder, disabledQuickTiles, supportedSet) {
         quickTileOrder.filter { it in supportedSet && it !in disabledQuickTiles }
     }
     val totalCount = supportedTiles.size
     val activeCount = activeTiles.size
-    val supportedDefaultOrder = remember(profile) {
-        QuickSettingTileId.defaultOrder.filter { it.isSupportedOn(profile) }
+    val supportedDefaultOrder = remember(profile, isClusterTuneInstalled) {
+        QuickSettingTileId.defaultOrder.filter { it.isSupportedOn(profile, isClusterTuneInstalled) }
     }
-    val supportedDefaultDisabled = remember(profile) {
-        QuickSettingTileId.defaultDisabled.filter { it.isSupportedOn(profile) }.toSet()
+    val supportedDefaultDisabled = remember(profile, isClusterTuneInstalled) {
+        QuickSettingTileId.defaultDisabled
+            .filter { it.isSupportedOn(profile, isClusterTuneInstalled) }
+            .toSet()
     }
     val supportedDisabled = remember(disabledQuickTiles, supportedSet) {
         disabledQuickTiles.intersect(supportedSet)
@@ -1851,12 +1860,15 @@ private fun ReorderableTccTile(
 @Composable
 private fun EnableDisableTogglesSubPageContent(
     profile: DeviceProfile,
+    isClusterTuneInstalled: Boolean,
     quickTileOrder: List<QuickSettingTileId>,
     disabledQuickTiles: Set<QuickSettingTileId>,
     promotedToManager: Boolean,
     onSetTileEnabled: (QuickSettingTileId, Boolean) -> Unit
 ) {
-    val supportedTiles = remember(profile) { QuickSettingTileId.supportedEntries(profile) }
+    val supportedTiles = remember(profile, isClusterTuneInstalled) {
+        QuickSettingTileId.supportedEntries(profile, isClusterTuneInstalled)
+    }
     val supportedSet = remember(supportedTiles) { supportedTiles.toSet() }
     val totalCount = supportedTiles.size
     val enabledCount = supportedTiles.count { it !in disabledQuickTiles }

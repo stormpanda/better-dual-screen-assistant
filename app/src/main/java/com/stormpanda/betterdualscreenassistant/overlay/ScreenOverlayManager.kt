@@ -45,6 +45,7 @@ import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.ClusterTuneLaunchResult
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
@@ -321,6 +322,9 @@ class ScreenOverlayManager(
                         },
                         onDisconnectScreenCastRequest = {
                             performDisconnectScreenCastWithToast()
+                        },
+                        onOpenClusterTuneRequest = {
+                            openClusterTuneProfilePickerOnTopScreen()
                         },
                         onOpenEditRequest = {
                             openMainActivityOnTopScreen()
@@ -738,6 +742,32 @@ class ScreenOverlayManager(
                     else -> "Disconnected screen cast"
                 }
                 showBottomToast(message)
+            }
+        }.start()
+    }
+
+    fun openClusterTuneProfilePickerOnTopScreen() {
+        if (!repository.refreshClusterTuneInstalled()) {
+            showBottomToast("ClusterTune is not installed")
+            return
+        }
+        if (repository.dualScreenDisplayMode.value == 2) {
+            showBottomToast("Top screen is off — switch to Dual or Top screen first")
+            return
+        }
+        Thread {
+            val result = repository.openClusterTuneProfilePicker()
+            val errorMessage = when (result) {
+                ClusterTuneLaunchResult.OPENED -> null
+                ClusterTuneLaunchResult.NOT_INSTALLED -> "ClusterTune is not installed"
+                ClusterTuneLaunchResult.TOP_SCREEN_OFF ->
+                    "Top screen is off — switch to Dual or Top screen first"
+                ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED ->
+                    "Enable overlay permission in ClusterTune first"
+                ClusterTuneLaunchResult.FAILED -> "Failed to open ClusterTune"
+            }
+            if (errorMessage != null) {
+                mainHandler.post { showBottomToast(errorMessage) }
             }
         }.start()
     }

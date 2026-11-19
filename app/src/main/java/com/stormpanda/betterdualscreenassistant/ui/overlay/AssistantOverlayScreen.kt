@@ -120,6 +120,7 @@ fun AssistantOverlayScreen(
     onStopScreenRecordingRequest: () -> Unit = {},
     onOpenScreenCastRequest: () -> Unit = {},
     onDisconnectScreenCastRequest: () -> Unit = {},
+    onOpenClusterTuneRequest: () -> Unit = {},
     onDismissOverlayRequest: () -> Unit
 ) {
     val context = LocalContext.current
@@ -251,6 +252,7 @@ fun AssistantOverlayScreen(
                                 onStopScreenRecording = onStopScreenRecordingRequest,
                                 onOpenScreenCast = onOpenScreenCastRequest,
                                 onDisconnectScreenCast = onDisconnectScreenCastRequest,
+                                onOpenClusterTune = onOpenClusterTuneRequest,
                                 onCleanMemory = onCleanMemoryRequest,
                                 onClearAllTasks = onClearAllTasksRequest,
                                 onToggleTouchLock = onToggleTouchLockRequest
@@ -556,6 +558,7 @@ private fun buildQuickSettingTileModels(
     onStopScreenRecording: () -> Unit,
     onOpenScreenCast: () -> Unit,
     onDisconnectScreenCast: () -> Unit,
+    onOpenClusterTune: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
     onToggleTouchLock: () -> Unit
@@ -571,6 +574,7 @@ private fun buildQuickSettingTileModels(
     val forceLandscape by repository.forceLandscape.collectAsState()
     val themeMode by repository.themeMode.collectAsState()
     val isMegingiardAvailable by repository.isMegingiardProviderAvailable.collectAsState()
+    val isClusterTuneInstalled by repository.isClusterTuneInstalled.collectAsState()
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val wifiEnabled by repository.wifiEnabled.collectAsState()
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
@@ -592,7 +596,7 @@ private fun buildQuickSettingTileModels(
 
     return buildList {
         for (tileId in quickTileOrder) {
-            if (!tileId.isSupportedOn(profile) || tileId in disabledQuickTiles) continue
+            if (!tileId.isSupportedOn(profile, isClusterTuneInstalled) || tileId in disabledQuickTiles) continue
             when (tileId) {
                 QuickSettingTileId.FOCUS_LOCK -> if (dualScreenMode == 0) {
                     val (focusLabel, focusSelected) = when (focusLock) {
@@ -769,6 +773,9 @@ private fun buildQuickSettingTileModels(
                 QuickSettingTileId.CLEAR_ALL_TASKS -> add(
                     QuickSettingTileModel("Clear All Tasks", R.drawable.ic_qs_clear_tasks, false, onClearAllTasks)
                 )
+                QuickSettingTileId.CLUSTER_TUNE -> add(
+                    QuickSettingTileModel("ClusterTune", R.drawable.ic_qs_clustertune, false, onOpenClusterTune)
+                )
             }
         }
     }
@@ -784,6 +791,7 @@ private fun SystemSettingsTab(
     onStopScreenRecording: () -> Unit,
     onOpenScreenCast: () -> Unit,
     onDisconnectScreenCast: () -> Unit,
+    onOpenClusterTune: () -> Unit,
     onCleanMemory: () -> Unit,
     onClearAllTasks: () -> Unit,
     onToggleTouchLock: () -> Unit
@@ -807,6 +815,7 @@ private fun SystemSettingsTab(
         onStopScreenRecording = onStopScreenRecording,
         onOpenScreenCast = onOpenScreenCast,
         onDisconnectScreenCast = onDisconnectScreenCast,
+        onOpenClusterTune = onOpenClusterTune,
         onCleanMemory = onCleanMemory,
         onClearAllTasks = onClearAllTasks,
         onToggleTouchLock = onToggleTouchLock

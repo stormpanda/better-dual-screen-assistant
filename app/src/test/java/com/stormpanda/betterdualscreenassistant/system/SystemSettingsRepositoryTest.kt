@@ -5,11 +5,14 @@ import android.os.IBinder
 import android.os.Parcel
 import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
+import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
 import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1208,6 +1211,67 @@ class SystemSettingsRepositoryTest {
         // Redundant setDualScreenDisplayMode(0) while already in Dual mode must not clear pin mode
         repo.setDualScreenDisplayMode(0)
         assertEquals(2, wmPinMode)
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `openClusterTuneProfilePicker checks install state top screen state overlay permission and launches service`() {
+        val repo = SystemSettingsRepository(context)
+        assertFalse(repo.isClusterTuneInstalled.value)
+        assertEquals(ClusterTuneLaunchResult.NOT_INSTALLED, repo.openClusterTuneProfilePicker())
+
+        // Register ClusterTune package in Robolectric PackageManager
+        val pkgInfo = android.content.pm.PackageInfo().apply {
+            packageName = SystemSettingsRepository.CLUSTER_TUNE_PACKAGE
+            applicationInfo = android.content.pm.ApplicationInfo().apply {
+                packageName = SystemSettingsRepository.CLUSTER_TUNE_PACKAGE
+                enabled = true
+            }
+        }
+        org.robolectric.Shadows.shadowOf(context.packageManager).installPackage(pkgInfo)
+        assertTrue(repo.refreshClusterTuneInstalled())
+        assertTrue(repo.isClusterTuneInstalled.value)
+
+        // Mode 2 (Only Bottom) -> top screen is off
+        repo.setDualScreenDisplayMode(2)
+        assertEquals(ClusterTuneLaunchResult.TOP_SCREEN_OFF, repo.openClusterTuneProfilePicker())
+        repo.setDualScreenDisplayMode(0)
+
+        mockkObject(PServerClient)
+        try {
+            // Overlay permission denied -> OVERLAY_PERMISSION_DENIED
+            every {
+                PServerClient.exec(match { it.startsWith("appops get com.aure.clustertune SYSTEM_ALERT_WINDOW") }, true)
+            } returns Result.success("Uid mode: SYSTEM_ALERT_WINDOW: default")
+            assertEquals(
+                ClusterTuneLaunchResult.OVERLAY_PERMISSION_DENIED,
+                repo.openClusterTuneProfilePicker()
+            )
+
+            // Overlay permission allowed + flattened single-line pservice output -> OPENED
+            every {
+                PServerClient.exec(match { it.startsWith("appops get com.aure.clustertune SYSTEM_ALERT_WINDOW") }, true)
+            } returns Result.success("Uid mode: SYSTEM_ALERT_WINDOW: allow ")
+            every {
+                PServerClient.exec(match { it.contains("com.aure.clustertune/.overlay.OverlayHostService") }, true)
+            } returns Result.success("Starting service: Intent { act=com.aure.clustertune.overlay.SHOW_PROFILE_PICKER } __EXIT=0 ")
+            assertEquals(ClusterTuneLaunchResult.OPENED, repo.openClusterTuneProfilePicker())
+
+            // Single-line fgets output containing only "Starting service:" (without __EXIT marker) -> OPENED
+            every {
+                PServerClient.exec(match { it.contains("com.aure.clustertune/.overlay.OverlayHostService") }, true)
+            } returns Result.success("Starting service: Intent { act=com.aure.clustertune.overlay.SHOW_PROFILE_PICKER }")
+            assertEquals(ClusterTuneLaunchResult.OPENED, repo.openClusterTuneProfilePicker())
+
+            // Service error output -> FAILED
+            every {
+                PServerClient.exec(match { it.contains("com.aure.clustertune/.overlay.OverlayHostService") }, true)
+            } returns Result.success("Error: Not found; no service started. __EXIT=255 ")
+            assertEquals(ClusterTuneLaunchResult.FAILED, repo.openClusterTuneProfilePicker())
+        } finally {
+            unmockkObject(PServerClient)
+        }
 
         repo.unregister()
     }

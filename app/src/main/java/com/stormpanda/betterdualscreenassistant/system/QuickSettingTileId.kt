@@ -227,11 +227,22 @@ enum class QuickSettingTileId(
         description = "Close all recent app tasks cleanly without killing background services",
         iconRes = R.drawable.ic_qs_clear_tasks,
         category = QuickSettingCategory.TOOLS
+    ),
+    CLUSTER_TUNE(
+        key = "cluster_tune",
+        title = "ClusterTune",
+        description = "Open ClusterTune profile picker popup on the top screen",
+        iconRes = R.drawable.ic_qs_clustertune,
+        category = QuickSettingCategory.TOOLS
     );
 
-    fun isSupportedOn(profile: DeviceProfile): Boolean = when (this) {
+    fun isSupportedOn(
+        profile: DeviceProfile,
+        isClusterTuneInstalled: Boolean = true
+    ): Boolean = when (this) {
         AMBIENT_LIGHT -> profile.supportsAmbientLight
         PREVENT_ACCIDENTAL_HOME -> profile.supportsPreventAccidentalHome
+        CLUSTER_TUNE -> isClusterTuneInstalled
         else -> true
     }
 
@@ -253,8 +264,11 @@ enum class QuickSettingTileId(
         val defaultDisabled: Set<QuickSettingTileId> =
             entries.filter { !it.enabledByDefault }.toSet()
 
-        fun supportedEntries(profile: DeviceProfile): List<QuickSettingTileId> =
-            entries.filter { it.isSupportedOn(profile) }
+        fun supportedEntries(
+            profile: DeviceProfile,
+            isClusterTuneInstalled: Boolean = true
+        ): List<QuickSettingTileId> =
+            entries.filter { it.isSupportedOn(profile, isClusterTuneInstalled) }
 
         fun fromKey(key: String): QuickSettingTileId? =
             entries.firstOrNull { it.key == key }
