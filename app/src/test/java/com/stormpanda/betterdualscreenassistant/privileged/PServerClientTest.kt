@@ -44,6 +44,10 @@ class PServerClientTest {
             .commit()
         executedCommands.clear()
         commandResponder = { "" }
+        PrivilegedBridge.resetForTesting()
+        PServerClient.stockPollIntervalMs = 0L
+        PServerClient.stockStartupSettleMs = 0L
+        PServerClient.stockStartupFallbackSleepMs = 0L
         setCachedBinder(createFakePServerBinder())
     }
 
@@ -52,6 +56,12 @@ class PServerClientTest {
         testThread = null
         DeviceProfile.testOverride = null
         DeviceProfile.resetCacheForTesting()
+        PrivilegedBridge.resetForTesting()
+        PServerClient.stockSpawnWaitTimeoutMs = 2_500L
+        PServerClient.stockStartupWaitTimeoutMs = 2_500L
+        PServerClient.stockPollIntervalMs = 80L
+        PServerClient.stockStartupSettleMs = 200L
+        PServerClient.stockStartupFallbackSleepMs = 800L
         setCachedBinder(null)
     }
 
@@ -308,5 +318,71 @@ class PServerClientTest {
 
         PServerClient.setStockProcessFrozenForBroadcastFallback(freeze = true, context = mockCtx)
         assertTrue(executedCommands.any { it.first == "kill -STOP 9123" })
+    }
+
+    @Test
+    fun `isStockAssistantEnabled detects TccServices running even when process is SIGSTOPped`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val mockCtx = mockk<Context>(relaxed = true)
+        val mockPm = mockk<PackageManager>(relaxed = true)
+        every { mockCtx.packageManager } returns mockPm
+        every { mockPm.getApplicationEnabledSetting(DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE) } returns
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+
+        commandResponder = { cmd ->
+            when {
+                cmd.startsWith("pidof") -> "7001"
+                cmd.startsWith("dumpsys activity services") -> "1"
+                cmd.startsWith("cat /proc/7001/stat") -> "7001 (reen.assistant) T 1 7001 1 0"
+                else -> ""
+            }
+        }
+
+        assertTrue(PServerClient.isStockAssistantEnabled(mockCtx))
+    }
+
+    @Test
+    fun `setStockAssistantEnabled fallback polls receiver registration and retries on TccServices race`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        var currentPid = "1000"
+        var regPolls = 0
+        var tccRunning = false
+        var attempt1EnableSeen = false
+
+        commandResponder = { cmd ->
+            when {
+                cmd.startsWith("pidof") -> currentPid
+                cmd.startsWith("kill -9") -> {
+                    currentPid = if (currentPid == "1000") "1001" else "1003"
+                    ""
+                }
+                cmd.startsWith("dumpsys activity broadcasts") -> {
+                    regPolls++
+                    if (currentPid == "1001" && regPolls < 2) "0" else "1"
+                }
+                cmd == "pm enable com.retroidpocket.dualscreen.assistant/.services.TccServices" -> {
+                    if (!attempt1EnableSeen) {
+                        attempt1EnableSeen = true
+                        currentPid = "1002"
+                        tccRunning = true
+                    } else {
+                        tccRunning = false
+                    }
+                    ""
+                }
+                cmd.startsWith("dumpsys activity services") -> if (tccRunning) "1" else "0"
+                else -> ""
+            }
+        }
+
+        assertTrue(PServerClient.setStockAssistantEnabled(enabled = false, context = context))
+        val cmds = executedCommands.map { it.first }
+        // Attempt 1 polled receiver registration twice before freezing 1001, and did NOT blindly freeze 1002
+        assertFalse(cmds.contains("kill -STOP 1002"))
+        // Attempt 2 killed 1002 and cleanly froze 1003 before re-enabling on disk
+        val stop1003Idx = cmds.indexOf("kill -STOP 1003")
+        val finalEnableIdx = cmds.lastIndexOf("pm enable com.retroidpocket.dualscreen.assistant/.services.TccServices")
+        assertTrue(stop1003Idx >= 0)
+        assertTrue(finalEnableIdx > stop1003Idx)
     }
 }

@@ -327,6 +327,37 @@ class PrivilegedBridgeTest {
     }
 
     @Test
+    fun `isStockAssistantActive and suppressStockAssistant delegate to helper binder and return null when disconnected`() {
+        setHelperBinder(null)
+        assertEquals(null, PrivilegedBridge.isStockAssistantActive())
+        assertEquals(null, PrivilegedBridge.suppressStockAssistant())
+
+        var activeResult = true
+        var suppressCalls = 0
+        val helper = createMockHelperBinder { code, data, reply ->
+            data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE -> {
+                    reply.writeNoException()
+                    reply.writeInt(if (activeResult) 1 else 0)
+                }
+                PrivilegedHelperMain.TRANSACTION_SUPPRESS_STOCK_ASSISTANT -> {
+                    suppressCalls++
+                    activeResult = false
+                    reply.writeNoException()
+                    reply.writeInt(1)
+                }
+            }
+        }
+        setHelperBinder(helper)
+
+        assertEquals(true, PrivilegedBridge.isStockAssistantActive())
+        assertEquals(true, PrivilegedBridge.suppressStockAssistant())
+        assertEquals(1, suppressCalls)
+        assertEquals(false, PrivilegedBridge.isStockAssistantActive())
+    }
+
+    @Test
     fun `captureScreenshot parses SurfaceFlinger display IDs for port 131 and 132`() {
         pServerResponder = { cmd ->
             if (cmd.contains("dumpsys SurfaceFlinger --display-id")) {

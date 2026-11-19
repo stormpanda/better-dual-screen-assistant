@@ -30,6 +30,7 @@ import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Root companion process launched via PServerBinder using `app_process`.
@@ -85,8 +86,10 @@ object PrivilegedHelperMain {
     const val TRANSACTION_CAPTURE_SCREENSHOT = IBinder.FIRST_CALL_TRANSACTION + 27
     const val TRANSACTION_GET_SCREEN_CAST_STATE = IBinder.FIRST_CALL_TRANSACTION + 28
     const val TRANSACTION_DISCONNECT_SCREEN_CAST = IBinder.FIRST_CALL_TRANSACTION + 29
+    const val TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE = IBinder.FIRST_CALL_TRANSACTION + 30
+    const val TRANSACTION_SUPPRESS_STOCK_ASSISTANT = IBinder.FIRST_CALL_TRANSACTION + 31
 
-    const val HELPER_PROTOCOL_VERSION = 25
+    const val HELPER_PROTOCOL_VERSION = 26
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
 
     internal val CAST_PROJECTION_PACKAGES: Set<String> = setOf(
@@ -149,6 +152,16 @@ object PrivilegedHelperMain {
     internal const val MAX_RAPID_CRASHES = 8
     internal const val MAX_UNREGISTERED_RESPAWN_ATTEMPTS = 6
     internal const val STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS = 350L
+    internal const val STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS = 600L
+    internal const val STOCK_MONITOR_INTERVAL_MS = 2_000L
+    internal const val STOCK_AUTO_RESUPPRESS_COOLDOWN_MS = 3_000L
+    internal const val STOCK_SPAWN_WAIT_TIMEOUT_MS = 2_500L
+    internal const val STOCK_STARTUP_WAIT_TIMEOUT_MS = 2_500L
+    internal const val STOCK_STARTUP_SETTLE_MS = 200L
+    internal const val STOCK_STARTUP_FALLBACK_SLEEP_MS = 800L
+    internal const val STOCK_POLL_INTERVAL_MS = 80L
+    internal val SIGNAL_KILL: Int =
+        android.system.OsConstants.SIGKILL.takeIf { it > 0 } ?: 9
     internal val SIGNAL_CONT: Int =
         android.system.OsConstants.SIGCONT.takeIf { it > 0 } ?: 18
     internal val SIGNAL_STOP: Int =
@@ -509,6 +522,16 @@ object PrivilegedHelperMain {
         internal var resolveStockPidOverride: (() -> Int)? = null
         internal var isPidStoppedOverride: ((Int) -> Boolean)? = null
         internal var sendSignalOverride: ((Int, Int) -> Unit)? = null
+        internal var modernBroadcastQueueOverride: Boolean? = null
+        internal var isTccServiceRunningOverride: ((String) -> Boolean)? = null
+        internal var hasStockReceiverRegisteredOverride: ((Int, String) -> Boolean?)? = null
+        internal var suppressStockOverride: (() -> Boolean)? = null
+        internal var execRootCommandOverride: ((String) -> String)? = null
+        internal var resolveAllStockPidsOverride: ((String) -> List<Int>)? = null
+        internal var stockPollIntervalMsOverride: Long? = null
+        internal var stockStartupSettleMsOverride: Long? = null
+        internal var stockStartupFallbackSleepMsOverride: Long? = null
+        internal var stockWorkerExecutorOverride: ((Runnable) -> Unit)? = null
         internal var activityTaskManagerOverride: Any? = null
         internal var screenRecorderOverride: ScreenRecorderEngine? = null
         internal var backlightWriteOverride: ((Int, Boolean) -> Unit)? = null
@@ -565,6 +588,19 @@ object PrivilegedHelperMain {
         @Volatile
         private var activeClientDeathRecipient: IBinder.DeathRecipient? = null
 
+        private val stockSuppressionLock = Any()
+
+        @Volatile
+        private var isSuppressingStock: Boolean = false
+
+        private val isVerifyingStockService = AtomicBoolean(false)
+
+        @Volatile
+        private var lastAutoResuppressElapsedMs: Long = -STOCK_AUTO_RESUPPRESS_COOLDOWN_MS
+
+        @Volatile
+        private var lastVerifiedWindowlessStockPid: Int = -1
+
         private val stockFreezeLock = Any()
 
         @Volatile
@@ -575,6 +611,28 @@ object PrivilegedHelperMain {
 
         private val refreezeStockSafetyRunnable = Runnable {
             setStockProcessFrozenForBroadcastInternal(true)
+        }
+
+        private val stockSuppressionMonitorRunnable: Runnable = object : Runnable {
+            override fun run() {
+                if (isShuttingDown || !replaceStockPreferred) return
+                val activeClient = clientBinder
+                if (activeClient == null || !activeClient.isBinderAlive) return
+                val unfrozenForBroadcast = synchronized(stockFreezeLock) {
+                    temporarilyUnfrozenStockPid > 0
+                }
+                if (!isSuppressingStock && !unfrozenForBroadcast) {
+                    val pid = resolveStockPidInternal()
+                    if (pid > 0) {
+                        if (!isPidStoppedInternal(pid)) {
+                            triggerStockResuppressionAsync("monitor_unfrozen_pid_$pid")
+                        } else if (pid != lastVerifiedWindowlessStockPid) {
+                            triggerStockTccServiceVerificationAsync(pid)
+                        }
+                    }
+                }
+                mainHandler.postDelayed(this, STOCK_MONITOR_INTERVAL_MS)
+            }
         }
 
         @Volatile
@@ -723,6 +781,8 @@ object PrivilegedHelperMain {
             } else {
                 rapidCrashCount = 0
             }
+            mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+            lastVerifiedWindowlessStockPid = -1
             mainHandler.removeCallbacks(watchdogCheckRunnable)
             mainHandler.postDelayed(watchdogCheckRunnable, WATCHDOG_POLL_INTERVAL_MS)
         }
@@ -1000,11 +1060,29 @@ object PrivilegedHelperMain {
                         true
                     }
                     TRANSACTION_UPDATE_WATCHDOG_STATE -> {
-                        replaceStockPreferred = data.readInt() != 0
+                        val newReplace = data.readInt() != 0
+                        replaceStockPreferred = newReplace
                         val topBright = data.readFloat()
                         val bottomBright = data.readFloat()
                         if (topBright > 0f) savedTopBrightness = topBright
                         if (bottomBright > 0f) savedBottomBrightness = bottomBright
+                        if (!newReplace) {
+                            mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+                            synchronized(stockFreezeLock) {
+                                mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                                temporarilyUnfrozenStockPid = -1
+                                lastVerifiedWindowlessStockPid = -1
+                            }
+                        } else if (!isShuttingDown) {
+                            val activeClient = clientBinder
+                            if (activeClient != null && activeClient.isBinderAlive) {
+                                mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+                                mainHandler.postDelayed(
+                                    stockSuppressionMonitorRunnable,
+                                    STOCK_MONITOR_INTERVAL_MS
+                                )
+                            }
+                        }
                         reply?.writeNoException()
                         true
                     }
@@ -1012,6 +1090,8 @@ object PrivilegedHelperMain {
                         setStockProcessFrozenForBroadcastInternal(true)
                         isShuttingDown = true
                         mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                        mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
+                        lastVerifiedWindowlessStockPid = -1
                         mainHandler.removeCallbacks(watchdogCheckRunnable)
                         mainHandler.removeCallbacks(onClientDiedRunnable)
                         mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
@@ -1227,6 +1307,28 @@ object PrivilegedHelperMain {
                         reply?.writeInt(if (ok) 1 else 0)
                         true
                     }
+                    TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val active = try {
+                            isStockAssistantActiveInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (active) 1 else 0)
+                        true
+                    }
+                    TRANSACTION_SUPPRESS_STOCK_ASSISTANT -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val ok = try {
+                            suppressStockAssistantInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(if (ok) 1 else 0)
+                        true
+                    }
                     else -> super.onTransact(code, data, reply, flags)
                 }
             } catch (t: Throwable) {
@@ -1258,6 +1360,7 @@ object PrivilegedHelperMain {
                 mainHandler.removeCallbacks(watchdogCheckRunnable)
                 mainHandler.removeCallbacks(onClientDiedRunnable)
                 mainHandler.removeCallbacks(fpsTrackerMaintenanceRunnable)
+                mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
                 if (newClient != null) {
                     lastClientRegisteredElapsedMs = SystemClock.elapsedRealtime()
                     val recipient = IBinder.DeathRecipient { handleClientBinderDied(newClient) }
@@ -1276,6 +1379,12 @@ object PrivilegedHelperMain {
                     mainHandler.post(onClientDiedRunnable)
                 } else {
                     mainHandler.post(fpsTrackerMaintenanceRunnable)
+                    if (replaceStockPreferred) {
+                        mainHandler.postDelayed(
+                            stockSuppressionMonitorRunnable,
+                            STOCK_MONITOR_INTERVAL_MS
+                        )
+                    }
                 }
             } else {
                 unregisterFpsListenerInternal()
@@ -1646,6 +1755,7 @@ object PrivilegedHelperMain {
         }
 
         private fun execRootCommand(command: String): String {
+            execRootCommandOverride?.let { return it(command) }
             val ps = pServerBinder
             if (ps != null && ps.isBinderAlive) {
                 val data = Parcel.obtain()
@@ -1782,25 +1892,301 @@ object PrivilegedHelperMain {
                 return
             } catch (_: Throwable) {
             }
-            val sigArg = if (sig == SIGNAL_CONT) "-CONT" else "-STOP"
+            val sigArg = when (sig) {
+                SIGNAL_CONT -> "-CONT"
+                SIGNAL_KILL -> "-9"
+                else -> "-STOP"
+            }
             execRootCommand("kill $sigArg $pid")
+        }
+
+        private fun resolveBroadcastUnfreezeDelayMs(): Long {
+            val modern = modernBroadcastQueueOverride ?: (android.os.Build.VERSION.SDK_INT >= 34)
+            return if (modern) {
+                STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS
+            } else {
+                STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS
+            }
+        }
+
+        private fun runStockWorker(task: Runnable) {
+            val hook = stockWorkerExecutorOverride
+            if (hook != null) {
+                hook(task)
+            } else {
+                Thread(task, "BDSA-StockSupervisor").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+        }
+
+        private fun triggerStockResuppressionAsync(reason: String) {
+            if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) return
+            val now = SystemClock.elapsedRealtime()
+            val last = lastAutoResuppressElapsedMs
+            if (now - last in 0L until STOCK_AUTO_RESUPPRESS_COOLDOWN_MS) {
+                return
+            }
+            lastAutoResuppressElapsedMs = now
+            runStockWorker {
+                if (!replaceStockPreferred || isShuttingDown) return@runStockWorker
+                Log.w(TAG, "Stock assistant escaped ($reason); re-suppressing ephemerally")
+                suppressStockAssistantInternal()
+            }
+        }
+
+        private fun triggerStockTccServiceVerificationAsync(pid: Int) {
+            if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) return
+            if (!isVerifyingStockService.compareAndSet(false, true)) return
+            runStockWorker {
+                try {
+                    if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) {
+                        return@runStockWorker
+                    }
+                    val stockPkg = resolveStockPackageInternal()
+                    if (isTccServiceRunningInternal(stockPkg)) {
+                        triggerStockResuppressionAsync("monitor_tcc_service_pid_$pid")
+                    } else {
+                        lastVerifiedWindowlessStockPid = pid
+                    }
+                } finally {
+                    isVerifyingStockService.set(false)
+                }
+            }
+        }
+
+        private fun resolveAllStockPidsInternal(stockPkg: String): List<Int> {
+            resolveAllStockPidsOverride?.let { return it(stockPkg) }
+            val am = activityManagerProxy
+            if (am != null) {
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    val procs = am.javaClass.getMethod("getRunningAppProcesses")
+                        .invoke(am) as? List<ActivityManager.RunningAppProcessInfo>
+                    if (procs != null) {
+                        return procs.filter {
+                            (it.processName == stockPkg || isStockAssistantPackage(it.processName)) &&
+                                it.pid > 0
+                        }.map { it.pid }.distinct()
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            return execRootCommand("pidof $stockPkg")
+                .trim()
+                .split(Regex("\\s+"))
+                .mapNotNull { token ->
+                    token.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.toIntOrNull()
+                }
+                .filter { it > 0 }
+                .distinct()
+        }
+
+        private fun isTccServiceRunningInternal(stockPkg: String): Boolean {
+            isTccServiceRunningOverride?.let { return it(stockPkg) }
+            val am = activityManagerProxy
+            if (am != null) {
+                try {
+                    val getServices = am.javaClass.methods.firstOrNull { m ->
+                        m.name == "getServices" && m.parameterTypes.size == 2
+                    }
+                    if (getServices != null) {
+                        @Suppress("UNCHECKED_CAST")
+                        val services = getServices.invoke(am, 200, 0)
+                            as? List<ActivityManager.RunningServiceInfo>
+                        if (services != null) {
+                            return services.any { info ->
+                                info.service?.packageName == stockPkg &&
+                                    info.service?.className?.endsWith(".TccServices") == true
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            val out = execRootCommand("dumpsys activity services $stockPkg | grep -c 'TccServices'")
+                .trim()
+            return (out.toIntOrNull() ?: 0) > 0
+        }
+
+        private fun hasStockReceiverRegisteredInternal(pid: Int, stockPkg: String): Boolean? {
+            hasStockReceiverRegisteredOverride?.let { return it(pid, stockPkg) }
+            val out = execRootCommand("dumpsys activity broadcasts | grep -cF ' $pid $stockPkg/'")
+                .trim()
+            return out.toIntOrNull()?.let { it > 0 }
+        }
+
+        private fun isStockAssistantActiveInternal(): Boolean {
+            val stockPkg = resolveStockPackageInternal()
+            val pid = resolveStockPidInternal()
+            if (pid > 0) {
+                if (isTccServiceRunningInternal(stockPkg)) {
+                    return true
+                }
+                val tempUnfrozen = synchronized(stockFreezeLock) {
+                    temporarilyUnfrozenStockPid == pid
+                }
+                if (tempUnfrozen) {
+                    return false
+                }
+                return !isPidStoppedInternal(pid)
+            }
+            return getApplicationInfoInternal(stockPkg)?.enabled ?: true
+        }
+
+        /**
+         * Deterministically suppresses the persistent stock DualScreenAssistant ephemerally:
+         * 1. Transiently disables `TccServices` and kills existing stock PIDs.
+         * 2. Waits for the respawned persistent process to appear and finish startup
+         *    (`ScreenReceiver` registration in `ActivityManager`) before sending `SIGSTOP`,
+         *    preventing `failed to complete startup` ANRs on Android 16.
+         * 3. Always re-enables the stock package and `TccServices` on disk in `finally`, then
+         *    verifies the frozen PID stayed unchanged without `TccServices` running (retrying once
+         *    if a race spawned a new PID).
+         */
+        private fun suppressStockAssistantInternal(): Boolean = synchronized(stockSuppressionLock) {
+            isSuppressingStock = true
+            try {
+                synchronized(stockFreezeLock) {
+                    mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                    temporarilyUnfrozenStockPid = -1
+                    cachedStockPid = -1
+                    lastVerifiedWindowlessStockPid = -1
+                }
+                suppressStockOverride?.let { return it() }
+
+                val stockPkg = resolveStockPackageInternal()
+                val serviceComponent = "$stockPkg/.services.TccServices"
+                val pollMs = (stockPollIntervalMsOverride ?: STOCK_POLL_INTERVAL_MS).coerceAtLeast(0L)
+                val settleMs = (stockStartupSettleMsOverride ?: STOCK_STARTUP_SETTLE_MS)
+                    .coerceAtLeast(0L)
+                val fallbackSleepMs =
+                    (stockStartupFallbackSleepMsOverride ?: STOCK_STARTUP_FALLBACK_SLEEP_MS)
+                        .coerceAtLeast(0L)
+
+                repeat(2) {
+                    var newPid = -1
+                    try {
+                        execRootCommand("am stopservice -n $serviceComponent")
+                        execRootCommand("pm disable $serviceComponent")
+                        execRootCommand("pm enable $stockPkg")
+
+                        val oldPids = resolveAllStockPidsInternal(stockPkg).toSet()
+                        for (oldPid in oldPids) {
+                            sendSignalToStockPidInternal(oldPid, SIGNAL_KILL)
+                        }
+
+                        val spawnDeadline = SystemClock.elapsedRealtime() + STOCK_SPAWN_WAIT_TIMEOUT_MS
+                        var spawnPolls = 0
+                        while (true) {
+                            val currentPids = resolveAllStockPidsInternal(stockPkg)
+                            val candidate = currentPids.firstOrNull { it !in oldPids && it > 0 }
+                            if (candidate != null) {
+                                newPid = candidate
+                                break
+                            }
+                            spawnPolls++
+                            if (SystemClock.elapsedRealtime() >= spawnDeadline || spawnPolls >= 40) {
+                                break
+                            }
+                            if (pollMs > 0L) {
+                                try {
+                                    Thread.sleep(pollMs)
+                                } catch (_: InterruptedException) {
+                                    break
+                                }
+                            }
+                        }
+
+                        if (newPid > 0) {
+                            val startupDeadline =
+                                SystemClock.elapsedRealtime() + STOCK_STARTUP_WAIT_TIMEOUT_MS
+                            var startupPolls = 0
+                            while (true) {
+                                val registered = hasStockReceiverRegisteredInternal(newPid, stockPkg)
+                                if (registered == true) {
+                                    if (settleMs > 0L) {
+                                        try {
+                                            Thread.sleep(settleMs)
+                                        } catch (_: InterruptedException) {
+                                        }
+                                    }
+                                    break
+                                }
+                                if (registered == null) {
+                                    if (fallbackSleepMs > 0L) {
+                                        try {
+                                            Thread.sleep(fallbackSleepMs)
+                                        } catch (_: InterruptedException) {
+                                        }
+                                    }
+                                    break
+                                }
+                                if (resolveAllStockPidsOverride == null &&
+                                    !doesPidMatchStockPackage(newPid)
+                                ) {
+                                    break
+                                }
+                                startupPolls++
+                                if (SystemClock.elapsedRealtime() >= startupDeadline ||
+                                    startupPolls >= 40
+                                ) {
+                                    break
+                                }
+                                if (pollMs > 0L) {
+                                    try {
+                                        Thread.sleep(pollMs)
+                                    } catch (_: InterruptedException) {
+                                        break
+                                    }
+                                }
+                            }
+                            sendSignalToStockPidInternal(newPid, SIGNAL_STOP)
+                        }
+                    } finally {
+                        execRootCommand("pm enable $stockPkg")
+                        execRootCommand("pm enable $serviceComponent")
+                        execRootCommand("pm enable $stockPkg/.receivers.BootBroadcastReceiver")
+                    }
+
+                    val verifyPids = resolveAllStockPidsInternal(stockPkg)
+                    if (newPid > 0 && verifyPids.contains(newPid) && verifyPids.all { it == newPid }) {
+                        if (!isPidStoppedInternal(newPid)) {
+                            sendSignalToStockPidInternal(newPid, SIGNAL_STOP)
+                        }
+                        if (!isTccServiceRunningInternal(stockPkg)) {
+                            synchronized(stockFreezeLock) {
+                                cachedStockPid = newPid
+                                lastVerifiedWindowlessStockPid = newPid
+                            }
+                            return true
+                        }
+                    }
+                }
+                return false
+            } finally {
+                isSuppressingStock = false
+            }
         }
 
         /**
          * Temporarily wakes (`SIGCONT`) or re-freezes (`SIGSTOP`) the windowless stock
-         * `com.odin.dualscreen.assistant` process around foreground ordered broadcasts
+         * assistant process around screen/power broadcasts
          * (`ACTION_SCREEN_ON`, `ACTION_SCREEN_OFF`, `ACTION_SHUTDOWN`, `REBOOT`).
          *
-         * Because `com.odin.dualscreen.assistant` registers a dynamic `ScreenReceiver` in
-         * `ThisApplication.onCreate()`, leaving it in `T` (`SIGSTOP`) state during ordered
-         * screen broadcasts stalls `system_server`'s foreground `BroadcastQueue` for 10s
-         * (delaying `SCREEN_ON`/`SCREEN_OFF` delivery to `com.odin.gameassistant`) and triggers
-         * a 12s ANR kill-and-respawn with `TccServices` re-bound.
+         * Because the stock assistant registers a dynamic `ScreenReceiver` in
+         * `ThisApplication.onCreate()`, leaving it in `T` (`SIGSTOP`) state during screen
+         * broadcasts stalls delivery and triggers a 10s ANR kill-and-respawn with `TccServices`
+         * re-bound. On Android 14+ (`BroadcastQueueModernImpl`), screen broadcasts dispatch in
+         * parallel per-process queues, so re-freezing relies on the safety timeout
+         * ([STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS]) rather than `postOrderedScreenReceiver`.
          */
         private fun setStockProcessFrozenForBroadcastInternal(freeze: Boolean) {
+            var escapedPid = -1
             synchronized(stockFreezeLock) {
                 if (!freeze) {
-                    if (!replaceStockPreferred || isShuttingDown) return
+                    if (!replaceStockPreferred || isShuttingDown || isSuppressingStock) return
                     val pid = resolveStockPidInternal()
                     if (pid <= 0) return
                     if (temporarilyUnfrozenStockPid == pid || isPidStoppedInternal(pid)) {
@@ -1809,8 +2195,10 @@ object PrivilegedHelperMain {
                         mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
                         mainHandler.postDelayed(
                             refreezeStockSafetyRunnable,
-                            STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS
+                            resolveBroadcastUnfreezeDelayMs()
                         )
+                    } else if (clientBinder?.isBinderAlive == true) {
+                        escapedPid = pid
                     }
                 } else {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
@@ -1821,6 +2209,9 @@ object PrivilegedHelperMain {
                         sendSignalToStockPidInternal(pid, SIGNAL_STOP)
                     }
                 }
+            }
+            if (escapedPid > 0) {
+                triggerStockResuppressionAsync("broadcast_escaped_pid_$escapedPid")
             }
         }
 
@@ -1865,7 +2256,10 @@ object PrivilegedHelperMain {
             try {
                 synchronized(stockFreezeLock) {
                     mainHandler.removeCallbacks(refreezeStockSafetyRunnable)
+                    mainHandler.removeCallbacks(stockSuppressionMonitorRunnable)
                     temporarilyUnfrozenStockPid = -1
+                    cachedStockPid = -1
+                    lastVerifiedWindowlessStockPid = -1
                 }
                 val bottomDisplayId = resolveBottomDisplayIdInternal()
                 val stockPkg = resolveStockPackageInternal()

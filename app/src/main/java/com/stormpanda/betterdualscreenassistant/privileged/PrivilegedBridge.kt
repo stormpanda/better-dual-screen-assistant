@@ -1219,6 +1219,63 @@ object PrivilegedBridge {
         PServerClient.setStockProcessFrozenForBroadcastFallback(freeze, context)
     }
 
+    /**
+     * Queries [PrivilegedHelperMain] whether the stock DualScreenAssistant is currently active
+     * (either `TccServices` is running, or its process is running outside a broadcast unfreeze window).
+     * Returns `null` if the privileged helper is not connected or fails to respond.
+     */
+    fun isStockAssistantActive(): Boolean? {
+        val binder = helperBinder ?: return null
+        if (!binder.isBinderAlive) return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            binder.transact(
+                PrivilegedHelperMain.TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE,
+                data,
+                reply,
+                0
+            )
+            reply.readException()
+            reply.readInt() != 0
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper isStockAssistantActive failed", t)
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
+    /**
+     * Requests [PrivilegedHelperMain] to run deterministic ephemeral stock assistant suppression.
+     * Returns `null` if the privileged helper is not connected or fails to respond.
+     */
+    fun suppressStockAssistant(): Boolean? {
+        val binder = helperBinder ?: return null
+        if (!binder.isBinderAlive) return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            binder.transact(
+                PrivilegedHelperMain.TRANSACTION_SUPPRESS_STOCK_ASSISTANT,
+                data,
+                reply,
+                0
+            )
+            reply.readException()
+            reply.readInt() != 0
+        } catch (t: Throwable) {
+            Log.w(TAG, "Helper suppressStockAssistant failed", t)
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
     data class ScreenRecordHelperStatus(
         val isRecording: Boolean = false,
         val targetMode: Int = 0,

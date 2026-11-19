@@ -420,6 +420,7 @@ class PrivilegedBinderProviderAndHelperTest {
         var stockPid = 8268
         var stockStopped = true
 
+        helperBinder.modernBroadcastQueueOverride = false
         helperBinder.resolveStockPidOverride = { stockPid }
         helperBinder.isPidStoppedOverride = { stockStopped }
         helperBinder.sendSignalOverride = { pid, sig ->
@@ -493,6 +494,370 @@ class PrivilegedBinderProviderAndHelperTest {
         stockStopped = false
         sendFreezeTransaction(freeze = false)
         assertTrue(sentSignals.isEmpty())
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST uses 600ms timeout on modern queue and resuppresses escaped PID`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        val sentSignals = mutableListOf<Pair<Int, Int>>()
+        var stockPid = 8268
+        var stockStopped = true
+        var resuppressCalls = 0
+
+        helperBinder.modernBroadcastQueueOverride = true
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.sendSignalOverride = { pid, sig ->
+            sentSignals.add(pid to sig)
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+        helperBinder.stockWorkerExecutorOverride = { task -> task.run() }
+        helperBinder.suppressStockOverride = {
+            resuppressCalls++
+            true
+        }
+        registerMockClientAndCaptureDeathRecipient(helperBinder, replaceStock = true)
+
+        fun sendFreezeTransaction(freeze: Boolean) {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeInt(if (freeze) 1 else 0)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            data.recycle()
+            reply.recycle()
+        }
+
+        // 1. Pre-broadcast unfreeze sends SIGCONT and stays unfrozen past legacy 350ms
+        sendFreezeTransaction(freeze = false)
+        assertEquals(listOf(8268 to PrivilegedHelperMain.SIGNAL_CONT), sentSignals)
+        assertFalse(stockStopped)
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_UNFREEZE_TIMEOUT_MS + 50L,
+            TimeUnit.MILLISECONDS
+        )
+        assertEquals(1, sentSignals.size)
+        assertFalse(stockStopped)
+
+        // 2. Advances to 600ms modern delay -> re-freezes with SIGSTOP
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS,
+            TimeUnit.MILLISECONDS
+        )
+        assertEquals(
+            listOf(
+                8268 to PrivilegedHelperMain.SIGNAL_CONT,
+                8268 to PrivilegedHelperMain.SIGNAL_STOP
+            ),
+            sentSignals
+        )
+        assertTrue(stockStopped)
+        assertEquals(0, resuppressCalls)
+
+        // 3. Escaped (unfrozen) PID on pre-broadcast triggers re-suppression without SIGCONT
+        sentSignals.clear()
+        stockPid = 9001
+        stockStopped = false
+        sendFreezeTransaction(freeze = false)
+        assertTrue(sentSignals.isEmpty())
+        assertEquals(1, resuppressCalls)
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE checks TccServices and broadcast window`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var stockPid = 5000
+        var stockStopped = true
+        var tccRunning = false
+
+        helperBinder.modernBroadcastQueueOverride = true
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.isTccServiceRunningOverride = { tccRunning }
+        helperBinder.sendSignalOverride = { _, sig ->
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+
+        fun queryStockActive(): Boolean {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            val active = reply.readInt() != 0
+            data.recycle()
+            reply.recycle()
+            return active
+        }
+
+        // Stopped and windowless -> false
+        assertFalse(queryStockActive())
+
+        // Temporarily unfrozen for broadcast while windowless -> still false
+        val unfreezeData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0)
+        }
+        val unfreezeReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                unfreezeData,
+                unfreezeReply,
+                0
+            )
+        )
+        unfreezeReply.readException()
+        unfreezeData.recycle()
+        unfreezeReply.recycle()
+        assertFalse(stockStopped)
+        assertFalse(queryStockActive())
+
+        // Wait for modern broadcast timeout, then simulate escaped unfrozen PID -> true
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS + 50L,
+            TimeUnit.MILLISECONDS
+        )
+        stockStopped = false
+        assertTrue(queryStockActive())
+
+        // Even if stopped, running TccServices -> true
+        stockStopped = true
+        tccRunning = true
+        assertTrue(queryStockActive())
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_SUPPRESS_STOCK_ASSISTANT waits for startup registration and retries on PID race`() {
+        DeviceProfile.testOverride = DeviceProfile.RETROID_POCKET_DUO
+        val helperBinder = createAuthorizedHelperBinder()
+        val rootCommands = mutableListOf<String>()
+        val events = mutableListOf<String>()
+        var currentPids = listOf(100)
+        var tccRunning = false
+        var regPollCount = 0
+        var attemptScenario = 1
+        var pidReadsAfterEnable = 0
+
+        helperBinder.stockPollIntervalMsOverride = 0L
+        helperBinder.stockStartupSettleMsOverride = 0L
+        helperBinder.stockStartupFallbackSleepMsOverride = 0L
+        helperBinder.isPidStoppedOverride = { true }
+        helperBinder.isTccServiceRunningOverride = { tccRunning }
+        helperBinder.execRootCommandOverride = { cmd ->
+            rootCommands.add(cmd)
+            events.add("cmd:$cmd")
+            if (attemptScenario == 2 && cmd == "pm enable ${DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE}/.services.TccServices") {
+                if (pidReadsAfterEnable == 0) {
+                    // Simulate respawn race on attempt 1 where PID 200 dies and PID 300 binds TccServices
+                    currentPids = listOf(300)
+                    tccRunning = true
+                }
+                pidReadsAfterEnable++
+            }
+            ""
+        }
+        helperBinder.resolveAllStockPidsOverride = { currentPids }
+        helperBinder.sendSignalOverride = { pid, sig ->
+            events.add("sig:$pid:$sig")
+            if (sig == PrivilegedHelperMain.SIGNAL_KILL) {
+                currentPids = when (attemptScenario) {
+                    1 -> listOf(200)
+                    else -> if (pid == 100) listOf(200) else listOf(400)
+                }
+            }
+        }
+        helperBinder.hasStockReceiverRegisteredOverride = { pid, _ ->
+            events.add("reg:$pid")
+            regPollCount++
+            regPollCount >= 2
+        }
+
+        fun transactSuppress(): Boolean {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_SUPPRESS_STOCK_ASSISTANT,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            val ok = reply.readInt() != 0
+            data.recycle()
+            reply.recycle()
+            return ok
+        }
+
+        // Scenario 1: single clean pass waits for ScreenReceiver registration before SIGSTOP and re-enables on disk
+        assertTrue(transactSuppress())
+        val sigStopIdx = events.indexOf("sig:200:${PrivilegedHelperMain.SIGNAL_STOP}")
+        val secondRegIdx = events.lastIndexOf("reg:200")
+        val enableIdx = events.indexOf("cmd:pm enable ${DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE}/.services.TccServices")
+        assertTrue(secondRegIdx in 0 until sigStopIdx)
+        assertTrue(enableIdx > sigStopIdx)
+
+        // Scenario 2: PID race on attempt 1 retries and cleanly suppresses PID 400 without blindly freezing 300
+        events.clear()
+        rootCommands.clear()
+        attemptScenario = 2
+        currentPids = listOf(100)
+        regPollCount = 0
+        pidReadsAfterEnable = 0
+        tccRunning = false
+        val origHasReg = helperBinder.hasStockReceiverRegisteredOverride
+        var racePoll = 0
+        helperBinder.hasStockReceiverRegisteredOverride = { pid, _ ->
+            if (pid == 400) {
+                tccRunning = false
+            }
+            racePoll++
+            true
+        }
+        assertNotNull(origHasReg)
+        assertTrue(transactSuppress())
+        assertFalse(events.contains("sig:300:${PrivilegedHelperMain.SIGNAL_STOP}"))
+        assertTrue(events.contains("sig:400:${PrivilegedHelperMain.SIGNAL_STOP}"))
+        assertEquals(
+            "pm enable ${DeviceProfile.RETROID_STOCK_ASSISTANT_PACKAGE}/.receivers.BootBroadcastReceiver",
+            rootCommands.last()
+        )
+    }
+
+    @Test
+    fun `HelperBinder continuous stock monitor resuppresses escaped PID and respects broadcast window and opt-out`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var stockPid = 111
+        var stockStopped = true
+        var tccRunning = false
+        var tccChecks = 0
+        var resuppressCount = 0
+
+        helperBinder.modernBroadcastQueueOverride = true
+        helperBinder.resolveStockPidOverride = { stockPid }
+        helperBinder.isPidStoppedOverride = { stockStopped }
+        helperBinder.isTccServiceRunningOverride = {
+            tccChecks++
+            tccRunning
+        }
+        helperBinder.sendSignalOverride = { _, sig ->
+            stockStopped = (sig == PrivilegedHelperMain.SIGNAL_STOP)
+        }
+        helperBinder.stockWorkerExecutorOverride = { task -> task.run() }
+        helperBinder.suppressStockOverride = {
+            resuppressCount++
+            stockStopped = true
+            tccRunning = false
+            true
+        }
+
+        registerMockClientAndCaptureDeathRecipient(helperBinder, replaceStock = true)
+
+        // 1. Stopped + windowless PID 111 verifies once and caches PID without repeated dumpsys checks
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(1, tccChecks)
+        assertEquals(0, resuppressCount)
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(1, tccChecks)
+        assertEquals(0, resuppressCount)
+
+        // 2. Stopped PID 222 with TccServices running triggers re-suppression
+        stockPid = 222
+        tccRunning = true
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(2, tccChecks)
+        assertEquals(1, resuppressCount)
+
+        // Advance past auto-resuppress cooldown
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_AUTO_RESUPPRESS_COOLDOWN_MS, TimeUnit.MILLISECONDS)
+
+        // 3. Escaped unfrozen PID 333 outside broadcast window triggers re-suppression
+        stockPid = 333
+        stockStopped = false
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS, TimeUnit.MILLISECONDS)
+        assertEquals(2, resuppressCount)
+
+        // Advance past auto-resuppress cooldown
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_AUTO_RESUPPRESS_COOLDOWN_MS, TimeUnit.MILLISECONDS)
+
+        // 4. Temporarily unfrozen PID 444 during broadcast window must NOT trigger monitor re-suppression
+        stockPid = 444
+        stockStopped = true
+        val unfreezeData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0)
+        }
+        val unfreezeReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_SET_STOCK_FROZEN_FOR_BROADCAST,
+                unfreezeData,
+                unfreezeReply,
+                0
+            )
+        )
+        unfreezeReply.readException()
+        unfreezeData.recycle()
+        unfreezeReply.recycle()
+        // Advance to end of monitor interval (444ms < 600ms if triggered, or force monitor check mid-window)
+        val monitorField = PrivilegedHelperMain.HelperBinder::class.java
+            .getDeclaredField("stockSuppressionMonitorRunnable").apply { isAccessible = true }
+        (monitorField.get(helperBinder) as Runnable).run()
+        assertEquals(2, resuppressCount)
+        ShadowLooper.idleMainLooper(
+            PrivilegedHelperMain.STOCK_BROADCAST_MODERN_REFREEZE_DELAY_MS + 50L,
+            TimeUnit.MILLISECONDS
+        )
+        assertTrue(stockStopped)
+
+        // 5. Opting out via TRANSACTION_UPDATE_WATCHDOG_STATE stops the monitor
+        val optOutData = Parcel.obtain().apply {
+            writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            writeInt(0) // replaceStockPreferred = false
+            writeFloat(0.5f)
+            writeFloat(0.5f)
+        }
+        val optOutReply = Parcel.obtain()
+        assertTrue(
+            helperBinder.transact(
+                PrivilegedHelperMain.TRANSACTION_UPDATE_WATCHDOG_STATE,
+                optOutData,
+                optOutReply,
+                0
+            )
+        )
+        optOutReply.readException()
+        optOutData.recycle()
+        optOutReply.recycle()
+
+        stockPid = 555
+        stockStopped = false
+        ShadowLooper.idleMainLooper(PrivilegedHelperMain.STOCK_MONITOR_INTERVAL_MS * 2, TimeUnit.MILLISECONDS)
+        assertEquals(2, resuppressCount)
     }
 
     @Test

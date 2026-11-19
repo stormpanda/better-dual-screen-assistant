@@ -53,6 +53,9 @@ class AssistantForegroundService : Service() {
         const val EXTRA_KEY_ACTION_DOWN = "key_action_down"
         const val EXTRA_IS_LONG_PRESS = "isLongPress"
         private const val TCC_TOGGLE_DEBOUNCE_MS = 200L
+        private const val MODERN_BROADCAST_REFREEZE_FALLBACK_MS = 650L
+        private const val POST_SCREEN_STOCK_CHECK_DELAY_LEGACY_MS = 500L
+        private const val POST_SCREEN_STOCK_CHECK_DELAY_MODERN_MS = 1_000L
 
         @Volatile
         var instance: AssistantForegroundService? = null
@@ -86,13 +89,23 @@ class AssistantForegroundService : Service() {
     private var lastTccToggleElapsedMs: Long = 0L
     private var longPressConsumed: Boolean = false
     private var postBroadcastStockCheckJob: Job? = null
+    private var fallbackBroadcastRefreezeJob: Job? = null
+
+    internal var modernParallelBroadcastQueueOverride: Boolean? = null
+
+    internal fun usesModernParallelBroadcastQueue(): Boolean =
+        modernParallelBroadcastQueueOverride ?: (android.os.Build.VERSION.SDK_INT >= 34)
 
     /**
      * Runs at high priority (`SYSTEM_HIGH_PRIORITY - 1` = `999`) ahead of stock
      * `com.odin.dualscreen.assistant`'s `ScreenReceiver` (`priority = 0`) and
-     * `com.odin.gameassistant` (`priority = 0`) on foreground ordered screen broadcasts.
+     * `com.odin.gameassistant` (`priority = 0`) on Android 13 legacy serial ordered broadcasts.
      * Briefly sends `SIGCONT` to the windowless stock process so `BroadcastQueue` never stalls
      * 10s or triggers a 12s ANR respawn.
+     *
+     * On Android 14+ (`BroadcastQueueModernImpl`), screen broadcasts dispatch in parallel
+     * per-process queues, so re-freezing relies on `PrivilegedHelperMain`'s safety timeout (600ms)
+     * or [scheduleFallbackBroadcastRefreeze] rather than [postOrderedScreenReceiver].
      */
     private val preOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -100,35 +113,54 @@ class AssistantForegroundService : Service() {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> {
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
+                    if (usesModernParallelBroadcastQueue() && PServerClient.hasFallbackUnfrozenStockPid()) {
+                        scheduleFallbackBroadcastRefreeze(appCtx)
+                    }
                 }
-                Intent.ACTION_SCREEN_OFF,
+                Intent.ACTION_SCREEN_OFF -> {
+                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
+                    if (usesModernParallelBroadcastQueue() && PServerClient.hasFallbackUnfrozenStockPid()) {
+                        scheduleFallbackBroadcastRefreeze(appCtx)
+                    }
+                    stopActiveRecordingOnPowerTransition("screen_off")
+                }
                 Intent.ACTION_SHUTDOWN,
                 "android.intent.action.REBOOT" -> {
+                    fallbackBroadcastRefreezeJob?.cancel()
                     PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = false, context = appCtx)
-                    stopActiveRecordingOnPowerTransition(
-                        if (intent.action == Intent.ACTION_SCREEN_OFF) "screen_off" else "shutdown"
-                    )
+                    stopActiveRecordingOnPowerTransition("shutdown")
                 }
             }
         }
     }
 
     /**
-     * Runs at low priority (`SYSTEM_LOW_PRIORITY + 1` = `-999`) immediately after all default-priority
-     * ordered screen broadcast receivers finish, re-freezing the windowless stock process (`SIGSTOP`).
+     * On Android 13 legacy serial ordered broadcasts (`!usesModernParallelBroadcastQueue()`), runs
+     * at low priority (`SYSTEM_LOW_PRIORITY + 1` = `-999`) immediately after all default-priority
+     * receivers finish, re-freezing the windowless stock process (`SIGSTOP`).
+     *
+     * On Android 14+ (`BroadcastQueueModernImpl`), receivers in the same app run back-to-back in
+     * their own per-process queue before the stock app finishes its `ScreenReceiver`, so re-freezing
+     * here would freeze the stock process mid-broadcast and trigger ANRs; re-freezing is therefore
+     * skipped here when [usesModernParallelBroadcastQueue] is true.
      */
     private val postOrderedScreenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val appCtx = context ?: this@AssistantForegroundService
+            val modernQueue = usesModernParallelBroadcastQueue()
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                    if (!modernQueue) {
+                        PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                    }
                     if (::overlayManager.isInitialized) {
                         overlayManager.reassertBlankedHardwareStateIfNeeded()
                     }
                 }
                 Intent.ACTION_SCREEN_OFF -> {
-                    PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                    if (!modernQueue) {
+                        PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+                    }
                 }
             }
         }
@@ -287,10 +319,25 @@ class AssistantForegroundService : Service() {
         return START_STICKY
     }
 
+    private fun scheduleFallbackBroadcastRefreeze(appCtx: Context) {
+        fallbackBroadcastRefreezeJob?.cancel()
+        fallbackBroadcastRefreezeJob = serviceScope.launch {
+            delay(MODERN_BROADCAST_REFREEZE_FALLBACK_MS)
+            withContext(Dispatchers.IO) {
+                PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = appCtx)
+            }
+        }
+    }
+
     private fun schedulePostScreenBroadcastStockCheck() {
         postBroadcastStockCheckJob?.cancel()
+        val checkDelayMs = if (usesModernParallelBroadcastQueue()) {
+            POST_SCREEN_STOCK_CHECK_DELAY_MODERN_MS
+        } else {
+            POST_SCREEN_STOCK_CHECK_DELAY_LEGACY_MS
+        }
         postBroadcastStockCheckJob = serviceScope.launch {
-            delay(500L)
+            delay(checkDelayMs)
             enforceStockTakeoverIfPreferred()
         }
     }
@@ -382,6 +429,7 @@ class AssistantForegroundService : Service() {
     override fun onDestroy() {
         instance = null
         postBroadcastStockCheckJob?.cancel()
+        fallbackBroadcastRefreezeJob?.cancel()
         try {
             unregisterReceiver(preOrderedScreenReceiver)
         } catch (_: Throwable) {

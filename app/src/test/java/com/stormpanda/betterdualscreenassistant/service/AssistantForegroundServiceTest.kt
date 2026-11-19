@@ -489,4 +489,37 @@ class AssistantForegroundServiceTest {
         assertFalse(getBooleanField("longPressConsumed"))
         verify(exactly = 0) { mockOverlayManager.toggleAssistantOverlay() }
     }
+
+    @Test
+    fun `postOrderedScreenReceiver skips immediate refreeze on Android 14+ modern broadcast queue but keeps it on legacy`() {
+        mockkObject(PrivilegedBridge)
+        try {
+            every { PrivilegedBridge.setStockProcessFrozenForBroadcast(any(), any()) } just runs
+
+            val postField = AssistantForegroundService::class.java
+                .getDeclaredField("postOrderedScreenReceiver").apply { isAccessible = true }
+            val postReceiver = postField.get(service) as android.content.BroadcastReceiver
+
+            // 1. Legacy Android 13 serial queue -> re-freezes immediately in postOrderedScreenReceiver
+            service.modernParallelBroadcastQueueOverride = false
+            postReceiver.onReceive(context, Intent(Intent.ACTION_SCREEN_ON))
+            postReceiver.onReceive(context, Intent(Intent.ACTION_SCREEN_OFF))
+            verify(exactly = 2) {
+                PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = any())
+            }
+            verify(exactly = 1) { mockOverlayManager.reassertBlankedHardwareStateIfNeeded() }
+
+            // 2. Modern Android 14-16 parallel BroadcastQueueModernImpl -> must NOT re-freeze in postOrderedScreenReceiver
+            service.modernParallelBroadcastQueueOverride = true
+            postReceiver.onReceive(context, Intent(Intent.ACTION_SCREEN_ON))
+            postReceiver.onReceive(context, Intent(Intent.ACTION_SCREEN_OFF))
+            verify(exactly = 2) {
+                PrivilegedBridge.setStockProcessFrozenForBroadcast(freeze = true, context = any())
+            }
+            verify(exactly = 2) { mockOverlayManager.reassertBlankedHardwareStateIfNeeded() }
+        } finally {
+            service.modernParallelBroadcastQueueOverride = null
+            unmockkAll()
+        }
+    }
 }
