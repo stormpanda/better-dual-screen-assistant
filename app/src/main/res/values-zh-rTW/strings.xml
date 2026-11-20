@@ -12,8 +12,10 @@
     <!-- Foreground Service & Notifications -->
     <string name="notification_channel_assistant_name">雙螢幕助手服務</string>
     <string name="notification_channel_manager_name">雙螢幕管理員服務</string>
-    <string name="notification_channel_desc">保持雙螢幕浮動視窗與 AYN／雙螢幕實體鍵處理程序處於待命狀態</string>
-    <string name="notification_ready_text">AYN／雙螢幕實體鍵與雙螢幕控制已就緒</string>
+    <string name="notification_channel_desc_ayn">保持雙螢幕浮動視窗與實體 AYN 鍵處理程序處於待命狀態</string>
+    <string name="notification_channel_desc_retroid">保持雙螢幕浮動視窗與實體雙螢幕鍵處理程序處於待命狀態</string>
+    <string name="notification_ready_text_ayn">實體 AYN 鍵與雙螢幕控制已就緒</string>
+    <string name="notification_ready_text_retroid">實體雙螢幕鍵與雙螢幕控制已就緒</string>
     <string name="notification_recording_top_text">正在錄製上螢幕 — 點擊「停止」即可儲存</string>
     <string name="notification_recording_bottom_text">正在錄製下螢幕 — 點擊「停止」即可儲存</string>
     <string name="notification_recording_both_text">正在錄製雙螢幕 — 點擊「停止」即可儲存</string>

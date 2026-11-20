@@ -19,6 +19,7 @@ import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
+import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.DirectBootPrefs
 import com.stormpanda.betterdualscreenassistant.system.MappingServiceClient
 import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
@@ -531,12 +532,19 @@ class AssistantForegroundService : Service() {
                 R.string.notification_channel_assistant_name
             }
         )
+        val isRetroid = DeviceProfile.current(this) == DeviceProfile.RETROID_POCKET_DUO
         val channel = NotificationChannel(
             CHANNEL_ID,
             channelTitle,
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = getString(R.string.notification_channel_desc)
+            description = getString(
+                if (isRetroid) {
+                    R.string.notification_channel_desc_retroid
+                } else {
+                    R.string.notification_channel_desc_ayn
+                }
+            )
             setShowBadge(false)
         }
         nm?.createNotificationChannel(channel)
@@ -598,7 +606,15 @@ class AssistantForegroundService : Service() {
                     ).build()
                 )
         } else {
-            builder.setContentText(getString(R.string.notification_ready_text))
+            builder.setContentText(
+                getString(
+                    if (isRetroid) {
+                        R.string.notification_ready_text_retroid
+                    } else {
+                        R.string.notification_ready_text_ayn
+                    }
+                )
+            )
         }
 
         return builder.build()
