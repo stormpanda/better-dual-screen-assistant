@@ -627,6 +627,7 @@ private fun buildQuickSettingTileModels(
     val screenRecordingState by repository.screenRecordingState.collectAsState()
     val quickTileOrder by repository.quickTileOrder.collectAsState()
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
+    val dpadSwapActive by repository.dpadSwapActive.collectAsState()
 
     val isRecordingScreen = screenRecordingState.isRecording
 
@@ -821,6 +822,11 @@ private fun buildQuickSettingTileModels(
                 )
                 QuickSettingTileId.CLUSTER_TUNE -> add(
                     QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_clustertune, false, onOpenClusterTune)
+                )
+                QuickSettingTileId.DPAD_SWAP -> add(
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_dpad_swap, dpadSwapActive) {
+                        repository.toggleDpadSwap(context)
+                    }
                 )
             }
         }

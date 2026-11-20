@@ -152,6 +152,9 @@
     <string name="toast_clustertune_top_screen_off">Top screen is off — switch to Dual or Top screen first</string>
     <string name="toast_clustertune_overlay_permission_denied">Enable overlay permission in ClusterTune first</string>
     <string name="toast_clustertune_open_failed">Failed to open ClusterTune</string>
+    <string name="toast_dpad_swap_enabled">D-Pad Swap enabled (D-Pad and Left Stick swapped)</string>
+    <string name="toast_dpad_swap_disabled">D-Pad Swap disabled (Normal controls)</string>
+    <string name="toast_dpad_swap_daemon_missing">D-Pad Swap daemon is not running</string>
 
     <!-- Quick Setting Categories & Tiles Metadata -->
     <string name="qs_cat_stock_title">Stock %1$s Toggles</string>
@@ -214,6 +217,8 @@
     <string name="qs_tile_clear_all_tasks_desc">Close all recent app tasks cleanly without killing background services</string>
     <string name="qs_tile_cluster_tune_title" translatable="false">ClusterTune</string>
     <string name="qs_tile_cluster_tune_desc">Open ClusterTune profile picker popup on the top screen</string>
+    <string name="qs_tile_dpad_swap_title">D-Pad Swap</string>
+    <string name="qs_tile_dpad_swap_desc">Swap physical D-Pad and Left Analog Stick system-wide</string>
 
     <!-- Themes & UI Look -->
     <string name="ui_look_auto">Auto</string>

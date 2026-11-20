@@ -47,6 +47,7 @@ class QuickSettingTileIdTest {
         assertTrue(QuickSettingTileId.SCREEN_RECORD in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CLEAR_ALL_TASKS in QuickSettingTileId.defaultDisabled)
         assertTrue(QuickSettingTileId.CLUSTER_TUNE in QuickSettingTileId.defaultDisabled)
+        assertTrue(QuickSettingTileId.DPAD_SWAP in QuickSettingTileId.defaultDisabled)
         assertEquals(QuickSettingCategory.ANDROID_SYSTEM, QuickSettingTileId.SCREEN_CAST.category)
         assertEquals("Screen Cast", QuickSettingTileId.SCREEN_CAST.title)
         assertEquals("screen_cast", QuickSettingTileId.SCREEN_CAST.key)
@@ -57,6 +58,9 @@ class QuickSettingTileIdTest {
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.CLUSTER_TUNE.category)
         assertEquals("ClusterTune", QuickSettingTileId.CLUSTER_TUNE.title)
         assertEquals("cluster_tune", QuickSettingTileId.CLUSTER_TUNE.key)
+        assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.DPAD_SWAP.category)
+        assertEquals("D-Pad Swap", QuickSettingTileId.DPAD_SWAP.title)
+        assertEquals("dpad_swap", QuickSettingTileId.DPAD_SWAP.key)
     }
 
     @Test

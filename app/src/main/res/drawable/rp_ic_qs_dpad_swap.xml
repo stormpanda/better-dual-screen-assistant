@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- D-Pad cross in pixel style -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,6H30V18H18V6ZM18,30H30V42H18V30ZM6,18H18V30H6V18ZM30,18H42V30H30V18ZM18,18H30V30H18V18Z" />
+    <!-- Pixel swap arrows -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M34,4H44V8H34V4ZM40,8H44V14H40V8ZM4,34H8V40H4V34ZM4,40H14V44H4V40Z" />
+</vector>
