@@ -12,8 +12,8 @@
     <!-- Foreground Service & Notifications -->
     <string name="notification_channel_assistant_name">雙螢幕助手服務</string>
     <string name="notification_channel_manager_name">雙螢幕管理員服務</string>
-    <string name="notification_channel_desc">保持雙螢幕浮動視窗與 TCC 按鍵處理程序處於待命狀態</string>
-    <string name="notification_ready_text">TCC 按鍵與雙螢幕控制已就緒</string>
+    <string name="notification_channel_desc">保持雙螢幕浮動視窗與 AYN／雙螢幕實體鍵處理程序處於待命狀態</string>
+    <string name="notification_ready_text">AYN／雙螢幕實體鍵與雙螢幕控制已就緒</string>
     <string name="notification_recording_top_text">正在錄製上螢幕 — 點擊「停止」即可儲存</string>
     <string name="notification_recording_bottom_text">正在錄製下螢幕 — 點擊「停止」即可儲存</string>
     <string name="notification_recording_both_text">正在錄製雙螢幕 — 點擊「停止」即可儲存</string>
@@ -128,9 +128,9 @@
     <string name="toast_touch_lock_enabled_assistant">已鎖定下螢幕觸控（開啟助手即可解鎖）</string>
     <string name="toast_touch_lock_enabled_manager">已鎖定下螢幕觸控（開啟管理員即可解鎖）</string>
     <string name="toast_touch_lock_disabled">已解鎖下螢幕觸控</string>
-    <string name="toast_screenshot_top_saved">已將上螢幕擷取儲存至 Pictures/Screenshots</string>
-    <string name="toast_screenshot_bottom_saved">已將下螢幕擷取儲存至 Pictures/Screenshots</string>
-    <string name="toast_screenshot_both_saved">已將雙螢幕擷取儲存至 Pictures/Screenshots</string>
+    <string name="toast_screenshot_top_saved">已將上螢幕擷取畫面儲存至 Pictures/Screenshots</string>
+    <string name="toast_screenshot_bottom_saved">已將下螢幕擷取畫面儲存至 Pictures/Screenshots</string>
+    <string name="toast_screenshot_both_saved">已將雙螢幕擷取畫面儲存至 Pictures/Screenshots</string>
     <string name="toast_screenshot_top_failed">擷取上螢幕畫面失敗</string>
     <string name="toast_screenshot_bottom_failed">擷取下螢幕畫面失敗</string>
     <string name="toast_screenshot_both_failed">擷取雙螢幕畫面失敗</string>
@@ -146,7 +146,7 @@
     <string name="toast_screen_cast_disconnected">已中斷螢幕投放</string>
     <string name="toast_clustertune_not_installed">尚未安裝 ClusterTune</string>
     <string name="toast_clustertune_top_screen_off">上螢幕已關閉 — 請先切換至雙螢幕或僅上螢幕模式</string>
-    <string name="toast_clustertune_overlay_permission_denied">請先在 ClusterTune 中啟用懸浮視窗權限</string>
+    <string name="toast_clustertune_overlay_permission_denied">請先在 ClusterTune 中啟用浮動視窗權限</string>
     <string name="toast_clustertune_open_failed">無法開啟 ClusterTune</string>
 
     <!-- Quick Setting Categories & Tiles Metadata -->
@@ -208,7 +208,7 @@
     <string name="qs_tile_prevent_accidental_home_desc">防止遊戲期間誤觸主畫面鍵</string>
     <string name="qs_tile_clear_all_tasks_title">清除\n所有工作</string>
     <string name="qs_tile_clear_all_tasks_desc">關閉所有最近使用的應用程式工作而不終止背景服務</string>
-    <string name="qs_tile_cluster_tune_desc">在上螢幕開啟 ClusterTune 設定檔選擇彈窗</string>
+    <string name="qs_tile_cluster_tune_desc">在上螢幕開啟 ClusterTune 設定檔選擇彈出視窗</string>
 
     <!-- Themes & UI Look -->
     <string name="ui_look_auto">自動</string>
@@ -270,7 +270,7 @@
     <string name="settings_temp_unit_desc">設定浮動視窗 CPU 溫度顯示為攝氏（°C）或華氏（°F），亦可直接點擊溫度卡片切換</string>
     <string name="settings_temp_unit_celsius">攝氏 (°C)</string>
     <string name="settings_temp_unit_fahrenheit">華氏 (°F)</string>
-    <string name="settings_screenshot_display_title">螢幕擷取顯示器</string>
+    <string name="settings_screenshot_display_title">預設擷取螢幕</string>
     <string name="settings_screenshot_display_desc">選擇點擊螢幕擷取快速圖塊時直接擷取的顯示器，或選擇「每次詢問」於每次點擊時挑選（長按圖塊可隨時選擇）</string>
     <string name="settings_screenshot_ask_every_time">每次詢問</string>
     <string name="settings_screenshot_top">上螢幕</string>
