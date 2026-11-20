@@ -26,7 +26,9 @@ import android.os.SystemClock
 import android.app.UiModeManager
 import android.content.SharedPreferences
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.ui.graphics.toArgb
+import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedHelperMain
@@ -199,6 +201,9 @@ class SystemSettingsRepository(private val context: Context) {
     }
     private val castStateExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "BDSA-CastState").apply { isDaemon = true }
+    }
+    private val dpadSwapExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "BDSA-DpadSwap").apply { isDaemon = true }
     }
     private val castStateEpoch = java.util.concurrent.atomic.AtomicInteger(0)
 
@@ -445,6 +450,9 @@ class SystemSettingsRepository(private val context: Context) {
     // Tools Toggles
     private val _touchLockEnabled = MutableStateFlow(false)
     val touchLockEnabled: StateFlow<Boolean> = _touchLockEnabled.asStateFlow()
+
+    private val _dpadSwapActive = MutableStateFlow(false)
+    val dpadSwapActive: StateFlow<Boolean> = _dpadSwapActive.asStateFlow()
 
     // Trigger Mode: 1 = Analog, 0 = Digital, 2 = Both
     private val _triggerMode = MutableStateFlow(getInt(KEY_TRIGGER_INPUT_MODE, 2))
@@ -1084,6 +1092,7 @@ class SystemSettingsRepository(private val context: Context) {
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
         refreshScreenCastStateAsync()
+        refreshDpadSwapStateAsync()
         _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
@@ -2512,6 +2521,94 @@ class SystemSettingsRepository(private val context: Context) {
         val next = !_keyMapperEnabled.value
         PrivilegedBridge.putSystemSettingInt(context, KEY_ADAPTER_ENABLE, if (next) 1 else 0)
         _keyMapperEnabled.value = next
+    }
+
+    fun refreshDpadSwapStateAsync() {
+        ensureDpadSwapDaemonRunning()
+    }
+
+    fun ensureDpadSwapDaemonRunning() {
+        dpadSwapExecutor.execute {
+            // 1. Check if daemon process is currently running
+            val pidCheck = PServerClient.exec("pidof dpad_swap", wait = true)
+            val pid = pidCheck.getOrNull()?.trim() ?: ""
+            if (pid.isNotEmpty()) {
+                val stateCheck = PServerClient.exec("cat /data/local/tmp/dpad_swap.state 2>/dev/null", wait = true)
+                val stateStr = stateCheck.getOrNull()?.trim() ?: ""
+                mainHandler.post {
+                    _dpadSwapActive.value = (stateStr == "1")
+                }
+                return@execute
+            }
+
+            // 2. Daemon is not running. Ensure binary exists at /data/local/tmp/dpad_swap
+            val checkBin = PServerClient.exec("[ -x /data/local/tmp/dpad_swap ] && echo OK", wait = true)
+            val hasBin = checkBin.getOrNull()?.trim() == "OK"
+
+            if (!hasBin) {
+                val localBin = java.io.File(context.filesDir, "dpad_swap")
+                try {
+                    context.assets.open("dpad_swap").use { input ->
+                        localBin.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    PServerClient.exec("cp ${localBin.absolutePath} /data/local/tmp/dpad_swap && chmod 0755 /data/local/tmp/dpad_swap", wait = true)
+                } catch (t: Throwable) {
+                    android.util.Log.e("SystemSettingsRepository", "Failed to extract dpad_swap asset", t)
+                }
+            }
+
+            // 3. Launch daemon in background with auto-detection of Retroid controller
+            PServerClient.exec("nohup /data/local/tmp/dpad_swap >/data/local/tmp/dpad_swap.log 2>&1 &", wait = false)
+
+            try {
+                Thread.sleep(150L)
+            } catch (_: InterruptedException) {
+            }
+
+            val stateResult = PServerClient.exec("cat /data/local/tmp/dpad_swap.state 2>/dev/null", wait = true)
+            val finalActive = stateResult.getOrNull()?.trim() == "1"
+            mainHandler.post {
+                _dpadSwapActive.value = finalActive
+            }
+        }
+    }
+
+    fun toggleDpadSwap(context: Context) {
+        dpadSwapExecutor.execute {
+            val cmd = "{ killall -USR1 dpad_swap 2>&1; echo __EXIT=\$?; cat /data/local/tmp/dpad_swap.state 2>/dev/null; } | tr '\\n' ' '"
+            val result = PServerClient.exec(cmd, wait = true)
+            val raw = result.getOrNull() ?: ""
+            val tokens = raw.trim().split(Regex("\\s+"))
+            val exitCodeToken = tokens.find { it.startsWith("__EXIT=") }
+            val exitCode = exitCodeToken?.removePrefix("__EXIT=")?.toIntOrNull() ?: -1
+
+            if (exitCode != 0) {
+                ensureDpadSwapDaemonRunning()
+                mainHandler.post {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_dpad_swap_daemon_missing),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return@execute
+            }
+
+            val stateToken = tokens.findLast { it == "0" || it == "1" }
+            val active = stateToken == "1"
+            mainHandler.post {
+                _dpadSwapActive.value = active
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        if (active) R.string.toast_dpad_swap_enabled else R.string.toast_dpad_swap_disabled
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
     }
 
     /**

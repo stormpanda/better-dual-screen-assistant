@@ -988,7 +988,7 @@ class GamepadScaffoldTouchNavigationTest {
         assertNotNull(findNodeWithTextOrNull(activity, "Replace Stock Assistant"))
         assertNotNull(findNodeWithTextOrNull(activity, "physical Dual Screen button"))
 
-        // 2. Quick Toggles tab filters unsupported tiles (Ambient Light & Double-Tap Home -> 23 supported tiles)
+        // 2. Quick Toggles tab filters unsupported tiles (Ambient Light & Double-Tap Home -> 24 supported tiles)
         tapClickableNodeWithText(activity, "Quick Toggles")
         idleCompose(activity, 300)
         val supportedCount = com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
@@ -997,8 +997,8 @@ class GamepadScaffoldTouchNavigationTest {
                 isClusterTuneInstalled = false
             )
             .size
-        assertEquals(23, supportedCount)
-        assertNotNull(findNodeWithTextOrNull(activity, "9 / 23 Active"))
+        assertEquals(24, supportedCount)
+        assertNotNull(findNodeWithTextOrNull(activity, "9 / 24 Active"))
 
         // 3. Updates tab no longer shows Licenses; General tab places "Licenses & Third-Party Notices" at the very bottom
         tapClickableNodeWithText(activity, "Updates")

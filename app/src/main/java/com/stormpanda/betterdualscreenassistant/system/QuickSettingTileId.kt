@@ -312,6 +312,15 @@ enum class QuickSettingTileId(
         descriptionRes = R.string.qs_tile_cluster_tune_desc,
         iconRes = R.drawable.ic_qs_clustertune,
         category = QuickSettingCategory.TOOLS
+    ),
+    DPAD_SWAP(
+        key = "dpad_swap",
+        title = "D-Pad Swap",
+        description = "Swap physical D-Pad and Left Analog Stick system-wide",
+        titleRes = R.string.qs_tile_dpad_swap_title,
+        descriptionRes = R.string.qs_tile_dpad_swap_desc,
+        iconRes = R.drawable.ic_qs_dpad_swap,
+        category = QuickSettingCategory.TOOLS
     );
 
     fun isSupportedOn(

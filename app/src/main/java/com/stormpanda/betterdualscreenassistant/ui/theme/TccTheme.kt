@@ -1091,6 +1091,7 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_qs_controller_style -> R.drawable.rp_ic_qs_controller_style
     R.drawable.ic_qs_dark_theme -> R.drawable.rp_ic_qs_dark_theme
     R.drawable.ic_qs_dnd -> R.drawable.rp_ic_qs_dnd
+    R.drawable.ic_qs_dpad_swap -> R.drawable.rp_ic_qs_dpad_swap
     R.drawable.ic_qs_fan_control -> R.drawable.rp_ic_qs_fan_control
     R.drawable.ic_qs_keep_awake -> R.drawable.rp_ic_qs_keep_awake
     R.drawable.ic_qs_key_mapper -> R.drawable.rp_ic_qs_key_mapper
