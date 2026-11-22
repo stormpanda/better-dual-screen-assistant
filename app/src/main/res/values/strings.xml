@@ -379,7 +379,7 @@
     <string name="licenses_app_pill">Source-Available v1.0</string>
     <string name="licenses_section_fonts">THIRD-PARTY OPEN-SOURCE FONTS</string>
     <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
-    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Bundled pixel UI label font (res/font/tcc_pixel_label.ttf)</string>
+    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Bundled pixel UI label font with added Cyrillic glyphs (res/font/tcc_pixel_label.ttf) and a Traditional Chinese subset (res/font/tcc_pixel_label_cjk.ttf)</string>
     <string name="licenses_fusion_pixel_action" translatable="false">SIL OFL 1.1</string>
     <string name="licenses_dosiyagi_title">DOSIyagiBoldface</string>
     <string name="licenses_dosiyagi_desc">© 2022 Damheo Lee • Bundled pixel readout font (res/font/tcc_pixel_display.ttf)</string>
@@ -393,7 +393,7 @@
     <string name="licenses_detail_app_title">Better Dual Screen Assistant Source-Available License v1.0</string>
     <string name="licenses_detail_app_scope">Governs Better Dual Screen Assistant source code and APK builds (free for personal, non-commercial use).</string>
     <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL Open Font License 1.1</string>
-    <string name="licenses_detail_fusion_pixel_scope">Font License Scope — Fusion Pixel Only: applies solely to bundled font res/font/tcc_pixel_label.ttf by TakWolf.</string>
+    <string name="licenses_detail_fusion_pixel_scope">Font License Scope — Fusion Pixel Only: applies solely to the bundled Fusion Pixel fonts res/font/tcc_pixel_label.ttf (modified: Cyrillic glyphs added, family renamed per OFL reserved-name clause) and res/font/tcc_pixel_label_cjk.ttf (Traditional Chinese character subset) by TakWolf.</string>
     <string name="licenses_detail_dosiyagi_title">DOSIyagiBoldface — MIT License (Font File Only)</string>
     <string name="licenses_detail_dosiyagi_scope">Font License Scope — DOSIyagiBoldface Only: applies solely to res/font/tcc_pixel_display.ttf by Damheo Lee, NOT to Better Dual Screen Assistant.</string>
     <string name="licenses_detail_androidx_title">AndroidX &amp; Jetpack Compose — Apache License 2.0</string>

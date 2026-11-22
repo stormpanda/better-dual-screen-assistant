@@ -2,16 +2,19 @@
 
 > **Application License Note:** Better Dual Screen Assistant itself is proprietary, source-available software governed by the [Better Dual Screen Assistant Source-Available License v1.0](LICENSE) — it is **not** licensed under MIT or any OSI open-source license.
 >
-> The open-source copyright notices and license terms below apply **solely** to the unmodified third-party font files and runtime libraries bundled with or linked by the application.
+> The open-source copyright notices and license terms below apply **solely** to the third-party font files and runtime libraries bundled with or linked by the application (including the documented font subsets/modifications per entry).
 
 ---
 
-## 1. Fusion Pixel (`app/src/main/res/font/tcc_pixel_label.ttf`)
+## 1. Fusion Pixel (`app/src/main/res/font/tcc_pixel_label.ttf`, `app/src/main/res/font/tcc_pixel_label_cjk.ttf`)
 
-- **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, `2025.07.02`)
+- **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, `2025.07.02` for the label font; `zh_tw`, `2026.11.10` for the CJK subset)
 - **Source**: https://github.com/TakWolf/fusion-pixel-font
 - **Copyright**: `Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"`
-- **License**: SIL Open Font License, Version 1.1 (applies solely to `tcc_pixel_label.ttf`; reproduced below)
+- **License**: SIL Open Font License, Version 1.1 (applies solely to the two bundled Fusion Pixel font files; reproduced below)
+- **Bundled Variants**:
+  - `tcc_pixel_label.ttf` — modified subset of the `zh_hans` variant: Cyrillic glyphs (U+0400–U+045F) and extended Latin added, unused arrow glyphs removed, family renamed to `BDSA Pixel 12 Label` per OFL reserved-font-name clause 3.
+  - `tcc_pixel_label_cjk.ttf` — character subset of the `zh_tw` variant (no glyph modifications) containing the 481 hanzi and CJK punctuation used by the app UI.
 
 ---
 

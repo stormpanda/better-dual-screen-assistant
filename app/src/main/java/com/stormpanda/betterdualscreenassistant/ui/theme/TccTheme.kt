@@ -95,17 +95,37 @@ val TccPixelLabelFontFamily: FontFamily = FontFamily(
     Font(R.font.tcc_pixel_label, FontWeight.Normal),
     Font(R.font.tcc_pixel_label, FontWeight.Medium),
     Font(R.font.tcc_pixel_label, FontWeight.SemiBold),
-    Font(R.font.tcc_pixel_label, FontWeight.Bold)
+    Font(R.font.tcc_pixel_label, FontWeight.Bold),
+    // CJK fallback: the label font has no hanzi; the Traditional Chinese (zh-TW) subset
+    // covers the 481 hanzi + CJK punctuation used by the app UI. Per-glyph fallback keeps
+    // Latin/Cyrillic on the primary font and renders CJK from the subset.
+    Font(R.font.tcc_pixel_label_cjk, FontWeight.Normal),
+    Font(R.font.tcc_pixel_label_cjk, FontWeight.Medium),
+    Font(R.font.tcc_pixel_label_cjk, FontWeight.SemiBold),
+    Font(R.font.tcc_pixel_label_cjk, FontWeight.Bold)
 )
 
+/**
+ * Languages whose script is not covered by the bundled pixel fonts. `zh` is handled
+ * separately in [supportsRetroidPixelLabelFont] (only Traditional Chinese is covered), and
+ * `sr`/`kk`/`mn` are kept because their required diacritics/letters (č/ć/ž/đ, Ө/Ү/Ң, Ө/Ү)
+ * are absent from the bundled subsets.
+ */
 private val NON_LATIN_PIXEL_FALLBACK_LANGUAGES: Set<String> = setOf(
     "zh", "ja", "ko",
-    "ru", "uk", "be", "bg", "sr", "mk", "kk", "mn",
+    "sr", "kk", "mn",
     "el", "ar", "fa", "ur", "he", "iw",
     "th", "lo", "my", "km",
     "hi", "bn", "ta", "te", "ml", "kn", "mr", "gu", "pa", "si", "ne",
     "ka", "hy", "am", "ti"
 )
+
+/**
+ * Region tags whose default Chinese script is Traditional (Hant) — covered by the bundled
+ * `tcc_pixel_label_cjk.ttf` zh-TW glyph subset. Simplified Chinese (zh-CN / zh-Hans) is not
+ * covered and falls back to the system font.
+ */
+private val TRADITIONAL_CHINESE_PIXEL_REGIONS: Set<String> = setOf("TW", "HK")
 
 /**
  * Latin-script languages whose core diacritics are absent from the bundled 504-glyph
@@ -118,16 +138,25 @@ private val UNSUPPORTED_LATIN_PIXEL_LANGUAGES: Set<String> = setOf(
 )
 
 /**
- * Returns `true` when [locale] uses a Latin script covered by the bundled
- * `tcc_pixel_label.ttf` subset (ASCII + Western European Latin-1 + Hungarian).
- * Non-Latin locales (CJK, Cyrillic, Arabic, Greek, Indic, Thai, etc.) and Latin locales whose
- * core diacritics are missing from the font subset fall back cleanly to the Android system font
- * to avoid missing-glyph boxes and mixed-font baseline jitter.
+ * Returns `true` when [locale] is covered by the bundled pixel label font chain
+ * (`tcc_pixel_label.ttf` + `tcc_pixel_label_cjk.ttf` fallback):
+ * - Latin-script locales whose core diacritics are present in the label subset (ASCII,
+ *   Western European Latin-1, Hungarian, and the extended Latin block in the modified subset);
+ * - Cyrillic locales covered by the label subset's Cyrillic glyphs (`ru`, `uk`, `be`, `bg`, `mk`);
+ * - Traditional Chinese (`zh-TW`, `zh-HK`, `zh-Hant`) via the zh-TW CJK subset.
+ *
+ * Everything else (Simplified Chinese, `ja`/`ko`, `kk`/`mn` Cyrillic, Arabic, Greek, Indic,
+ * Thai, etc.) falls back cleanly to the Android system font to avoid missing-glyph boxes and
+ * mixed-font baseline jitter.
  */
 internal fun supportsRetroidPixelLabelFont(locale: Locale): Boolean {
     val language = locale.language.lowercase(Locale.ROOT)
     if (language in UNSUPPORTED_LATIN_PIXEL_LANGUAGES) {
         return false
+    }
+    if (language == "zh") {
+        return locale.script.equals("Hant", ignoreCase = true) ||
+            locale.country in TRADITIONAL_CHINESE_PIXEL_REGIONS
     }
     val script = locale.script
     if (script.isNotEmpty()) {

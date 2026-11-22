@@ -646,19 +646,31 @@ class TccThemeAndOverlayFormatTest {
     }
 
     @Test
-    fun `supportsRetroidPixelLabelFont enables pixel font for covered Latin scripts and falls back for unsupported locales`() {
-        val coveredLatinLocales = listOf("en", "en-US", "de-DE", "fr-FR", "es-ES", "pt-BR", "it-IT", "hu-HU", "sr-Latn")
-        for (tag in coveredLatinLocales) {
+    fun `supportsRetroidPixelLabelFont enables pixel font for covered scripts and falls back for unsupported locales`() {
+        val coveredLocales = listOf(
+            "en", "en-US", "de-DE", "fr-FR", "es-ES", "pt-BR", "it-IT", "hu-HU", "sr-Latn",
+            // Cyrillic locales covered by the bundled label font's Cyrillic glyphs
+            "ru", "ru-RU", "uk-UA", "be-BY", "bg-BG", "mk-MK",
+            // Traditional Chinese covered by the bundled zh-TW CJK subset
+            "zh-TW", "zh-HK", "zh-Hant"
+        )
+        for (tag in coveredLocales) {
             assertTrue(
-                "Expected pixel label font for covered Latin locale $tag",
+                "Expected pixel label font for covered locale $tag",
                 supportsRetroidPixelLabelFont(java.util.Locale.forLanguageTag(tag))
             )
         }
 
         val fallbackLocales = listOf(
-            "zh-TW", "zh-CN", "zh-Hant", "zh-Hans",
-            "ja-JP", "ko-KR", "ru-RU", "uk-UA",
-            "ar-SA", "he-IL", "th-TH", "hi-IN", "el-GR", "sr-Cyrl",
+            // Simplified Chinese: the bundled CJK subset is Traditional (zh-TW) only
+            "zh-CN", "zh-Hans",
+            // CJK scripts without bundled glyph coverage
+            "ja-JP", "ko-KR",
+            // Cyrillic with characters beyond the bundled subset (Kazakh Ө/Ү/Ң, Mongolian Ө/Ү)
+            "kk-KZ", "mn-MN",
+            // Serbian: Latin diacritics (č/ć/ž/đ) are missing from the subset
+            "sr", "sr-Cyrl",
+            "ar-SA", "he-IL", "th-TH", "hi-IN", "el-GR",
             // Latin locales whose core diacritics are missing from the bundled pixel subset
             "pl-PL", "tr-TR", "vi-VN", "vi-Latn-VN", "cs-CZ", "sk-SK", "ro-RO"
         )
