@@ -9,6 +9,7 @@ import io.mockk.verify
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -63,8 +64,14 @@ class LocaleHelperTest {
     }
 
     @Test
-    fun `hasSelectableTranslations is false while only English is bundled`() {
-        assertFalse(AppLanguage.hasSelectableTranslations)
+    fun `hasSelectableTranslations is true when English and Russian are bundled`() {
+        assertTrue(AppLanguage.hasSelectableTranslations)
+    }
+
+    @Test
+    fun `fromLocaleList resolves Russian tags to RUSSIAN`() {
+        assertEquals(AppLanguage.RUSSIAN, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("ru")))
+        assertEquals(AppLanguage.RUSSIAN, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("ru-RU")))
     }
 
     @Test
@@ -72,18 +79,20 @@ class LocaleHelperTest {
         val mockLocaleManager = mockk<LocaleManager>(relaxed = true)
         val mockContext = mockk<Context>()
         every { mockContext.getSystemService(LocaleManager::class.java) } returns mockLocaleManager
-        every { mockLocaleManager.applicationLocales } returns LocaleList.forLanguageTags("en")
+        every { mockLocaleManager.applicationLocales }
+            .returnsMany(LocaleList.forLanguageTags("en"), LocaleList.forLanguageTags("ru"))
 
         assertEquals(AppLanguage.ENGLISH, LocaleHelper.currentLanguage(mockContext))
+        assertEquals(AppLanguage.RUSSIAN, LocaleHelper.currentLanguage(mockContext))
 
         LocaleHelper.applyLanguage(mockContext, AppLanguage.SYSTEM)
         verify(exactly = 1) {
             mockLocaleManager.applicationLocales = LocaleList.getEmptyLocaleList()
         }
 
-        LocaleHelper.applyLanguage(mockContext, AppLanguage.ENGLISH)
+        LocaleHelper.applyLanguage(mockContext, AppLanguage.RUSSIAN)
         verify(exactly = 1) {
-            mockLocaleManager.applicationLocales = LocaleList.forLanguageTags("en")
+            mockLocaleManager.applicationLocales = LocaleList.forLanguageTags("ru")
         }
     }
 }
