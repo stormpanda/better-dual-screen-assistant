@@ -181,7 +181,7 @@
     <string name="qs_tile_vibration_desc">Включать/выключать системную вибрацию и тактильную отдачу</string>
     <string name="qs_tile_ambient_light_title">Подсветка</string>
     <string name="qs_tile_ambient_light_desc">Включать/выключать RGB-подсветку стиков и боковых панелей</string>
-    <string name="qs_tile_force_landscape_title">Принудительная альбомная</string>
+    <string name="qs_tile_force_landscape_title">Фиксация ландшафта</string>
     <string name="qs_tile_force_landscape_desc">Принудительно альбомная ориентация для нижнего экрана</string>
     <string name="qs_tile_theme_mode_title">Тема оформления</string>
     <string name="qs_tile_theme_mode_desc">Переключать тему оверлея ассистента и палитру системы</string>
