@@ -245,6 +245,8 @@
     <string name="theme_aurora_short">Сияние</string>
     <string name="theme_retro_phosphor">Ретро-фосфор</string>
     <string name="theme_royal_asgard">Королевский Асгард</string>
+    <string name="theme_catppuccin_macchiato">Catppuccin Macchiato</string>
+    <string name="theme_catppuccin_macchiato_short">Macchiato</string>
     <string name="theme_source_stock">Стандартная</string>
     <string name="theme_source_sync_megingiard">Синхронизация с Megingiard</string>
     <string name="theme_source_custom_palette">Собственная палитра</string>

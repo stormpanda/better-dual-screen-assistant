@@ -195,6 +195,20 @@ private val royalAsgardPalette =
         error = Color(0xFFD32F2F),
     )
 
+// ─── Catppuccin Macchiato palette (https://catppuccin.com/palette) ─────────────
+private val catppuccinMacchiatoPalette =
+    AppColors(
+        appBackground = Color(0xFF181926), // Crust
+        surface = Color(0xFF24273A), // Base
+        surfaceVariant = Color(0xFF363A4F), // Surface 0
+        onSurface = Color(0xFFCAD3F5), // Text
+        onSurfaceSecondary = Color(0xFFA5ADCB), // Subtext 0
+        keyPressed = Color(0xFF494D64), // Surface 1
+        accent = Color(0xFFC6A0F6), // Mauve
+        onAccent = Color(0xFF181926),
+        error = Color(0xFFED8796), // Red
+    )
+
 // ─── Palette selector ─────────────────────────────────────────────────────────
 
 /**
@@ -228,6 +242,7 @@ fun paletteFor(
             ThemeMode.AURORA -> auroraPalette
             ThemeMode.RETRO_PHOSPHOR -> retroPhosphorPalette
             ThemeMode.ROYAL_ASGARD -> royalAsgardPalette
+            ThemeMode.CATPPUCCIN_MACCHIATO -> catppuccinMacchiatoPalette
         }
     return if (mode.supportsCustomAccent) {
         val eff = userAccent ?: base.accent

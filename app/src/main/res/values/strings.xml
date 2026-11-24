@@ -244,6 +244,8 @@
     <string name="theme_aurora_short">Aurora</string>
     <string name="theme_retro_phosphor">Retro Phosphor</string>
     <string name="theme_royal_asgard">Royal Asgard</string>
+    <string name="theme_catppuccin_macchiato">Catppuccin Macchiato</string>
+    <string name="theme_catppuccin_macchiato_short">Macchiato</string>
     <string name="theme_source_stock">Stock</string>
     <string name="theme_source_sync_megingiard">Sync with Megingiard</string>
     <string name="theme_source_custom_palette">Custom Palette</string>
