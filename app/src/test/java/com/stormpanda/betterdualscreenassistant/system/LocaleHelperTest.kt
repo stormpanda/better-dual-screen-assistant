@@ -7,7 +7,6 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,16 +54,20 @@ class LocaleHelperTest {
     }
 
     @Test
-    fun `fromLocaleList resolves empty null English and unsupported tags cleanly`() {
+    fun `fromLocaleList resolves empty null English Traditional Chinese and unsupported tags cleanly`() {
         assertEquals(AppLanguage.SYSTEM, AppLanguage.fromLocaleList(null))
         assertEquals(AppLanguage.SYSTEM, AppLanguage.fromLocaleList(LocaleList.getEmptyLocaleList()))
         assertEquals(AppLanguage.ENGLISH, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("en")))
         assertEquals(AppLanguage.ENGLISH, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("en-US")))
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("zh-TW")))
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("zh-Hant-TW")))
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("zh-Hant")))
+        assertEquals(AppLanguage.SYSTEM, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("zh-CN")))
         assertEquals(AppLanguage.SYSTEM, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("ja-JP")))
     }
 
     @Test
-    fun `hasSelectableTranslations is true when English and Russian are bundled`() {
+    fun `hasSelectableTranslations is true when multiple languages are bundled`() {
         assertTrue(AppLanguage.hasSelectableTranslations)
     }
 
@@ -79,15 +82,27 @@ class LocaleHelperTest {
         val mockLocaleManager = mockk<LocaleManager>(relaxed = true)
         val mockContext = mockk<Context>()
         every { mockContext.getSystemService(LocaleManager::class.java) } returns mockLocaleManager
-        every { mockLocaleManager.applicationLocales }
-            .returnsMany(LocaleList.forLanguageTags("en"), LocaleList.forLanguageTags("ru"))
+        every { mockLocaleManager.applicationLocales } returnsMany listOf(
+            LocaleList.forLanguageTags("zh-TW"),
+            LocaleList.forLanguageTags("ru")
+        )
 
-        assertEquals(AppLanguage.ENGLISH, LocaleHelper.currentLanguage(mockContext))
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, LocaleHelper.currentLanguage(mockContext))
         assertEquals(AppLanguage.RUSSIAN, LocaleHelper.currentLanguage(mockContext))
 
         LocaleHelper.applyLanguage(mockContext, AppLanguage.SYSTEM)
         verify(exactly = 1) {
             mockLocaleManager.applicationLocales = LocaleList.getEmptyLocaleList()
+        }
+
+        LocaleHelper.applyLanguage(mockContext, AppLanguage.ENGLISH)
+        verify(exactly = 1) {
+            mockLocaleManager.applicationLocales = LocaleList.forLanguageTags("en")
+        }
+
+        LocaleHelper.applyLanguage(mockContext, AppLanguage.TRADITIONAL_CHINESE)
+        verify(exactly = 1) {
+            mockLocaleManager.applicationLocales = LocaleList.forLanguageTags("zh-TW")
         }
 
         LocaleHelper.applyLanguage(mockContext, AppLanguage.RUSSIAN)

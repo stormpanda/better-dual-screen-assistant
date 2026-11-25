@@ -14,8 +14,10 @@
     <!-- Foreground Service & Notifications -->
     <string name="notification_channel_assistant_name">Dual Screen Assistant Service</string>
     <string name="notification_channel_manager_name">Dual Screen Manager Service</string>
-    <string name="notification_channel_desc">Keeps the dual-screen overlay and TCC button handler ready</string>
-    <string name="notification_ready_text">Ready for TCC button &amp; dual-screen controls</string>
+    <string name="notification_channel_desc_ayn">Keeps the dual-screen overlay and physical AYN button handler ready</string>
+    <string name="notification_channel_desc_retroid">Keeps the dual-screen overlay and physical Dual Screen button handler ready</string>
+    <string name="notification_ready_text_ayn">Ready for physical AYN button &amp; dual-screen controls</string>
+    <string name="notification_ready_text_retroid">Ready for physical Dual Screen button &amp; dual-screen controls</string>
     <string name="notification_recording_top_text">Recording Top screen — tap Stop to save</string>
     <string name="notification_recording_bottom_text">Recording Bottom screen — tap Stop to save</string>
     <string name="notification_recording_both_text">Recording Both screens — tap Stop to save</string>
@@ -376,7 +378,7 @@
     <!-- Companion Settings: Licenses & Notices -->
     <string name="licenses_section_app">APPLICATION LICENSE</string>
     <string name="licenses_app_desc">© 2026 Maik Thomalla / Stormpanda • Proprietary source-available license (free for personal, non-commercial use — not open-source)</string>
-    <string name="licenses_app_pill">Source-Available v1.0</string>
+    <string name="licenses_app_pill">Source-Available v1.1</string>
     <string name="licenses_section_fonts">THIRD-PARTY OPEN-SOURCE FONTS</string>
     <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
     <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Bundled pixel UI label font (res/font/tcc_pixel_label.ttf)</string>
@@ -390,7 +392,7 @@
     <string name="licenses_kotlin_title">Kotlin Standard Library &amp; Coroutines</string>
     <string name="licenses_kotlin_desc">© 2010–2025 JetBrains s.r.o. &amp; contributors • Kotlin runtime &amp; coroutines (org.jetbrains.*)</string>
     <string name="licenses_apache_action" translatable="false">Apache 2.0</string>
-    <string name="licenses_detail_app_title">Better Dual Screen Assistant Source-Available License v1.0</string>
+    <string name="licenses_detail_app_title">Better Dual Screen Assistant Source-Available License v1.1</string>
     <string name="licenses_detail_app_scope">Governs Better Dual Screen Assistant source code and APK builds (free for personal, non-commercial use).</string>
     <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL Open Font License 1.1</string>
     <string name="licenses_detail_fusion_pixel_scope">Font License Scope — Fusion Pixel Only: applies solely to bundled font res/font/tcc_pixel_label.ttf by TakWolf.</string>
@@ -474,4 +476,43 @@
     <string name="help_settings_add_to_obtainium_desc">Open Obtainium to track and install Better Dual Screen Assistant updates automatically from GitHub</string>
     <string name="help_settings_add_to_obtainium_manager_desc">Open Obtainium to track and install Better Dual Screen Manager updates automatically from GitHub</string>
     <string name="gamepad_action_checking">Checking</string>
+
+    <!-- Third-Party Plugins -->
+    <string name="settings_cat_plugins">Plugins</string>
+    <string name="settings_plugins_info_title">Third-Party Plugins — Use at Your Own Risk</string>
+    <string name="settings_plugins_info_desc">Third-party plugins are external Android apps not affiliated with BDSA. They run in their own sandbox and never receive BDSA root access. Activate individual plugin toggles under Quick Toggles → Enable / Disable Toggles.</string>
+    <string name="settings_plugins_refresh_title">Rescan Installed Plugins</string>
+    <string name="settings_plugins_refresh_desc">Check installed apps for newly added or updated BDSA quick-toggle plugins</string>
+    <string name="settings_plugins_action_rescan">Rescan</string>
+    <plurals name="settings_plugins_rescan_toast">
+        <item quantity="one">Found %1$d installed plugin</item>
+        <item quantity="other">Found %1$d installed plugins</item>
+    </plurals>
+    <string name="settings_plugins_empty_title">No Third-Party Plugins Installed</string>
+    <string name="settings_plugins_empty_desc">Compatible plugin apps register automatically once installed. Enable their toggles from Quick Toggles → Enable / Disable Toggles.</string>
+    <string name="settings_plugins_section_installed">INSTALLED PLUGINS (%1$d)</string>
+    <string name="settings_plugins_no_description">No description provided by this plugin.</string>
+    <string name="settings_plugins_meta_by_author">By %1$s</string>
+    <string name="settings_plugins_meta_version">v%1$s</string>
+    <plurals name="settings_plugins_meta_tiles_count">
+        <item quantity="one">%1$d toggle: %2$s</item>
+        <item quantity="other">%1$d toggles: %2$s</item>
+    </plurals>
+    <string name="settings_plugins_meta_no_supported_tiles">No toggles supported on %1$s</string>
+    <string name="settings_plugins_incompatible_title">Incompatible Plugin (API v%1$d)</string>
+    <string name="settings_plugins_incompatible_desc">This plugin targets BDSA Plugin API v%1$d, but this build requires API v%2$d. Update the plugin or BDSA.</string>
+    <string name="settings_plugins_configure_title">Configure %1$s</string>
+    <string name="settings_plugins_configure_desc">Open this plugin\'s settings screen</string>
+    <string name="settings_plugins_action_configure">Configure</string>
+    <string name="settings_plugins_configure_failed">Unable to open plugin settings</string>
+    <string name="settings_plugins_app_info_title">App Info &amp; Uninstall (%1$s)</string>
+    <string name="settings_plugins_app_info_desc">Manage Android permissions or uninstall %1$s</string>
+    <string name="settings_plugins_action_app_info">App Info</string>
+    <string name="settings_qs_third_party_header">Third-Party Plugins — Use at Your Own Risk (%1$d/%2$d)</string>
+    <string name="settings_qs_third_party_warning_title">Third-Party Toggles — Use at Your Own Risk</string>
+    <string name="settings_qs_third_party_warning_desc">Toggles below are provided by third-party apps installed on your device. They start disabled by default and are not verified by BDSA.</string>
+    <string name="settings_qs_third_party_empty_title">No Third-Party Plugin Toggles Registered</string>
+    <string name="settings_qs_third_party_empty_desc">Install a compatible third-party plugin APK to add custom toggles here.</string>
+    <string name="settings_qs_third_party_tile_desc_format">%1$s • %2$s</string>
+    <string name="settings_qs_third_party_plugin_disabled_desc">%1$s — Plugin is disabled in Settings → Plugins</string>
 </resources>
