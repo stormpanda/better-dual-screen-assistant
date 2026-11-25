@@ -646,13 +646,11 @@ class TccThemeAndOverlayFormatTest {
     }
 
     @Test
-    fun `supportsRetroidPixelLabelFont enables pixel font for covered scripts and falls back for unsupported locales`() {
+    fun `supportsRetroidPixelLabelFont enables pixel font for covered Latin and Cyrillic scripts and falls back for unsupported locales`() {
         val coveredLocales = listOf(
             "en", "en-US", "de-DE", "fr-FR", "es-ES", "pt-BR", "it-IT", "hu-HU", "sr-Latn",
             // Cyrillic locales covered by the bundled label font's Cyrillic glyphs
-            "ru", "ru-RU", "uk-UA", "be-BY", "bg-BG", "mk-MK",
-            // Traditional Chinese covered by the bundled zh-TW CJK subset
-            "zh-TW", "zh-HK", "zh-Hant"
+            "ru", "ru-RU", "uk-UA", "be-BY", "bg-BG", "mk-MK"
         )
         for (tag in coveredLocales) {
             assertTrue(
@@ -662,10 +660,8 @@ class TccThemeAndOverlayFormatTest {
         }
 
         val fallbackLocales = listOf(
-            // Simplified Chinese: the bundled CJK subset is Traditional (zh-TW) only
-            "zh-CN", "zh-Hans",
-            // CJK scripts without bundled glyph coverage
-            "ja-JP", "ko-KR",
+            // CJK scripts have no bundled glyph coverage
+            "zh-TW", "zh-HK", "zh-Hant", "zh-CN", "zh-Hans", "ja-JP", "ko-KR",
             // Cyrillic with characters beyond the bundled subset (Kazakh Ө/Ү/Ң, Mongolian Ө/Ү)
             "kk-KZ", "mn-MN",
             // Serbian: Latin diacritics (č/ć/ž/đ) are missing from the subset

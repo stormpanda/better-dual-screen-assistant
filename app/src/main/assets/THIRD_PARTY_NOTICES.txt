@@ -11,16 +11,14 @@ The open-source licenses reproduced below apply SOLELY to the standalone third-p
 font files (including the documented font subsets/modifications) and runtime
 libraries listed here:
 
-1. Fusion Pixel 12px Monospaced (res/font/tcc_pixel_label.ttf, res/font/tcc_pixel_label_cjk.ttf)
+1. Fusion Pixel 12px Monospaced (res/font/tcc_pixel_label.ttf)
    Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"
    Source: https://github.com/TakWolf/fusion-pixel-font
-   License: SIL Open Font License, Version 1.1 (applies solely to the two bundled Fusion Pixel font files)
-   Bundled variants:
-   - tcc_pixel_label.ttf — modified subset of the zh_hans variant (2025.07.02):
+   License: SIL Open Font License, Version 1.1 (applies solely to the bundled Fusion Pixel font file)
+   Bundled variant:
+   - tcc_pixel_label.ttf - modified subset of the zh_hans variant (2025.07.02):
      Cyrillic glyphs (U+0400-U+045F) and extended Latin added, unused arrow glyphs removed,
      family renamed to "BDSA Pixel 12 Label" per OFL reserved-font-name clause 3.
-   - tcc_pixel_label_cjk.ttf — character subset of the zh_tw variant (2026.11.10, no glyph
-     modifications) containing the 481 hanzi and CJK punctuation used by the app UI.
 
 2. DOSIyagiBoldface (Version 1.00 — res/font/tcc_pixel_display.ttf)
    Copyright (c) 2022 Damheo Lee
