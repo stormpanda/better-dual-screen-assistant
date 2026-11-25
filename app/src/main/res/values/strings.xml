@@ -14,8 +14,10 @@
     <!-- Foreground Service & Notifications -->
     <string name="notification_channel_assistant_name">Dual Screen Assistant Service</string>
     <string name="notification_channel_manager_name">Dual Screen Manager Service</string>
-    <string name="notification_channel_desc">Keeps the dual-screen overlay and TCC button handler ready</string>
-    <string name="notification_ready_text">Ready for TCC button &amp; dual-screen controls</string>
+    <string name="notification_channel_desc_ayn">Keeps the dual-screen overlay and physical AYN button handler ready</string>
+    <string name="notification_channel_desc_retroid">Keeps the dual-screen overlay and physical Dual Screen button handler ready</string>
+    <string name="notification_ready_text_ayn">Ready for physical AYN button &amp; dual-screen controls</string>
+    <string name="notification_ready_text_retroid">Ready for physical Dual Screen button &amp; dual-screen controls</string>
     <string name="notification_recording_top_text">Recording Top screen — tap Stop to save</string>
     <string name="notification_recording_bottom_text">Recording Bottom screen — tap Stop to save</string>
     <string name="notification_recording_both_text">Recording Both screens — tap Stop to save</string>

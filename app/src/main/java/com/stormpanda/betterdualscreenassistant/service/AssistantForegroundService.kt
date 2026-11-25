@@ -605,12 +605,19 @@ class AssistantForegroundService : Service() {
                 R.string.notification_channel_assistant_name
             }
         )
+        val isRetroid = DeviceProfile.current(this) == DeviceProfile.RETROID_POCKET_DUO
         val channel = NotificationChannel(
             CHANNEL_ID,
             channelTitle,
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = getString(R.string.notification_channel_desc)
+            description = getString(
+                if (isRetroid) {
+                    R.string.notification_channel_desc_retroid
+                } else {
+                    R.string.notification_channel_desc_ayn
+                }
+            )
             setShowBadge(false)
         }
         nm?.createNotificationChannel(channel)
@@ -672,7 +679,15 @@ class AssistantForegroundService : Service() {
                     ).build()
                 )
         } else {
-            builder.setContentText(getString(R.string.notification_ready_text))
+            builder.setContentText(
+                getString(
+                    if (isRetroid) {
+                        R.string.notification_ready_text_retroid
+                    } else {
+                        R.string.notification_ready_text_ayn
+                    }
+                )
+            )
         }
 
         return builder.build()
