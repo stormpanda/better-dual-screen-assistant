@@ -386,7 +386,7 @@
     <string name="licenses_app_pill">Source-Available v1.1</string>
     <string name="licenses_section_fonts">СТОРОННИЕ ШРИФТЫ С ОТКРЫТЫМ КОДОМ</string>
     <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
-    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Встроенный пиксельный шрифт для подписей UI (res/font/tcc_pixel_label.ttf)</string>
+    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Встроенный пиксельный шрифт для подписей UI с добавленной кириллицей (res/font/tcc_pixel_label.ttf)</string>
     <string name="licenses_dosiyagi_title">DOSIyagiBoldface</string>
     <string name="licenses_dosiyagi_desc">© 2022 Damheo Lee • Встроенный пиксельный шрифт для телеметрии (res/font/tcc_pixel_display.ttf)</string>
     <string name="licenses_dosiyagi_action">MIT (только шрифт)</string>
@@ -398,7 +398,7 @@
     <string name="licenses_detail_app_title">Лицензия Better Dual Screen Assistant (Source-Available) v1.1</string>
     <string name="licenses_detail_app_scope">Регулирует исходный код и сборки APK Better Dual Screen Assistant (бесплатно для личного некоммерческого использования).</string>
     <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL Open Font License 1.1</string>
-    <string name="licenses_detail_fusion_pixel_scope">Область лицензии шрифта — только Fusion Pixel: распространяется исключительно на встроенный шрифт res/font/tcc_pixel_label.ttf от TakWolf.</string>
+    <string name="licenses_detail_fusion_pixel_scope">Область лицензии шрифта — только Fusion Pixel: распространяется исключительно на встроенный шрифт res/font/tcc_pixel_label.ttf (модифицирован: добавлена кириллица, семейство переименовано согласно пункту 3 OFL о зарезервированных именах) авторства TakWolf.</string>
     <string name="licenses_detail_dosiyagi_title">DOSIyagiBoldface — MIT License (только файл шрифта)</string>
     <string name="licenses_detail_dosiyagi_scope">Область лицензии шрифта — только DOSIyagiBoldface: распространяется исключительно на res/font/tcc_pixel_display.ttf от Damheo Lee, а НЕ на Better Dual Screen Assistant.</string>
     <string name="licenses_detail_androidx_title">AndroidX и Jetpack Compose — Apache License 2.0</string>
