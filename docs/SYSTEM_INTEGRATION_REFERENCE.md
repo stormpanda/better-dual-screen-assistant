@@ -68,7 +68,9 @@ Managed primarily in [`SystemSettingsRepository.kt`](file:///Users/maikthomalla/
 
 | Key Name | Value Format | Description |
 | :--- | :--- | :--- |
-| `ui_night_mode` | `1` = Light (`MODE_NIGHT_NO`)<br>`2` = Dark (`MODE_NIGHT_YES`) | System-wide dark/light theme mode written during OS Theme Injection. |
+| `ui_night_mode` | `1` = Light (`MODE_NIGHT_NO`)<br>`2` = Dark (`MODE_NIGHT_YES`) | System-wide dark/light theme mode written during OS Theme Injection. Observed to keep the Dark Theme quick toggle in sync; that toggle switches the mode via `cmd uimode night yes/no`. |
+| `night_display_activated` | `0` = Off, `1` = On | Android Night Light state, written by the Night Light quick toggle and observed for external changes. |
+| `reduce_bright_colors_activated` | `0` = Off, `1` = On | Android Extra Dim (Reduce Bright Colors) state, written by the Extra Dim quick toggle and observed for external changes. |
 | `theme_customization_overlay_packages` | JSON Object String | Material You / Monet customization timestamp and package metadata updated when `inject_os_theme` is toggled so SystemUI reloads dynamic colors immediately. |
 
 ---

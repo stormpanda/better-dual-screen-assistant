@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- 50x50 5px-grid pixel setting sun: horizon, stepped half disc and rays -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M0,35H50V40H0V35Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,30H40V35H10V30ZM15,25H35V30H15V25Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,5H30V15H20V5ZM5,15H10V20H5V15ZM40,15H45V20H40V15ZM0,25H5V30H0V25ZM45,25H50V30H45V25Z" />
+</vector>

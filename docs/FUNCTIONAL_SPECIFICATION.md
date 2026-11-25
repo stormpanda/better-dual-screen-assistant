@@ -12,7 +12,7 @@ This document provides a complete functional reference for **Better Dual Screen 
    - [3.1 Top Status Bar](#31-top-status-bar)
    - [3.2 Mode Tab (`Tab 0`)](#32-mode-tab-tab-0)
    - [3.3 Settings Tab (`Tab 1`)](#33-settings-tab-tab-1)
-   - [3.4 Quick Setting Tiles Reference (25 Tiles)](#34-quick-setting-tiles-reference-25-tiles)
+   - [3.4 Quick Setting Tiles Reference (28 Tiles)](#34-quick-setting-tiles-reference-28-tiles)
    - [3.5 Modal Configuration Dialogs](#35-modal-configuration-dialogs)
    - [3.6 Live Hardware Telemetry Panel](#36-live-hardware-telemetry-panel)
    - [3.7 Bottom Navigation Bar](#37-bottom-navigation-bar)
@@ -163,9 +163,9 @@ The **Settings** tab (`SystemSettingsTab` in `AssistantOverlayScreen.kt`) is div
 
 ---
 
-### 3.4 Quick Setting Tiles Reference (25 Tiles)
+### 3.4 Quick Setting Tiles Reference (28 Tiles)
 
-All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into three categories. By default, the 10 **Stock AYN Toggles** are enabled in their exact stock order, while **Android System Toggles** and **Tools** can be selectively enabled in the Companion App.
+All 28 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into three categories. By default, the 10 **Stock AYN Toggles** are enabled in their exact stock order, while **Android System Toggles** and **Tools** can be selectively enabled in the Companion App.
 
 #### Category A: Stock AYN Toggles (10 Tiles — Enabled by Default)
 
@@ -182,7 +182,7 @@ All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | **#9** | `force_landscape` | **Force Landscape** | Instant Toggle | Forces portrait apps into landscape orientation (`Settings.System["force_landscape"]`: `0` / `1`). |
 | **#10** | `theme_mode` | **Theme Mode** (Shows active theme name) | Modal Dialog | Opens the **Theme Mode** dialog supporting Stock System/Light/Dark, Megingiard Live Sync, 8 Megingiard Palettes, Accent Swatches, and OS Theme Injection. |
 
-#### Category B: Android System Toggles (5 Tiles — Disabled by Default)
+#### Category B: Android System Toggles (8 Tiles — Disabled by Default)
 
 | Tile ID (`key`) | Label & Dynamic Title | Interaction Type | Functional Description |
 | :--- | :--- | :---: | :--- |
@@ -191,6 +191,9 @@ All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | `do_not_disturb` | **Do Not Disturb** | Instant Toggle | Toggles Android Zen Mode (`Settings.Global["zen_mode"]`: `0` = Off, `1` = Priority Only) and synchronizes via `cmd notification set_dnd on/off`. |
 | `airplane_mode` | **Airplane Mode** | Instant Toggle | Toggles Airplane Mode (`Settings.Global["airplane_mode_on"]`: `0` / `1`), broadcasts `Intent.ACTION_AIRPLANE_MODE_CHANGED`, and runs `cmd connectivity airplane-mode enable/disable`. |
 | `screen_cast` | **Screen Cast** (`Screen Cast` / `Connecting…` / `<Device Name>` / `Casting`) | Launch / Instant Disconnect | When idle, dismisses the overlay and opens Android's wireless Cast picker (`Settings.ACTION_CAST_SETTINGS`) on the Top Screen (`displayId = 0`, or `bottomDisplayId` when in Mode `2` *Only bottom screen*). When connecting or actively casting via Chromecast (`com.google.android.gms` `MediaProjection`) or Miracast (`WifiDisplay`), highlights the tile with the target receiver's name and disconnects immediately on a single tap. |
+| `night_light` | **Night Light** | Instant Toggle | Toggles Android Night Light on both screens (`Settings.Secure["night_display_activated"]`: `0` / `1`, applied by `ColorDisplayService`). Manual only: it does not create or follow a schedule. |
+| `extra_dim` | **Extra Dim** | Instant Toggle | Toggles Android Extra Dim (Reduce Bright Colors) on both screens (`Settings.Secure["reduce_bright_colors_activated"]`: `0` / `1`). Has no effect on firmware built without `config_reduceBrightColorsAvailable`. |
+| `dark_theme` | **Dark Theme** | Instant Toggle | Switches the Android system between light and dark theme (`cmd uimode night yes/no`). Greyed out while **OS Theme Injection** is on, because the Theme Mode tile then owns the system night mode. |
 
 #### Category C: Tools (10 Tiles — Disabled by Default)
 
@@ -319,9 +322,9 @@ Allows complete customization of which Quick Setting tiles appear in the overlay
    - **Touch Reordering**: Tap any tile to select it, then tap a second tile to swap their positions.
    - **Gamepad Reordering**: Focus the layout card and press **`A`** to enter the grid -> use **D-Pad** (or **`L1`/`R1`** to cross page boundaries) to highlight a tile -> press **`A`** to **Grab** the tile -> move with **D-Pad** / **`L1`/`R1`** to shift the tile through the grid in real time -> press **`A`** or **`B`** to **Drop** the tile -> press **`B`** again to return to the settings deck.
 2. **Enable / Disable Toggles (`SubPage.ENABLE_DISABLE_TOGGLES`)**:
-   - Opens a dedicated sub-page displaying all **25 Quick Setting tiles** organized under three section headers:
+   - Opens a dedicated sub-page displaying all **28 Quick Setting tiles** organized under three section headers:
      - **Stock AYN Toggles** (`10` tiles, enabled by default)
-     - **Android System Toggles** (`5` tiles, disabled by default)
+     - **Android System Toggles** (`8` tiles, disabled by default)
      - **Tools** (`10` tiles, disabled by default)
    - Enforces the safety invariant that **at least 1 toggle must remain enabled** at all times (if only 1 toggle is enabled, attempting to turn it off displays `"At least 1 toggle must remain enabled"`).
 3. **Reset Quick Toggles (`GamepadTwoStepConfirmCard`)**:

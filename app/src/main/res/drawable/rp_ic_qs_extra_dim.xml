@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="50"
+    android:viewportHeight="50">
+    <!-- 50x50 5px-grid pixel hollow sun: low-brightness ring with eight rays -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,15H35V20H15V15ZM15,30H35V35H15V30ZM15,20H20V30H15V20ZM30,20H35V30H30V20Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,0H30V5H20V0ZM20,45H30V50H20V45ZM0,20H5V30H0V20ZM45,20H50V30H45V20ZM5,5H10V10H5V5ZM40,5H45V10H40V5ZM5,40H10V45H5V40ZM40,40H45V45H40V40Z" />
+</vector>

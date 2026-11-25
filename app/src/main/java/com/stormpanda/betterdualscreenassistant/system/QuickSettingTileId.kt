@@ -212,6 +212,33 @@ enum class QuickSettingTileId(
         iconRes = R.drawable.ic_qs_cast,
         category = QuickSettingCategory.ANDROID_SYSTEM
     ),
+    NIGHT_LIGHT(
+        key = "night_light",
+        title = "Night Light",
+        description = "Tint both screens amber to reduce blue light",
+        titleRes = R.string.qs_tile_night_light_title,
+        descriptionRes = R.string.qs_tile_night_light_desc,
+        iconRes = R.drawable.ic_qs_night_light,
+        category = QuickSettingCategory.ANDROID_SYSTEM
+    ),
+    EXTRA_DIM(
+        key = "extra_dim",
+        title = "Extra Dim",
+        description = "Dim both screens below the minimum brightness",
+        titleRes = R.string.qs_tile_extra_dim_title,
+        descriptionRes = R.string.qs_tile_extra_dim_desc,
+        iconRes = R.drawable.ic_qs_extra_dim,
+        category = QuickSettingCategory.ANDROID_SYSTEM
+    ),
+    DARK_THEME(
+        key = "dark_theme",
+        title = "Dark Theme",
+        description = "Switch the Android system between light and dark theme",
+        titleRes = R.string.qs_tile_dark_theme_title,
+        descriptionRes = R.string.qs_tile_dark_theme_desc,
+        iconRes = R.drawable.ic_qs_dark_theme,
+        category = QuickSettingCategory.ANDROID_SYSTEM
+    ),
 
     // 3. Tools (OFF by default)
     TOUCH_LOCK(

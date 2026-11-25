@@ -190,6 +190,12 @@
     <string name="qs_tile_airplane_mode_desc">關閉所有無線通訊以節省電力</string>
     <string name="qs_tile_screen_cast_title">螢幕投放</string>
     <string name="qs_tile_screen_cast_desc">透過 Chromecast 或 Miracast 無線投放畫面，或中斷目前的投放連線</string>
+    <string name="qs_tile_night_light_title">夜燈</string>
+    <string name="qs_tile_night_light_desc">將兩個螢幕調成琥珀色以減少藍光</string>
+    <string name="qs_tile_extra_dim_title">超暗</string>
+    <string name="qs_tile_extra_dim_desc">將兩個螢幕調得比最低亮度更暗</string>
+    <string name="qs_tile_dark_theme_title">深色主題</string>
+    <string name="qs_tile_dark_theme_desc">在淺色與深色主題之間切換 Android 系統</string>
     <string name="qs_tile_touch_lock_title">觸控鎖定</string>
     <string name="qs_tile_touch_lock_desc">停用下螢幕觸控輸入並維持畫面顯示</string>
     <string name="qs_tile_screenshot_title">螢幕擷取</string>

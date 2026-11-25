@@ -194,6 +194,12 @@
     <string name="qs_tile_airplane_mode_desc">Disable all wireless radios to save battery</string>
     <string name="qs_tile_screen_cast_title">Screen Cast</string>
     <string name="qs_tile_screen_cast_desc">Cast screen wirelessly via Chromecast or Miracast, or disconnect active cast</string>
+    <string name="qs_tile_night_light_title">Night Light</string>
+    <string name="qs_tile_night_light_desc">Tint both screens amber to reduce blue light</string>
+    <string name="qs_tile_extra_dim_title">Extra Dim</string>
+    <string name="qs_tile_extra_dim_desc">Dim both screens below the minimum brightness</string>
+    <string name="qs_tile_dark_theme_title">Dark Theme</string>
+    <string name="qs_tile_dark_theme_desc">Switch the Android system between light and dark theme</string>
     <string name="qs_tile_touch_lock_title">Touch Lock</string>
     <string name="qs_tile_touch_lock_desc">Disable bottom-screen touch input while keeping the display visible</string>
     <string name="qs_tile_screenshot_title">Screenshot</string>

@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.database.ContentObserver
 import android.hardware.display.DisplayManager
 import android.media.AudioManager
@@ -108,6 +109,11 @@ class SystemSettingsRepository(private val context: Context) {
         const val KEY_SHOW_FLOATING_ICON = "is_show_floatingIcon"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_PREVENT_ACCIDENTAL_HOME = "prevent_press_home_accidentally"
+
+        // Settings.Secure keys watched by Android's ColorDisplayService / UiModeManagerService
+        const val KEY_NIGHT_DISPLAY_ACTIVATED = "night_display_activated"
+        const val KEY_REDUCE_BRIGHT_COLORS_ACTIVATED = "reduce_bright_colors_activated"
+        const val KEY_UI_NIGHT_MODE = "ui_night_mode"
 
         const val PREFS_NAME = "better_dsa_prefs"
         const val PREF_NO_MORE_CLOSE_TIP = "no_more_close_tip"
@@ -486,6 +492,15 @@ class SystemSettingsRepository(private val context: Context) {
 
     private val _airplaneModeEnabled = MutableStateFlow(readAirplaneModeEnabled())
     val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
+
+    private val _nightLightEnabled = MutableStateFlow(readSecureFlag(KEY_NIGHT_DISPLAY_ACTIVATED))
+    val nightLightEnabled: StateFlow<Boolean> = _nightLightEnabled.asStateFlow()
+
+    private val _extraDimEnabled = MutableStateFlow(readSecureFlag(KEY_REDUCE_BRIGHT_COLORS_ACTIVATED))
+    val extraDimEnabled: StateFlow<Boolean> = _extraDimEnabled.asStateFlow()
+
+    private val _systemDarkThemeEnabled = MutableStateFlow(readSystemDarkThemeEnabled())
+    val systemDarkThemeEnabled: StateFlow<Boolean> = _systemDarkThemeEnabled.asStateFlow()
 
     private val _screenCastState = MutableStateFlow(ScreenCastState())
     val screenCastState: StateFlow<ScreenCastState> = _screenCastState.asStateFlow()
@@ -982,6 +997,18 @@ class SystemSettingsRepository(private val context: Context) {
                 settingsObserver
             )
         }
+        val secureKeys = listOf(
+            KEY_NIGHT_DISPLAY_ACTIVATED,
+            KEY_REDUCE_BRIGHT_COLORS_ACTIVATED,
+            KEY_UI_NIGHT_MODE
+        )
+        for (sKey in secureKeys) {
+            contentResolver.registerContentObserver(
+                Settings.Secure.getUriFor(sKey),
+                false,
+                settingsObserver
+            )
+        }
         registerMegingiardContentObservers()
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         val filter = IntentFilter().apply {
@@ -1173,6 +1200,9 @@ class SystemSettingsRepository(private val context: Context) {
         _bluetoothEnabled.value = readBluetoothEnabled()
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
+        _nightLightEnabled.value = readSecureFlag(KEY_NIGHT_DISPLAY_ACTIVATED)
+        _extraDimEnabled.value = readSecureFlag(KEY_REDUCE_BRIGHT_COLORS_ACTIVATED)
+        _systemDarkThemeEnabled.value = readSystemDarkThemeEnabled()
         refreshScreenCastStateAsync()
         _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, TRIGGER_MODE_BOTH)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
@@ -2594,6 +2624,40 @@ class SystemSettingsRepository(private val context: Context) {
         }
     }
 
+    fun toggleNightLight() {
+        val next = !_nightLightEnabled.value
+        _nightLightEnabled.value = next
+        PrivilegedBridge.putSecureSettingInt(context, KEY_NIGHT_DISPLAY_ACTIVATED, if (next) 1 else 0)
+    }
+
+    fun toggleExtraDim() {
+        val next = !_extraDimEnabled.value
+        _extraDimEnabled.value = next
+        PrivilegedBridge.putSecureSettingInt(
+            context,
+            KEY_REDUCE_BRIGHT_COLORS_ACTIVATED,
+            if (next) 1 else 0
+        )
+    }
+
+    /**
+     * Switches the Android system theme. A no-op while OS Theme Injection is on, because the
+     * Theme Mode tile then owns the system night mode and would revert the change.
+     */
+    fun toggleSystemDarkTheme() {
+        if (_injectOsTheme.value) return
+        val next = !_systemDarkThemeEnabled.value
+        _systemDarkThemeEnabled.value = next
+        themeSyncExecutor.execute {
+            PServerClient.exec("cmd uimode night ${if (next) "yes" else "no"}", wait = false)
+        }
+    }
+
+    /** Re-reads the system dark theme after a configuration change. */
+    fun refreshSystemDarkTheme() {
+        _systemDarkThemeEnabled.value = readSystemDarkThemeEnabled()
+    }
+
     fun swapScreens(): Boolean {
         return PrivilegedBridge.swapDisplayTasks(context)
     }
@@ -3078,6 +3142,23 @@ class SystemSettingsRepository(private val context: Context) {
             } else {
                 Settings.Global.getInt(contentResolver, "zen_mode", 0) != 0
             }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun readSecureFlag(key: String): Boolean {
+        return try {
+            Settings.Secure.getInt(contentResolver, key, 0) == 1
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun readSystemDarkThemeEnabled(): Boolean {
+        return try {
+            val nightMask = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            nightMask == Configuration.UI_MODE_NIGHT_YES
         } catch (_: Throwable) {
             false
         }

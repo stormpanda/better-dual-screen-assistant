@@ -566,6 +566,7 @@ class AssistantForegroundService : Service() {
             lastNightModeMask = newNightModeMask
             if (::repository.isInitialized) {
                 repository.requestOsThemeIntegrityCheck()
+                repository.refreshSystemDarkTheme()
             }
         }
         val newLocaleTags = newConfig.locales.toLanguageTags()

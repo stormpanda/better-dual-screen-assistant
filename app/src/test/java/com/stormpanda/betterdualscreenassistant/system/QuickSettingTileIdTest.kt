@@ -50,6 +50,19 @@ class QuickSettingTileIdTest {
         assertEquals(QuickSettingCategory.ANDROID_SYSTEM, QuickSettingTileId.SCREEN_CAST.category)
         assertEquals("Screen Cast", QuickSettingTileId.SCREEN_CAST.title)
         assertEquals("screen_cast", QuickSettingTileId.SCREEN_CAST.key)
+        for (tile in listOf(
+            QuickSettingTileId.NIGHT_LIGHT,
+            QuickSettingTileId.EXTRA_DIM,
+            QuickSettingTileId.DARK_THEME
+        )) {
+            assertTrue(tile in QuickSettingTileId.defaultDisabled)
+            assertEquals(QuickSettingCategory.ANDROID_SYSTEM, tile.category)
+            assertTrue(tile.isSupportedOn(DeviceProfile.AYN_THOR))
+            assertTrue(tile.isSupportedOn(DeviceProfile.RETROID_POCKET_DUO))
+        }
+        assertEquals("night_light", QuickSettingTileId.NIGHT_LIGHT.key)
+        assertEquals("extra_dim", QuickSettingTileId.EXTRA_DIM.key)
+        assertEquals("dark_theme", QuickSettingTileId.DARK_THEME.key)
         assertEquals(QuickSettingCategory.TOOLS, QuickSettingTileId.SCREEN_RECORD.category)
         assertEquals("Screenshot", QuickSettingTileId.SCREENSHOT.title)
         assertEquals("Screen Record", QuickSettingTileId.SCREEN_RECORD.title)

@@ -652,6 +652,10 @@ private fun buildQuickSettingTileModels(
     val bluetoothEnabled by repository.bluetoothEnabled.collectAsState()
     val dndEnabled by repository.dndEnabled.collectAsState()
     val airplaneModeEnabled by repository.airplaneModeEnabled.collectAsState()
+    val nightLightEnabled by repository.nightLightEnabled.collectAsState()
+    val extraDimEnabled by repository.extraDimEnabled.collectAsState()
+    val systemDarkThemeEnabled by repository.systemDarkThemeEnabled.collectAsState()
+    val injectOsTheme by repository.injectOsTheme.collectAsState()
     val screenCastState by repository.screenCastState.collectAsState()
     val touchLockEnabled by repository.touchLockEnabled.collectAsState()
     val triggerMode by repository.triggerMode.collectAsState()
@@ -963,6 +967,22 @@ private fun buildQuickSettingTileModels(
                         }
                     )
                 }
+                QuickSettingTileId.NIGHT_LIGHT -> add(
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_night_light, nightLightEnabled) { repository.toggleNightLight() }
+                )
+                QuickSettingTileId.EXTRA_DIM -> add(
+                    QuickSettingTileModel(tileId.gridTitle(context), R.drawable.ic_qs_extra_dim, extraDimEnabled) { repository.toggleExtraDim() }
+                )
+                QuickSettingTileId.DARK_THEME -> add(
+                    QuickSettingTileModel(
+                        label = tileId.gridTitle(context),
+                        iconRes = R.drawable.ic_qs_dark_theme,
+                        selected = systemDarkThemeEnabled,
+                        // The Theme Mode tile owns the system night mode while OS Theme Injection is on.
+                        enabled = !injectOsTheme,
+                        onClick = { repository.toggleSystemDarkTheme() }
+                    )
+                )
                 QuickSettingTileId.TOUCH_LOCK -> add(
                     QuickSettingTileModel(
                         if (touchLockEnabled) stringResource(R.string.qs_label_touch_locked) else tileId.gridTitle(context),

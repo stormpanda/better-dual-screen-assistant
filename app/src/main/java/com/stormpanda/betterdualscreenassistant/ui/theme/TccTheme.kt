@@ -1090,11 +1090,13 @@ internal fun retroidPixelDrawableOrNull(@DrawableRes resId: Int): Int? = when (r
     R.drawable.ic_qs_clustertune -> R.drawable.rp_ic_qs_clustertune
     R.drawable.ic_qs_controller_style -> R.drawable.rp_ic_qs_controller_style
     R.drawable.ic_qs_dark_theme -> R.drawable.rp_ic_qs_dark_theme
+    R.drawable.ic_qs_extra_dim -> R.drawable.rp_ic_qs_extra_dim
     R.drawable.ic_qs_dnd -> R.drawable.rp_ic_qs_dnd
     R.drawable.ic_qs_fan_control -> R.drawable.rp_ic_qs_fan_control
     R.drawable.ic_qs_keep_awake -> R.drawable.rp_ic_qs_keep_awake
     R.drawable.ic_qs_key_mapper -> R.drawable.rp_ic_qs_key_mapper
     R.drawable.ic_qs_light_theme -> R.drawable.rp_ic_qs_light_theme
+    R.drawable.ic_qs_night_light -> R.drawable.rp_ic_qs_night_light
     R.drawable.ic_qs_mouse_mode -> R.drawable.rp_ic_qs_mouse_mode
     R.drawable.ic_qs_performance -> R.drawable.rp_ic_qs_performance
     R.drawable.ic_qs_prevent_home -> R.drawable.rp_ic_qs_prevent_home
