@@ -12,8 +12,8 @@
     <!-- Foreground Service & Notifications -->
     <string name="notification_channel_assistant_name">Служба Dual Screen Assistant</string>
     <string name="notification_channel_manager_name">Служба Dual Screen Manager</string>
-    <string name="notification_channel_desc_ayn">Держит оверлей двух экранов и обработчик физической кнопки AYN в состоянии готовности</string>
-    <string name="notification_channel_desc_retroid">Держит оверлей двух экранов и обработчик физической кнопки Dual Screen в состоянии готовности</string>
+    <string name="notification_channel_desc_ayn">Поддерживает готовность оверлея двух экранов и обработчика физической кнопки AYN</string>
+    <string name="notification_channel_desc_retroid">Поддерживает готовность оверлея двух экранов и обработчика физической кнопки Dual Screen</string>
     <string name="notification_ready_text_ayn">Готов к работе с физической кнопкой AYN и управлением двумя экранами</string>
     <string name="notification_ready_text_retroid">Готов к работе с физической кнопкой Dual Screen и управлением двумя экранами</string>
     <string name="notification_recording_top_text">Идёт запись верхнего экрана — нажмите «Стоп», чтобы сохранить</string>
@@ -24,8 +24,8 @@
     <!-- Device Profiles -->
     <string name="controller_standard_label_odin">Odin</string>
     <string name="controller_standard_label_retro">Retro</string>
-    <string name="tip_content_text">Когда второй экран выключен, нажмите кнопку AYN, чтобы разбудить экран.</string>
-    <string name="tip_content_text_retroid">Когда второй экран выключен, нажмите или удерживайте кнопку Dual Screen, чтобы разбудить экран.</string>
+    <string name="tip_content_text">Когда нижний экран выключен, нажмите кнопку AYN, чтобы разбудить экран.</string>
+    <string name="tip_content_text_retroid">Когда нижний экран выключен, нажмите или удерживайте кнопку Dual Screen, чтобы разбудить экран.</string>
 
     <!-- Overlay Screen Control, Sliders, Telemetry & Navigation -->
     <string name="current_frame_rate_tip">ТЕКУЩИЙ FPS</string>
@@ -70,7 +70,7 @@
     <string name="fan_option_xbox_style">Стиль XBox</string>
     <string name="fan_option_odin_style">Стандартный стиль</string>
     <string name="fan_option_retro_style">Retro</string>
-    <string name="fan_option_disable">Запретить использование</string>
+    <string name="fan_option_disable">Отключён</string>
     <string name="text_clear_memory_title">Очистка памяти</string>
     <string name="text_charging_separation_title">Прямое питание</string>
     <string name="text_vibration_open_title">Вибрация</string>
@@ -120,7 +120,7 @@
         <item quantity="one">Очищен %1$d процесс, осталось памяти %2$s</item>
         <item quantity="few">Очищено %1$d процесса, осталось памяти %2$s</item>
         <item quantity="many">Очищено %1$d процессов, осталось памяти %2$s</item>
-        <item quantity="other">Очищено %1$d процесс(а/ов), осталось памяти %2$s</item>
+        <item quantity="other">Очищено %1$d процесса, осталось памяти %2$s</item>
     </plurals>
     <string name="toast_clean_process_successful">Очистка выполнена успешно</string>
     <plurals name="toast_cleared_recent_apps">
@@ -131,7 +131,7 @@
     </plurals>
     <string name="toast_cleared_recent_apps_zero">Недавние приложения закрыты</string>
     <string name="toast_clear_recent_apps_failed">Не удалось закрыть недавние приложения</string>
-    <string name="toast_swapped_screens">Приложения на экранах поменяны местами</string>
+    <string name="toast_swapped_screens">Приложения на экранах поменялись местами</string>
     <string name="toast_swap_screens_none">Нет активных приложений для обмена</string>
     <string name="toast_touch_lock_enabled_assistant">Сенсор нижнего экрана заблокирован (откройте Assistant, чтобы разблокировать)</string>
     <string name="toast_touch_lock_enabled_manager">Сенсор нижнего экрана заблокирован (откройте Manager, чтобы разблокировать)</string>
@@ -159,7 +159,7 @@
 
     <!-- Quick Setting Categories & Tiles Metadata -->
     <string name="qs_cat_stock_title">Стандартные переключатели %1$s</string>
-    <string name="qs_cat_stock_desc">Встроенные быстрые настройки Dual Screen Assistant %1$s (включены по умолчанию)</string>
+    <string name="qs_cat_stock_desc">Встроенные быстрые настройки %1$s Dual Screen Assistant (включены по умолчанию)</string>
     <string name="qs_cat_android_system_title">Системные переключатели Android</string>
     <string name="qs_cat_android_system_desc">Стандартные переключатели Android: радиосети, уведомления и дисплей (выключены по умолчанию)</string>
     <string name="qs_cat_tools_title">Инструменты</string>
@@ -168,7 +168,7 @@
     <string name="qs_tile_focus_lock_title">Блокировка фокуса</string>
     <string name="qs_tile_focus_lock_desc">Переключать фокус геймпада между верхним, нижним экраном или режимом автоблокировки</string>
     <string name="qs_tile_performance_mode_title">Режим производительности</string>
-    <string name="qs_tile_performance_mode_desc">Переключение между профилями «Стандартный», «Средний» и «Максимальный»</string>
+    <string name="qs_tile_performance_mode_desc">Переключение между стандартным, средним и максимальным профилями производительности</string>
     <string name="qs_tile_fan_control_title">Вентилятор</string>
     <string name="qs_tile_fan_control_desc">Настроить профиль охлаждения или задать скорость вентилятора вручную</string>
     <string name="qs_tile_clear_memory_title">Очистка памяти</string>
@@ -182,7 +182,7 @@
     <string name="qs_tile_ambient_light_title">Подсветка</string>
     <string name="qs_tile_ambient_light_desc">Включать/выключать RGB-подсветку стиков и боковых панелей</string>
     <string name="qs_tile_force_landscape_title">Фиксация ландшафта</string>
-    <string name="qs_tile_force_landscape_desc">Принудительно альбомная ориентация для нижнего экрана</string>
+    <string name="qs_tile_force_landscape_desc">Принудительно переводить приложения нижнего экрана в альбомную ориентацию</string>
     <string name="qs_tile_theme_mode_title">Тема оформления</string>
     <string name="qs_tile_theme_mode_desc">Переключать тему оверлея ассистента и палитру системы</string>
     <string name="qs_tile_theme_mode_desc_manager">Переключать тему оверлея менеджера и палитру системы</string>
@@ -191,7 +191,7 @@
     <string name="qs_tile_bluetooth_title">Bluetooth</string>
     <string name="qs_tile_bluetooth_desc">Включать/выключать адаптер Bluetooth</string>
     <string name="qs_tile_dnd_title">Не беспокоить</string>
-    <string name="qs_tile_dnd_desc">Отключать уведомления и оповещения во время игры</string>
+    <string name="qs_tile_dnd_desc">Заглушать уведомления и оповещения во время игры</string>
     <string name="qs_tile_airplane_mode_title">Авиарежим</string>
     <string name="qs_tile_airplane_mode_desc">Отключать все радиомодули для экономии заряда</string>
     <string name="qs_tile_screen_cast_title">Трансляция экрана</string>
@@ -199,15 +199,15 @@
     <string name="qs_tile_touch_lock_title">Блокировка сенсора</string>
     <string name="qs_tile_touch_lock_desc">Отключать сенсорный ввод нижнего экрана, оставляя дисплей включённым</string>
     <string name="qs_tile_screenshot_title">Скриншот</string>
-    <string name="qs_tile_screenshot_desc">Скриншот верхнего, нижнего экрана или обоих</string>
+    <string name="qs_tile_screenshot_desc">Скриншот верхнего экрана, нижнего экрана или обоих</string>
     <string name="qs_tile_screen_record_title">Запись экрана</string>
-    <string name="qs_tile_screen_record_desc">Запись видео и звука верхнего, нижнего экрана или обоих</string>
+    <string name="qs_tile_screen_record_desc">Запись видео и звука верхнего экрана, нижнего экрана или обоих</string>
     <string name="qs_tile_trigger_mode_title">Режим триггеров</string>
     <string name="qs_tile_trigger_mode_desc">Переключать режим триггеров L2/R2: аналог, цифра или оба</string>
     <string name="qs_tile_charge_limit_80_title" formatted="false">Лимит заряда 80%</string>
-    <string name="qs_tile_charge_limit_80_desc" formatted="false">Ограничивать заряд батареи на 80% для сохранения её здоровья</string>
+    <string name="qs_tile_charge_limit_80_desc" formatted="false">Ограничивать зарядку батареи до 80%, чтобы продлить срок её службы</string>
     <string name="qs_tile_gamepad_mouse_mode_title">Режим мыши</string>
-    <string name="qs_tile_gamepad_mouse_mode_desc">Переключать режим курсора мыши от геймпада</string>
+    <string name="qs_tile_gamepad_mouse_mode_desc">Вкл./выкл. управление курсором мыши с геймпада</string>
     <string name="qs_tile_key_mapper_title">Маппер клавиш</string>
     <string name="qs_tile_key_mapper_desc">Переключать маппинг клавиш экрана %1$s (Key Adapter)</string>
     <string name="qs_tile_keep_screen_on_title">Не гасить экран</string>
@@ -276,10 +276,10 @@
     <string name="settings_cpu_max_speed_hardware_max">Аппаратный максимум</string>
     <string name="settings_temp_unit_title">Единица температуры</string>
     <string name="settings_temp_unit_desc">Показывать температуру CPU в оверлее в градусах Цельсия (°C) или Фаренгейта (°F) — или нажмите на карточку TEMP</string>
-    <string name="settings_temp_unit_celsius">Цельсий (°C)</string>
-    <string name="settings_temp_unit_fahrenheit">Фаренгейт (°F)</string>
+    <string name="settings_temp_unit_celsius">Цельсия (°C)</string>
+    <string name="settings_temp_unit_fahrenheit">Фаренгейта (°F)</string>
     <string name="settings_screenshot_display_title">Экран для скриншота</string>
-    <string name="settings_screenshot_display_desc">Выберите, какой экран снимает быстрый переключатель «Скриншот», или «Спрашивать каждый раз» (долгое нажатие переключателя всегда открывает выбор)</string>
+    <string name="settings_screenshot_display_desc">Выберите, с какого экрана быстрый переключатель «Скриншот» делает снимок, или «Спрашивать каждый раз» (долгое нажатие переключателя всегда открывает выбор)</string>
     <string name="settings_screenshot_ask_every_time">Спрашивать каждый раз</string>
     <string name="settings_screenshot_top">Верхний экран</string>
     <string name="settings_screenshot_bottom">Нижний экран</string>
@@ -305,20 +305,20 @@
     <string name="settings_promote_manager_desc_unpromoted">Повысить приложение до Better Dual Screen Manager</string>
     <string name="settings_toast_promoted">Поздравляем с повышением!</string>
     <string name="settings_toast_demoted">Снова на посту ассистента.</string>
-    <string name="settings_licenses_title">Лицензии и уведомления третьих сторон</string>
-    <string name="settings_licenses_desc">Лицензия source-available приложения и сведения о встроенных шрифтах и библиотеках</string>
+    <string name="settings_licenses_title">Лицензии и уведомления о сторонних компонентах</string>
+    <string name="settings_licenses_desc">Лицензия приложения (source-available) и сведения о сторонних шрифтах и библиотеках, включённых в приложение</string>
     <string name="settings_action_view">Открыть</string>
 
     <!-- Companion Settings: Quick Toggles -->
-    <string name="settings_qs_layout_title">Раскладка быстрых настроек</string>
-    <string name="settings_qs_reorder_idle">Нажмите A, чтобы менять порядок с D-pad, или коснитесь плитки, затем целевого слота</string>
-    <string name="settings_qs_reorder_moving">Перемещение «%1$s» — D-pad для позиции, A или B — разместить</string>
-    <string name="settings_qs_reorder_selected">Выбрано #%1$d «%2$s» — A для подъёма и перемещения, B для выхода</string>
-    <string name="settings_qs_reorder_fallback">Выберите переключатель D-pad, A — поднять и переместить, B — выйти</string>
+    <string name="settings_qs_layout_title">Раскладка быстрых переключателей</string>
+    <string name="settings_qs_reorder_idle">Нажмите A, чтобы переставлять плитки с помощью D-pad, или коснитесь плитки, а затем — слота, куда её переместить</string>
+    <string name="settings_qs_reorder_moving">Перемещение «%1$s»: D-pad — выбрать новое место, A или B — оставить плитку здесь</string>
+    <string name="settings_qs_reorder_selected">Выбран слот #%1$d «%2$s»: A — взять плитку, B — выйти</string>
+    <string name="settings_qs_reorder_fallback">С помощью D-pad выберите плитку, A — взять, B — выйти</string>
     <string name="settings_qs_pill_moving">Перемещение #%1$d</string>
     <string name="settings_qs_pill_slot">Слот #%1$d</string>
     <string name="settings_qs_pill_reorder">Сменить порядок</string>
-    <string name="settings_qs_enable_disable_title">Вкл/Выкл переключателей</string>
+    <string name="settings_qs_enable_disable_title">Вкл./выкл. переключателей</string>
     <string name="settings_qs_enable_disable_desc">Настроить %1$s, системные переключатели Android и инструменты</string>
     <plurals name="settings_qs_active_count_pill">
         <item quantity="one">%1$d / %2$d активно</item>
@@ -327,9 +327,9 @@
         <item quantity="other">%1$d / %2$d активно</item>
     </plurals>
     <string name="settings_qs_reset_title">Сбросить быстрые переключатели</string>
-    <string name="settings_qs_reset_confirm_title">Подтвердить сброс по умолчанию</string>
+    <string name="settings_qs_reset_confirm_title">Подтвердить сброс к значениям по умолчанию</string>
     <string name="settings_qs_reset_desc_modified">Восстановить порядок и видимость переключателей по умолчанию</string>
-    <string name="settings_qs_reset_desc_default">Все переключатели сейчас в порядке и видимости по умолчанию</string>
+    <string name="settings_qs_reset_desc_default">Порядок и видимость всех переключателей соответствуют значениям по умолчанию</string>
     <string name="settings_qs_reset_confirm_desc">Нажмите A ещё раз, чтобы сбросить порядок и видимость, или B для отмены</string>
     <string name="settings_action_reset">Сбросить</string>
     <string name="settings_action_confirm_reset">Подтвердить сброс</string>
@@ -348,7 +348,7 @@
     <string name="settings_theme_source_desc_with_sync">Выберите: стандартные темы, синхронизация с Megingiard в реальном времени или собственная палитра</string>
     <string name="settings_theme_source_desc_no_sync">Выберите: стандартные темы или собственная палитра</string>
     <string name="settings_stock_theme_title">Стандартный режим темы</string>
-    <string name="settings_stock_theme_desc">Выбрать встроенный вид Dual Screen Assistant %1$s</string>
+    <string name="settings_stock_theme_desc">Выбрать встроенный вид %1$s Dual Screen Assistant</string>
     <string name="settings_megingiard_sync_title">Синхронизация темы Megingiard</string>
     <string name="settings_megingiard_sync_desc">Синхронизировано с Megingiard (%1$s)</string>
     <string name="settings_megingiard_sync_pill">СИНХР.</string>
@@ -370,11 +370,11 @@
     <string name="settings_color_hue_title">Оттенок</string>
     <string name="settings_color_hue_desc">Базовый угол цвета на цветовом круге</string>
     <string name="settings_color_saturation_title">Насыщенность</string>
-    <string name="settings_color_saturation_desc">Интенсивность цвета от нейтрального серого до чистого насыщенного</string>
+    <string name="settings_color_saturation_desc">Интенсивность цвета от нейтрального серого до чистого насыщенного оттенка</string>
     <string name="settings_color_brightness_title">Яркость</string>
     <string name="settings_color_brightness_desc">Светлота акцентного цвета</string>
     <string name="settings_color_undo_title">Отменить изменение цвета</string>
-    <string name="settings_color_undo_desc_changed">Вернуть с %1$s обратно к %2$s</string>
+    <string name="settings_color_undo_desc_changed">Вернуть с %1$s к %2$s</string>
     <string name="settings_color_undo_desc_unchanged">Нет несохранённых изменений цвета (%1$s)</string>
     <string name="settings_color_action_undo">Отменить</string>
     <string name="settings_color_save_title">Сохранить цвет</string>
@@ -384,13 +384,13 @@
     <string name="licenses_section_app">ЛИЦЕНЗИЯ ПРИЛОЖЕНИЯ</string>
     <string name="licenses_app_desc">© 2026 Maik Thomalla / Stormpanda • Проприетарная source-available лицензия (бесплатно для личного некоммерческого использования — не open-source)</string>
     <string name="licenses_app_pill">Source-Available v1.1</string>
-    <string name="licenses_section_fonts">ШРИФТЫ С ОТКРЫТЫМ КОДОМ</string>
+    <string name="licenses_section_fonts">СТОРОННИЕ ШРИФТЫ С ОТКРЫТЫМ КОДОМ</string>
     <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
     <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • Встроенный пиксельный шрифт для подписей UI (res/font/tcc_pixel_label.ttf)</string>
     <string name="licenses_dosiyagi_title">DOSIyagiBoldface</string>
     <string name="licenses_dosiyagi_desc">© 2022 Damheo Lee • Встроенный пиксельный шрифт для телеметрии (res/font/tcc_pixel_display.ttf)</string>
     <string name="licenses_dosiyagi_action">MIT (только шрифт)</string>
-    <string name="licenses_section_libraries">БИБЛИОТЕКИ С ОТКРЫТЫМ КОДОМ</string>
+    <string name="licenses_section_libraries">СТОРОННИЕ БИБЛИОТЕКИ С ОТКРЫТЫМ КОДОМ</string>
     <string name="licenses_androidx_title">AndroidX и Jetpack Compose</string>
     <string name="licenses_androidx_desc">© The Android Open Source Project • Runtime-библиотеки Android Jetpack и Compose UI (androidx.*)</string>
     <string name="licenses_kotlin_title">Kotlin Standard Library и Coroutines</string>
@@ -419,7 +419,7 @@
     <string name="diag_status_available">ДОСТУПНА</string>
     <string name="diag_status_unavailable">НЕДОСТУПНА</string>
     <string name="diag_stock_process_title">Процесс стандартного DualScreenAssistant</string>
-    <string name="diag_stock_process_desc">Эфемерное подавление SIGSTOP: %1$s</string>
+    <string name="diag_stock_process_desc">Временное подавление через SIGSTOP: %1$s</string>
     <string name="diag_status_suppressed">ПОДАВЛЕН</string>
     <string name="diag_status_active">АКТИВЕН</string>
     <string name="diag_megingiard_title">Поставщик тем Megingiard</string>
@@ -433,7 +433,7 @@
     <string name="diag_topology_title">Топология дисплеев %1$s</string>
     <string name="diag_topology_desc" tools:ignore="PluralsCandidate">Верхний экран (displayId = %1$d): 1920×1080 • Нижний экран (displayId = %2$d): %3$d×%4$d (%5$d dpi)</string>
     <string name="diag_app_version_title">Версия приложения</string>
-    <string name="diag_font_credits_title">Третьи стороны (шрифты)</string>
+    <string name="diag_font_credits_title">Шрифты сторонних разработчиков</string>
     <string name="diag_font_credits_desc">Fusion Pixel © 2022 TakWolf (SIL OFL 1.1 — только шрифт) • DOSIyagiBoldface © 2022 Damheo Lee (MIT License — только шрифт)</string>
 
     <!-- Common Gamepad and Dialog Strings (Megingiard shared/ui) -->
@@ -459,7 +459,7 @@
     <string name="gamepad_search_placeholder">Поиск</string>
     <string name="gamepad_search_clear">Очистить поиск</string>
     <string name="gamepad_category_all">Все</string>
-    <string name="gamepad_slider_fine_adjustment_toast">L2/R2 — для точной настройки</string>
+    <string name="gamepad_slider_fine_adjustment_toast">Для точной настройки используйте L2/R2</string>
     <string name="gamepad_reorder_empty">Нет элементов для перестановки</string>
 
     <!-- Updates Settings (Megingiard parity) -->
@@ -481,7 +481,7 @@
     <!-- Third-Party Plugins -->
     <string name="settings_cat_plugins">Плагины</string>
     <string name="settings_plugins_info_title">Сторонние плагины — на свой страх и риск</string>
-    <string name="settings_plugins_info_desc">Сторонние плагины — это внешние приложения Android, не связанные с BDSA. Они работают в собственной песочнице и не получают root-доступ BDSA. Включайте нужные переключатели в разделе «Быстрые переключатели → Вкл/Выкл переключателей».</string>
+    <string name="settings_plugins_info_desc">Сторонние плагины — это внешние приложения Android, не связанные с BDSA. Они работают в собственной песочнице и не получают root-доступ BDSA. Включайте нужные переключатели в разделе «Быстрые переключатели → Вкл./выкл. переключателей».</string>
     <string name="settings_plugins_refresh_title">Пересканировать плагины</string>
     <string name="settings_plugins_refresh_desc">Проверить установленные приложения на наличие новых или обновлённых плагинов быстрых переключателей BDSA</string>
     <string name="settings_plugins_action_rescan">Обновить</string>
@@ -492,7 +492,7 @@
         <item quantity="other">Найдено %1$d установленных плагинов</item>
     </plurals>
     <string name="settings_plugins_empty_title">Сторонние плагины не установлены</string>
-    <string name="settings_plugins_empty_desc">Совместимые приложения-плагины регистрируются автоматически после установки. Включите их переключатели в разделе «Быстрые переключатели → Вкл/Выкл переключателей».</string>
+    <string name="settings_plugins_empty_desc">Совместимые приложения-плагины регистрируются автоматически после установки. Включите их переключатели в разделе «Быстрые переключатели → Вкл./выкл. переключателей».</string>
     <string name="settings_plugins_section_installed">УСТАНОВЛЕННЫЕ ПЛАГИНЫ (%1$d)</string>
     <string name="settings_plugins_no_description">Плагин не предоставил описание.</string>
     <string name="settings_plugins_meta_by_author">Автор: %1$s</string>
@@ -510,14 +510,14 @@
     <string name="settings_plugins_configure_desc">Открыть экран настроек этого плагина</string>
     <string name="settings_plugins_action_configure">Настроить</string>
     <string name="settings_plugins_configure_failed">Не удалось открыть настройки плагина</string>
-    <string name="settings_plugins_app_info_title">О приложении и удаление (%1$s)</string>
+    <string name="settings_plugins_app_info_title">О приложении и удалении (%1$s)</string>
     <string name="settings_plugins_app_info_desc">Управление разрешениями Android или удаление %1$s</string>
     <string name="settings_plugins_action_app_info">О приложении</string>
     <string name="settings_qs_third_party_header">Сторонние плагины — на свой страх и риск (%1$d/%2$d)</string>
     <string name="settings_qs_third_party_warning_title">Сторонние переключатели — на свой страх и риск</string>
-    <string name="settings_qs_third_party_warning_desc">Переключатели ниже предоставлены сторонними приложениями на вашем устройстве. По умолчанию они отключены и не проверяются BDSA.</string>
+    <string name="settings_qs_third_party_warning_desc">Переключатели ниже предоставлены сторонними приложениями на вашем устройстве. По умолчанию они отключены и не проверены BDSA.</string>
     <string name="settings_qs_third_party_empty_title">Нет сторонних переключателей</string>
     <string name="settings_qs_third_party_empty_desc">Установите совместимый APK стороннего плагина, чтобы добавить сюда пользовательские переключатели.</string>
     <string name="settings_qs_third_party_tile_desc_format">%1$s • %2$s</string>
-    <string name="settings_qs_third_party_plugin_disabled_desc">%1$s — плагин отключён в «Настройки → Плагины»</string>
+    <string name="settings_qs_third_party_plugin_disabled_desc">%1$s — плагин отключён в разделе «Настройки → Плагины»</string>
 </resources>
