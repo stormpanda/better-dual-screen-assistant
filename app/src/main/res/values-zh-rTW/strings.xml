@@ -280,6 +280,8 @@
     <string name="settings_screenshot_both">雙螢幕</string>
     <string name="settings_show_edit_button_title">在浮動視窗顯示編輯按鈕</string>
     <string name="settings_show_edit_button_desc">在底部導覽列顯示「編輯」按鈕，點擊後可於上螢幕開啟設定並維持浮動視窗開啟</string>
+    <string name="settings_show_tasks_button_title">在浮動視窗顯示工作按鈕</string>
+    <string name="settings_show_tasks_button_desc">在底部導覽列顯示「工作」按鈕，點擊後可於下螢幕開啟最近使用的應用程式切換器</string>
     <string name="settings_remember_last_tab_title">記住上次開啟的分頁</string>
     <string name="settings_remember_last_tab_desc_assistant">重新開啟助手時保留上次開啟的浮動視窗分頁（模式或設定）</string>
     <string name="settings_remember_last_tab_desc_manager">重新開啟管理員時保留上次開啟的浮動視窗分頁（模式或設定）</string>

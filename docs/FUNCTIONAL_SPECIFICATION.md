@@ -254,10 +254,10 @@ Located along the bottom `30%` of the **Settings** tab (`Tab 1`), the telemetry 
 
 ### 3.7 Bottom Navigation Bar
 
-Centered at the bottom of the overlay (`80dp` height pill container in `NavigationBarSection`), the navigation bar contains 3 buttons (or 4 when **Show Edit Button in Overlay** is enabled):
+Centered at the bottom of the overlay (`80dp` height pill container in `NavigationBarSection`), the navigation bar contains 2–4 buttons depending on **Show Tasks Button in Overlay** and **Show Edit Button in Overlay**:
 
 1. **Mode** (`Tab 0`): Switches the main card to the **Mode** tab (Screen Modes, Swap Screens, Brightness, Volume). Highlighted when active.
-2. **Task**: Dismisses the Assistant Overlay (`hideOverlay()`) and invokes `OverviewProxyClient.toggleRecentAppsOnBottomScreen()` (`IOverviewProxy` transaction `6` with `displayId = 4`) to open the Android Recents / Task Switcher specifically for the bottom screen.
+2. **Tasks** *(Optional, ON by default)*: Dismisses the Assistant Overlay (`hideOverlay()`) and invokes `OverviewProxyClient.toggleRecentAppsOnBottomScreen()` (`IOverviewProxy` transaction `6` with `displayId = 4`) to open the Android Recents / Task Switcher specifically for the bottom screen.
 3. **Settings** (`Tab 1`): Switches the main card to the **Settings** tab (Frame Rate, Quick Settings Pager, Live Telemetry). Highlighted when active.
 4. **Edit** *(Optional, ON by default)*: Launches the **Companion Settings App** (`MainActivity`) on the Top Screen (`displayId = 0` via `ActivityOptions.setLaunchDisplayId(0)`), while keeping the Assistant Overlay open on the Bottom Screen (`displayId = 4`) for side-by-side live editing.
 
@@ -301,7 +301,8 @@ Configures core assistant behavior and optional UI controls:
 | **Replace Stock Assistant** | `replace_stock_assistant` | `ON` | When enabled, suppresses the built-in `com.odin.dualscreen.assistant` so Better Dual Screen Assistant handles all physical AYN button presses and overlays. Turning this `OFF` immediately hides our overlay and wakes/restarts the stock assistant. |
 | **Accurate Game FPS Counter** | `accurate_game_fps` | `ON` | Measures real foreground game/app frame rate on the active display instead of the stock global `SurfaceFlinger` page-flip counter. |
 | **Temperature Unit** | `temp_fahrenheit` | `Celsius (°C)` | Switches the overlay CPU `TEMP` readout between **Celsius (`℃`)** and **Fahrenheit (`℉`)** (also toggleable directly by tapping the `TEMP` card in the overlay). |
-| **Show Edit Button in Overlay** | `show_edit_button` | `ON` | Shows or hides the 4th **Edit** button in the overlay's bottom navigation bar. |
+| **Show Edit Button in Overlay** | `show_edit_button` | `ON` | Shows or hides the **Edit** button in the overlay's bottom navigation bar. |
+| **Show Tasks Button in Overlay** | `show_tasks_button` | `ON` | Shows or hides the **Tasks** button in the overlay's bottom navigation bar. |
 | **Remember Last Open Tab** | `remember_last_tab` | `ON` | When `ON`, reopening the overlay restores whichever tab (**Mode** or **Settings**) was last active (`last_active_tab`). When `OFF`, the overlay always opens on the **Mode** tab. |
 | **Show Swap Screens Button** | `show_swap_screens_button` | `ON` | Shows or hides the 4th **Swap Screens** action button in the **Mode** tab's Screen Mode panel. |
 | **Show Stick LED Brightness Slider** | `show_led_brightness_slider` | `ON` | Shows or hides the 4th **Stick LED** brightness slider inside the **Mode** tab's Brightness panel. |

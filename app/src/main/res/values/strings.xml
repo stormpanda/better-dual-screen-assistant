@@ -287,6 +287,8 @@
     <string name="settings_screenshot_both">Both Screens</string>
     <string name="settings_show_edit_button_title">Show Edit Button in Overlay</string>
     <string name="settings_show_edit_button_desc">Show an Edit button in the bottom navigation row that opens settings on the top screen while keeping the overlay open</string>
+    <string name="settings_show_tasks_button_title">Show Tasks Button in Overlay</string>
+    <string name="settings_show_tasks_button_desc">Show the Tasks button in the bottom navigation row to open the recent apps switcher on the bottom screen</string>
     <string name="settings_remember_last_tab_title">Remember Last Open Tab</string>
     <string name="settings_remember_last_tab_desc_assistant">Keep the last open overlay tab (Mode or Settings) in memory when reopening the assistant</string>
     <string name="settings_remember_last_tab_desc_manager">Keep the last open overlay tab (Mode or Settings) in memory when reopening the manager</string>

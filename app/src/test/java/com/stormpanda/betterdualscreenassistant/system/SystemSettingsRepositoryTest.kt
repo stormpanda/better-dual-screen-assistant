@@ -551,6 +551,15 @@ class SystemSettingsRepositoryTest {
         repo.setShowEditButton(false)
         assertFalse(repo.showEditButton.value)
 
+        assertTrue(repo.showTasksButton.value)
+        repo.setShowTasksButton(false)
+        assertFalse(repo.showTasksButton.value)
+        val reloadedForTasks = SystemSettingsRepository(context)
+        assertFalse(reloadedForTasks.showTasksButton.value)
+        reloadedForTasks.unregister()
+        repo.setShowTasksButton(true)
+        assertTrue(repo.showTasksButton.value)
+
         repo.setNoMoreCloseBottomScreenTip(true)
         assertFalse(repo.shouldShowCloseBottomScreenTip())
 

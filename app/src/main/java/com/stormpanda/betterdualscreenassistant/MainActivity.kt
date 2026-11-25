@@ -92,6 +92,7 @@ import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Icon
@@ -603,6 +604,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
     val showLedBrightnessSlider by repo.showLedBrightnessSlider.collectAsState()
     val showSwapScreensButton by repo.showSwapScreensButton.collectAsState()
     val showEditButton by repo.showEditButton.collectAsState()
+    val showTasksButton by repo.showTasksButton.collectAsState()
     val accurateGameFps by repo.accurateGameFps.collectAsState()
     val cpuFreqScalingMode by repo.cpuFreqScalingMode.collectAsState()
     val tempFahrenheit by repo.tempFahrenheit.collectAsState()
@@ -842,6 +844,7 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 rememberLastTab = rememberLastTab,
                                                 rememberLastQuickTogglePage = rememberLastQuickTogglePage,
                                                 showEditButton = showEditButton,
+                                                showTasksButton = showTasksButton,
                                                 showSwapScreensButton = showSwapScreensButton,
                                                 showLedBrightnessSlider = showLedBrightnessSlider,
                                                 accurateGameFps = accurateGameFps,
@@ -867,6 +870,9 @@ private fun BetterDualScreenSettingsScreen(repo: SystemSettingsRepository) {
                                                 },
                                                 onToggleShowEditButton = { enabled ->
                                                     repo.setShowEditButton(enabled)
+                                                },
+                                                onToggleShowTasksButton = { enabled ->
+                                                    repo.setShowTasksButton(enabled)
                                                 },
                                                 onToggleShowSwapScreensButton = { enabled ->
                                                     repo.setShowSwapScreensButton(enabled)
@@ -1150,6 +1156,7 @@ private fun GeneralSettingsTabContent(
     rememberLastTab: Boolean,
     rememberLastQuickTogglePage: Boolean,
     showEditButton: Boolean,
+    showTasksButton: Boolean,
     showSwapScreensButton: Boolean,
     showLedBrightnessSlider: Boolean,
     accurateGameFps: Boolean,
@@ -1162,6 +1169,7 @@ private fun GeneralSettingsTabContent(
     onToggleRememberLastTab: (Boolean) -> Unit,
     onToggleRememberLastQuickTogglePage: (Boolean) -> Unit,
     onToggleShowEditButton: (Boolean) -> Unit,
+    onToggleShowTasksButton: (Boolean) -> Unit,
     onToggleShowSwapScreensButton: (Boolean) -> Unit,
     onToggleShowLedBrightnessSlider: (Boolean) -> Unit,
     onToggleAccurateGameFps: (Boolean) -> Unit,
@@ -1294,6 +1302,14 @@ private fun GeneralSettingsTabContent(
         checked = showEditButton,
         icon = Icons.Rounded.Edit,
         onCheckedChange = onToggleShowEditButton
+    )
+
+    GamepadToggleCard(
+        title = stringResource(R.string.settings_show_tasks_button_title),
+        description = stringResource(R.string.settings_show_tasks_button_desc),
+        checked = showTasksButton,
+        icon = Icons.Rounded.ViewCarousel,
+        onCheckedChange = onToggleShowTasksButton
     )
 
     GamepadToggleCard(
