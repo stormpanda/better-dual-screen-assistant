@@ -98,6 +98,9 @@ class SystemSettingsRepository(private val context: Context) {
         const val KEY_MIN_REFRESH_RATE = "min_refresh_rate"
         const val KEY_LED_BRIGHTNESS_PERCENT = "led_light_brightness_percent"
         const val KEY_TRIGGER_INPUT_MODE = "trigger_input_mode"
+        const val TRIGGER_MODE_ANALOG = 0
+        const val TRIGGER_MODE_DIGITAL = 1
+        const val TRIGGER_MODE_BOTH = 2
         const val KEY_CHARGE_LIMIT_80 = "percent_80_charge_limit"
         const val KEY_GAMEPAD_MOUSE_MODE = "global_gamepad_to_mouse_mode"
         const val KEY_ADAPTER_ENABLE = "key_adapter_enable"
@@ -448,8 +451,8 @@ class SystemSettingsRepository(private val context: Context) {
     private val _touchLockEnabled = MutableStateFlow(false)
     val touchLockEnabled: StateFlow<Boolean> = _touchLockEnabled.asStateFlow()
 
-    // Trigger Mode: 1 = Analog, 0 = Digital, 2 = Both
-    private val _triggerMode = MutableStateFlow(getInt(KEY_TRIGGER_INPUT_MODE, 2))
+    // Trigger Mode: 0 = Analog, 1 = Digital, 2 = Both
+    private val _triggerMode = MutableStateFlow(getInt(KEY_TRIGGER_INPUT_MODE, TRIGGER_MODE_BOTH))
     val triggerMode: StateFlow<Int> = _triggerMode.asStateFlow()
 
     private val _chargeLimit80 = MutableStateFlow(getInt(KEY_CHARGE_LIMIT_80, 0) == 1)
@@ -1091,7 +1094,7 @@ class SystemSettingsRepository(private val context: Context) {
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
         refreshScreenCastStateAsync()
-        _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
+        _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, TRIGGER_MODE_BOTH)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
         _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
@@ -2500,7 +2503,7 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setTriggerMode(mode: Int) {
-        val normalized = mode.coerceIn(0, 2)
+        val normalized = mode.coerceIn(TRIGGER_MODE_ANALOG, TRIGGER_MODE_BOTH)
         PrivilegedBridge.putSystemSettingInt(context, KEY_TRIGGER_INPUT_MODE, normalized)
         _triggerMode.value = normalized
     }

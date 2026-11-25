@@ -996,11 +996,11 @@ private fun buildQuickSettingTileModels(
                 }
                 QuickSettingTileId.TRIGGER_MODE -> {
                     val triggerLabel = when (triggerMode) {
-                        1 -> stringResource(R.string.qs_label_trigger_analog)
-                        0 -> stringResource(R.string.qs_label_trigger_digital)
+                        SystemSettingsRepository.TRIGGER_MODE_ANALOG -> stringResource(R.string.qs_label_trigger_analog)
+                        SystemSettingsRepository.TRIGGER_MODE_DIGITAL -> stringResource(R.string.qs_label_trigger_digital)
                         else -> stringResource(R.string.qs_label_trigger_both)
                     }
-                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != 2) {
+                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != SystemSettingsRepository.TRIGGER_MODE_BOTH) {
                         onOpenDialog(ActiveDialog.TRIGGER_MODE)
                     })
                 }

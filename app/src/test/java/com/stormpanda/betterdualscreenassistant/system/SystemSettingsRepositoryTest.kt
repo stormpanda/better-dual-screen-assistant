@@ -331,7 +331,19 @@ class SystemSettingsRepositoryTest {
         assertTrue(repo.toggleTouchLock())
         assertTrue(repo.touchLockEnabled.value)
 
-        // Trigger mode clamps to 0..2
+        // Trigger mode maps 0 = Analog, 1 = Digital, 2 = Both and clamps to 0..2
+        assertEquals(0, SystemSettingsRepository.TRIGGER_MODE_ANALOG)
+        assertEquals(1, SystemSettingsRepository.TRIGGER_MODE_DIGITAL)
+        assertEquals(2, SystemSettingsRepository.TRIGGER_MODE_BOTH)
+        repo.setTriggerMode(SystemSettingsRepository.TRIGGER_MODE_ANALOG)
+        assertEquals(0, repo.triggerMode.value)
+        assertEquals(0, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_TRIGGER_INPUT_MODE, -1))
+        repo.setTriggerMode(SystemSettingsRepository.TRIGGER_MODE_DIGITAL)
+        assertEquals(1, repo.triggerMode.value)
+        assertEquals(1, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_TRIGGER_INPUT_MODE, -1))
+        repo.setTriggerMode(SystemSettingsRepository.TRIGGER_MODE_BOTH)
+        assertEquals(2, repo.triggerMode.value)
+        assertEquals(2, Settings.System.getInt(context.contentResolver, SystemSettingsRepository.KEY_TRIGGER_INPUT_MODE, -1))
         repo.setTriggerMode(5)
         assertEquals(2, repo.triggerMode.value)
         repo.setTriggerMode(-3)

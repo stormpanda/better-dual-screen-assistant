@@ -166,7 +166,7 @@ The **AYN Thor** (`kalama`) is a clamshell dual-AMOLED Android gaming handheld p
 ### 6.3 Gamepad & Key Mapping Specifics
 
 - **Controller Style (`temp_abxy_layout_mode`)**: `0` = `"Xbox"`, `1` = **`"Odin"`**, `2` = `"Disconnect"` (Disabled).
-- **Trigger Mode (`trigger_input_mode`)**: `0` = Digital Only, `1` = Analog Only, `2` = Both (Analog + Digital).
+- **Trigger Mode (`trigger_input_mode`)**: `0` = Analog Only, `1` = Digital Only, `2` = Both (Analog + Digital).
 - **Overlay Dismissal via `MappingServiceClient`**: Binds `com.odin.mapping` and registers `["HOME"]` only (`dismissOverlayOnBackMapping = false`).
 
 ---

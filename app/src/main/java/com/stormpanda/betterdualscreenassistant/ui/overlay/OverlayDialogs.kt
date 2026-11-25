@@ -449,9 +449,9 @@ internal fun AssistantOverlayDialogHost(
         ActiveDialog.TRIGGER_MODE -> {
             val triggerMode by repository.triggerMode.collectAsState()
             val options = listOf(
-                TccDialogOption(id = 1, label = stringResource(R.string.dialog_trigger_mode_analog), iconRes = R.drawable.ic_qs_trigger_mode),
-                TccDialogOption(id = 0, label = stringResource(R.string.dialog_trigger_mode_digital), iconRes = R.drawable.ic_qs_trigger_mode),
-                TccDialogOption(id = 2, label = stringResource(R.string.dialog_trigger_mode_both), iconRes = R.drawable.ic_qs_trigger_mode)
+                TccDialogOption(id = SystemSettingsRepository.TRIGGER_MODE_ANALOG, label = stringResource(R.string.dialog_trigger_mode_analog), iconRes = R.drawable.ic_qs_trigger_mode),
+                TccDialogOption(id = SystemSettingsRepository.TRIGGER_MODE_DIGITAL, label = stringResource(R.string.dialog_trigger_mode_digital), iconRes = R.drawable.ic_qs_trigger_mode),
+                TccDialogOption(id = SystemSettingsRepository.TRIGGER_MODE_BOTH, label = stringResource(R.string.dialog_trigger_mode_both), iconRes = R.drawable.ic_qs_trigger_mode)
             )
             TccOptionDialog(
                 title = stringResource(R.string.dialog_trigger_mode_title),
