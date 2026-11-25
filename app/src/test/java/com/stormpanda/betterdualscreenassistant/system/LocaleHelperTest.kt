@@ -67,8 +67,14 @@ class LocaleHelperTest {
     }
 
     @Test
-    fun `hasSelectableTranslations is true when English and Traditional Chinese are bundled`() {
+    fun `hasSelectableTranslations is true when multiple languages are bundled`() {
         assertTrue(AppLanguage.hasSelectableTranslations)
+    }
+
+    @Test
+    fun `fromLocaleList resolves Russian tags to RUSSIAN`() {
+        assertEquals(AppLanguage.RUSSIAN, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("ru")))
+        assertEquals(AppLanguage.RUSSIAN, AppLanguage.fromLocaleList(LocaleList.forLanguageTags("ru-RU")))
     }
 
     @Test
@@ -76,9 +82,13 @@ class LocaleHelperTest {
         val mockLocaleManager = mockk<LocaleManager>(relaxed = true)
         val mockContext = mockk<Context>()
         every { mockContext.getSystemService(LocaleManager::class.java) } returns mockLocaleManager
-        every { mockLocaleManager.applicationLocales } returns LocaleList.forLanguageTags("zh-TW")
+        every { mockLocaleManager.applicationLocales } returnsMany listOf(
+            LocaleList.forLanguageTags("zh-TW"),
+            LocaleList.forLanguageTags("ru")
+        )
 
         assertEquals(AppLanguage.TRADITIONAL_CHINESE, LocaleHelper.currentLanguage(mockContext))
+        assertEquals(AppLanguage.RUSSIAN, LocaleHelper.currentLanguage(mockContext))
 
         LocaleHelper.applyLanguage(mockContext, AppLanguage.SYSTEM)
         verify(exactly = 1) {
@@ -93,6 +103,11 @@ class LocaleHelperTest {
         LocaleHelper.applyLanguage(mockContext, AppLanguage.TRADITIONAL_CHINESE)
         verify(exactly = 1) {
             mockLocaleManager.applicationLocales = LocaleList.forLanguageTags("zh-TW")
+        }
+
+        LocaleHelper.applyLanguage(mockContext, AppLanguage.RUSSIAN)
+        verify(exactly = 1) {
+            mockLocaleManager.applicationLocales = LocaleList.forLanguageTags("ru")
         }
     }
 }
