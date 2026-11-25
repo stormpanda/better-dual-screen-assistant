@@ -608,4 +608,100 @@ class PrivilegedBridgeTest {
         assertEquals(0, currentPinMode)
         assertEquals(0, PrivilegedBridge.getPinScreenMode(context))
     }
+
+    private fun awaitCondition(timeoutMs: Long = 1500L, predicate: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (predicate()) return
+            Thread.sleep(15L)
+        }
+        assertTrue("Timed out waiting for async condition", predicate())
+    }
+
+    @Test
+    fun `OS theme state survives helper reconnect, retries failed applies, and handles reassert responses`() {
+        PrivilegedBridge.resetForTesting()
+        var applyCalls = 0
+        var clearCalls = 0
+        var reassertCalls = 0
+        var applyResult = 0
+        var reassertResult = PrivilegedHelperMain.OS_THEME_REASSERT_HEALTHY
+
+        fun makeHelper(): IBinder = createMockHelperBinder { code, data, reply ->
+            when (code) {
+                PrivilegedHelperMain.TRANSACTION_REGISTER_CLIENT,
+                PrivilegedHelperMain.TRANSACTION_UPDATE_WATCHDOG_STATE -> {
+                    reply.writeNoException()
+                }
+                PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    applyCalls++
+                    reply.writeNoException()
+                    reply.writeInt(applyResult)
+                }
+                PrivilegedHelperMain.TRANSACTION_CLEAR_OS_THEME -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    clearCalls++
+                    reply.writeNoException()
+                }
+                PrivilegedHelperMain.TRANSACTION_REASSERT_OS_THEME_IF_NEEDED -> {
+                    data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                    reassertCalls++
+                    reply.writeNoException()
+                    reply.writeInt(reassertResult)
+                }
+            }
+        }
+
+        val helper1 = makeHelper()
+        setHelperBinder(helper1)
+
+        // 1. Failed apply (reply 0) keeps request undelivered so reassertOsThemeIfNeeded retries full apply
+        PrivilegedBridge.applyOsThemeOverlay(
+            context = context,
+            resourceNames = arrayOf("android:color/system_accent1_100"),
+            colorValues = intArrayOf(0xFFCC0000.toInt()),
+            targetNightMode = 2,
+            savedNightMode = 2,
+            injectedThemeJson = "",
+            savedThemeJson = ""
+        )
+        awaitCondition { applyCalls == 1 }
+        assertTrue(PrivilegedBridge.hasActiveOsThemeRequest())
+
+        applyResult = 1
+        var reassertCallbackCount = 0
+        PrivilegedBridge.reassertOsThemeIfNeeded(context) { reassertCallbackCount++ }
+        awaitCondition { applyCalls == 2 && reassertCallbackCount == 1 }
+        assertEquals(0, reassertCalls)
+
+        // 2. HEALTHY -> callback not invoked; REASSERTED -> callback invoked; INACTIVE -> full re-apply
+        reassertResult = PrivilegedHelperMain.OS_THEME_REASSERT_HEALTHY
+        PrivilegedBridge.reassertOsThemeIfNeeded(context) { reassertCallbackCount++ }
+        awaitCondition { reassertCalls == 1 }
+        assertEquals(1, reassertCallbackCount)
+
+        reassertResult = PrivilegedHelperMain.OS_THEME_REASSERT_REASSERTED
+        PrivilegedBridge.reassertOsThemeIfNeeded(context) { reassertCallbackCount++ }
+        awaitCondition { reassertCalls == 2 && reassertCallbackCount == 2 }
+
+        reassertResult = PrivilegedHelperMain.OS_THEME_REASSERT_INACTIVE
+        PrivilegedBridge.reassertOsThemeIfNeeded(context) { reassertCallbackCount++ }
+        awaitCondition { reassertCalls == 3 && applyCalls == 3 && reassertCallbackCount == 3 }
+
+        // 3. Helper restart/reconnect replays active OS theme even though it was already delivered to helper1
+        val helper2 = makeHelper()
+        PrivilegedBridge.onHelperBinderReceived(helper2)
+        awaitCondition { applyCalls == 4 }
+
+        // 4. Delivered clearOsThemeOverlay clears desired state and is NOT replayed on subsequent reconnects
+        PrivilegedBridge.clearOsThemeOverlay(context, 2, "")
+        awaitCondition { clearCalls == 1 && !PrivilegedBridge.hasActiveOsThemeRequest() }
+
+        val helper3 = makeHelper()
+        PrivilegedBridge.onHelperBinderReceived(helper3)
+        Thread.sleep(60L)
+        assertEquals(1, clearCalls)
+        assertEquals(4, applyCalls)
+    }
 }

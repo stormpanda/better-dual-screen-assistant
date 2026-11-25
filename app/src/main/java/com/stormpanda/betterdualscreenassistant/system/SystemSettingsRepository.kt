@@ -21,6 +21,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PatternMatcher
 import android.os.PowerManager
 import android.os.SystemClock
 import android.app.UiModeManager
@@ -178,7 +179,15 @@ class SystemSettingsRepository(private val context: Context) {
             }
         }
 
+        fun getInstanceIfInitialized(): SystemSettingsRepository? = instance
+
+        fun invalidateOsThemeSignature() {
+            lastAppliedOsThemeSignature = ""
+        }
+
+        private const val ACTION_OVERLAY_CHANGED = "android.intent.action.OVERLAY_CHANGED"
         private const val OS_THEME_SYNC_DEBOUNCE_MS = 650L
+        private const val OS_THEME_OVERLAY_REASSERT_DEBOUNCE_MS = 120L
         internal const val REFRESH_RATE_WRITE_SETTLE_DELAY_MS = 220L
 
         private val MEGINGIARD_RELEASE_THEME_URI: Uri =
@@ -269,6 +278,34 @@ class SystemSettingsRepository(private val context: Context) {
             f
         }
         dispatchOrDeferOsThemeSync(force = force)
+    }
+
+    private val osThemeIntegrityCheckRunnable = Runnable {
+        if (!_injectOsTheme.value) return@Runnable
+        val option = AppThemeOption.fromId(_themeMode.value)
+        if (option == AppThemeOption.STOCK_SYSTEM ||
+            option == AppThemeOption.STOCK_LIGHT ||
+            option == AppThemeOption.STOCK_DARK
+        ) {
+            return@Runnable
+        }
+        val deferred = synchronized(osThemeDeferLock) {
+            if (activeSettingsUiTokens.isNotEmpty()) {
+                pendingDeferredOsThemeSync = true
+                pendingDeferredOsThemeForce = true
+                true
+            } else {
+                false
+            }
+        }
+        if (deferred) return@Runnable
+        if (!PrivilegedBridge.hasActiveOsThemeRequest()) {
+            syncOsThemeIfNeeded(force = true)
+        } else {
+            PrivilegedBridge.reassertOsThemeIfNeeded(context) {
+                mainHandler.post { scheduleFloatingIconGestureGuardResync() }
+            }
+        }
     }
 
     private val debouncedRefreshRateWriteRunnable = Runnable {
@@ -781,9 +818,30 @@ class SystemSettingsRepository(private val context: Context) {
                     scheduleScreenCastStateRefresh()
                 }
                 Intent.ACTION_USER_UNLOCKED -> {
+                    _themeMode.value = readSavedThemeMode()
+                    _customAccentArgb.value = prefs.getInt(
+                        PREF_CUSTOM_ACCENT_ARGB,
+                        DEFAULT_MEGINGIARD_ACCENT_ARGB
+                    )
+                    _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
                     registerMegingiardContentObservers()
-                    refreshMegingiardSyncedTheme()
+                    refreshMegingiardSyncedThemeAsync(
+                        changedUri = null,
+                        debounceOsSyncMs = 0L,
+                        forceScheduleOsSync = true,
+                        forceApplyOsTheme = true
+                    )
                 }
+            }
+        }
+    }
+
+    private val overlayChangedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_OVERLAY_CHANGED) return
+            val pkg = intent.data?.schemeSpecificPart
+            if (pkg == null || pkg == "android") {
+                requestOsThemeIntegrityCheck()
             }
         }
     }
@@ -943,6 +1001,11 @@ class SystemSettingsRepository(private val context: Context) {
             addDataScheme("package")
         }
         context.registerReceiver(megingiardPackageReceiver, pkgFilter, Context.RECEIVER_NOT_EXPORTED)
+        val overlayFilter = IntentFilter(ACTION_OVERLAY_CHANGED).apply {
+            addDataScheme("package")
+            addDataSchemeSpecificPart("android", PatternMatcher.PATTERN_LITERAL)
+        }
+        context.registerReceiver(overlayChangedReceiver, overlayFilter, Context.RECEIVER_NOT_EXPORTED)
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
             try {
                 context.registerReceiver(
@@ -977,6 +1040,8 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun unregister() {
+        mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
+        mainHandler.removeCallbacks(osThemeIntegrityCheckRunnable)
         mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
         mainHandler.removeCallbacks(floatingIconEarlyResyncRunnable)
         mainHandler.removeCallbacks(floatingIconLateResyncRunnable)
@@ -1017,6 +1082,10 @@ class SystemSettingsRepository(private val context: Context) {
         }
         try {
             context.unregisterReceiver(megingiardPackageReceiver)
+        } catch (_: Throwable) {
+        }
+        try {
+            context.unregisterReceiver(overlayChangedReceiver)
         } catch (_: Throwable) {
         }
         if (isDualScreenVolumeKeyReceiverRegistered) {
@@ -1875,7 +1944,8 @@ class SystemSettingsRepository(private val context: Context) {
     private fun refreshMegingiardSyncedThemeAsync(
         changedUri: Uri?,
         debounceOsSyncMs: Long,
-        forceScheduleOsSync: Boolean = false
+        forceScheduleOsSync: Boolean = false,
+        forceApplyOsTheme: Boolean = false
     ) {
         themeSyncExecutor.execute {
             val candidates = buildMegingiardCandidateUris(changedUri)
@@ -1910,10 +1980,12 @@ class SystemSettingsRepository(private val context: Context) {
                                 editor.remove(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB)
                             }
                             editor.apply()
-                            if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
-                                (changed || forceScheduleOsSync || debounceOsSyncMs == 0L)
+                            if (forceApplyOsTheme ||
+                                debounceOsSyncMs == 0L ||
+                                (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
+                                    (changed || forceScheduleOsSync))
                             ) {
-                                scheduleOsThemeSync(debounceOsSyncMs)
+                                scheduleOsThemeSync(debounceOsSyncMs, force = forceApplyOsTheme)
                             }
                             return@execute
                         }
@@ -1922,10 +1994,11 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
             _isMegingiardProviderAvailable.value = anyProviderInstalled || isAnyMegingiardInstalled()
-            if (debounceOsSyncMs == 0L ||
+            if (forceApplyOsTheme ||
+                debounceOsSyncMs == 0L ||
                 (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id && forceScheduleOsSync)
             ) {
-                scheduleOsThemeSync(debounceOsSyncMs)
+                scheduleOsThemeSync(debounceOsSyncMs, force = forceApplyOsTheme)
             }
         }
     }
@@ -1988,6 +2061,19 @@ class SystemSettingsRepository(private val context: Context) {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    fun requestOsThemeIntegrityCheck() {
+        if (!_injectOsTheme.value) return
+        val option = AppThemeOption.fromId(_themeMode.value)
+        if (option == AppThemeOption.STOCK_SYSTEM ||
+            option == AppThemeOption.STOCK_LIGHT ||
+            option == AppThemeOption.STOCK_DARK
+        ) {
+            return
+        }
+        mainHandler.removeCallbacks(osThemeIntegrityCheckRunnable)
+        mainHandler.postDelayed(osThemeIntegrityCheckRunnable, OS_THEME_OVERLAY_REASSERT_DEBOUNCE_MS)
     }
 
     private fun dispatchOrDeferOsThemeSync(force: Boolean = false) {
@@ -2123,8 +2209,12 @@ class SystemSettingsRepository(private val context: Context) {
                 scheduleFloatingIconGestureGuardResync()
             }
             else -> {
-                val sig = "ON:MG:${option.id}:${_customAccentArgb.value}:" +
-                    "${_syncedMegingiardOption.value.id}:${_syncedMegingiardAccentArgb.value}:$savedNight"
+                val sig = if (option == AppThemeOption.SYNC_MEGINGIARD) {
+                    "ON:MG:${option.id}:${_customAccentArgb.value}:" +
+                        "${_syncedMegingiardOption.value.id}:${_syncedMegingiardAccentArgb.value}:$savedNight"
+                } else {
+                    "ON:MG:${option.id}:${_customAccentArgb.value}:$savedNight"
+                }
                 if (!force && lastAppliedOsThemeSignature == sig) return
                 lastAppliedOsThemeSignature = sig
                 val palette = resolveTccPalette(

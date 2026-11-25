@@ -40,6 +40,8 @@ class SystemSettingsRepositoryTest {
     private var simulatedCastConnecting = false
     private var simulatedCastDeviceName = ""
     private var disconnectCastCalls = 0
+    private var reassertOsThemeCalls = 0
+    private var reassertOsThemeStatus = PrivilegedHelperMain.OS_THEME_REASSERT_REASSERTED
     private val appliedOsThemes = java.util.Collections.synchronizedList(
         mutableListOf<Triple<List<String>, List<Int>, String>>()
     )
@@ -47,6 +49,7 @@ class SystemSettingsRepositoryTest {
     @Before
     fun setUp() {
         PrivilegedBridge.resetForTesting()
+        SystemSettingsRepository.invalidateOsThemeSignature()
         DeviceProfile.testOverride = null
         DeviceProfile.resetCacheForTesting()
         context = ApplicationProvider.getApplicationContext()
@@ -73,6 +76,8 @@ class SystemSettingsRepositoryTest {
         simulatedCastConnecting = false
         simulatedCastDeviceName = ""
         disconnectCastCalls = 0
+        reassertOsThemeCalls = 0
+        reassertOsThemeStatus = PrivilegedHelperMain.OS_THEME_REASSERT_REASSERTED
         appliedOsThemes.clear()
 
         val helper = mockk<IBinder>(relaxed = true)
@@ -174,6 +179,13 @@ class SystemSettingsRepositoryTest {
                         val injectedJson = data.readString() ?: ""
                         appliedOsThemes.add(Triple(names, colors, injectedJson))
                         reply.writeNoException()
+                        reply.writeInt(1)
+                    }
+                    PrivilegedHelperMain.TRANSACTION_REASSERT_OS_THEME_IF_NEEDED -> {
+                        data.enforceInterface(PrivilegedHelperMain.DESCRIPTOR)
+                        reassertOsThemeCalls++
+                        reply.writeNoException()
+                        reply.writeInt(reassertOsThemeStatus)
                     }
                     else -> {
                         reply.writeNoException()
@@ -1319,6 +1331,69 @@ class SystemSettingsRepositoryTest {
         } finally {
             unmockkObject(PServerClient)
         }
+
+        repo.unregister()
+    }
+
+    @Test
+    fun `ACTION_OVERLAY_CHANGED triggers OS theme integrity reassert and ACTION_USER_UNLOCKED forces re-sync`() {
+        fun awaitCondition(timeoutMs: Long = 1500L, predicate: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                org.robolectric.shadows.ShadowLooper.idleMainLooper()
+                if (predicate()) return
+                Thread.sleep(15L)
+            }
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            assertTrue("Timed out waiting for async condition", predicate())
+        }
+
+        val repo = SystemSettingsRepository(context).also { it.register() }
+        repo.setThemeMode(AppThemeOption.MEGINGIARD_DARK.id)
+        repo.setCustomAccentArgb(0xFFCC0000.toInt())
+        repo.setInjectOsTheme(true)
+        awaitCondition { appliedOsThemes.isNotEmpty() && PrivilegedBridge.hasActiveOsThemeRequest() }
+        appliedOsThemes.clear()
+        reassertOsThemeCalls = 0
+
+        // 1. While Settings UI is active, OVERLAY_CHANGED defers re-sync until Settings UI closes
+        val uiToken = 4242
+        repo.setSettingsUiActive(uiToken, active = true)
+        val overlayIntent = android.content.Intent("android.intent.action.OVERLAY_CHANGED").apply {
+            data = android.net.Uri.parse("package:android")
+        }
+        val overlayReceiverField = SystemSettingsRepository::class.java
+            .getDeclaredField("overlayChangedReceiver").apply { isAccessible = true }
+        val overlayReceiver = overlayReceiverField.get(repo) as android.content.BroadcastReceiver
+        overlayReceiver.onReceive(context, overlayIntent)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(200L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertEquals(0, reassertOsThemeCalls)
+
+        // Closing Settings UI flushes the deferred forced sync
+        repo.setSettingsUiActive(uiToken, active = false, flushIfInactive = true)
+        awaitCondition { appliedOsThemes.isNotEmpty() }
+        appliedOsThemes.clear()
+
+        // 2. When Settings UI is inactive, OVERLAY_CHANGED triggers TRANSACTION_REASSERT_OS_THEME_IF_NEEDED
+        overlayReceiver.onReceive(context, overlayIntent)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(200L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        awaitCondition { reassertOsThemeCalls == 1 }
+
+        // 3. ACTION_USER_UNLOCKED forces a fresh OS theme sync even when signature already matches
+        val volumeReceiverField = SystemSettingsRepository::class.java
+            .getDeclaredField("volumeReceiver").apply { isAccessible = true }
+        val volumeReceiver = volumeReceiverField.get(repo) as android.content.BroadcastReceiver
+        volumeReceiver.onReceive(context, android.content.Intent(android.content.Intent.ACTION_USER_UNLOCKED))
+        awaitCondition { appliedOsThemes.isNotEmpty() }
+
+        // 4. When injectOsTheme is false, OVERLAY_CHANGED is ignored
+        repo.setInjectOsTheme(false)
+        awaitCondition { !PrivilegedBridge.hasActiveOsThemeRequest() }
+        reassertOsThemeCalls = 0
+        overlayReceiver.onReceive(context, overlayIntent)
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(200L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        Thread.sleep(50L)
+        assertEquals(0, reassertOsThemeCalls)
 
         repo.unregister()
     }
