@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App Names -->
+    <string name="app_name">Better Dual Screen Assistant</string>
+    <string name="app_name_manager">Better Dual Screen Manager</string>
+
+    <!-- Language Settings -->
+    <string name="language_system_default">跟隨系統</string>
+    <string name="settings_language">語言</string>
+    <string name="settings_language_desc">獨立於 Android 系統語言，自訂此應用程式的顯示語言</string>
+
+    <!-- Foreground Service & Notifications -->
+    <string name="notification_channel_assistant_name">雙螢幕助手服務</string>
+    <string name="notification_channel_manager_name">雙螢幕管理員服務</string>
+    <string name="notification_channel_desc_ayn">保持雙螢幕浮動視窗與實體 AYN 鍵處理程序處於待命狀態</string>
+    <string name="notification_channel_desc_retroid">保持雙螢幕浮動視窗與實體雙螢幕鍵處理程序處於待命狀態</string>
+    <string name="notification_ready_text_ayn">實體 AYN 鍵與雙螢幕控制已就緒</string>
+    <string name="notification_ready_text_retroid">實體雙螢幕鍵與雙螢幕控制已就緒</string>
+    <string name="notification_recording_top_text">正在錄製上螢幕 — 點擊「停止」即可儲存</string>
+    <string name="notification_recording_bottom_text">正在錄製下螢幕 — 點擊「停止」即可儲存</string>
+    <string name="notification_recording_both_text">正在錄製雙螢幕 — 點擊「停止」即可儲存</string>
+    <string name="notification_action_stop_recording">停止錄影</string>
+
+    <!-- Device Profiles -->
+    <string name="controller_standard_label_odin">Odin</string>
+    <string name="controller_standard_label_retro">Retro</string>
+    <string name="tip_content_text">關閉副螢幕後，可按下 AYN 鍵喚醒螢幕。</string>
+    <string name="tip_content_text_retroid">關閉下螢幕後，可長按或按下雙螢幕鍵喚醒螢幕。</string>
+
+    <!-- Overlay Screen Control, Sliders, Telemetry & Navigation -->
+    <string name="current_frame_rate_tip">目前 FPS</string>
+    <string name="frame_rate_mode_text">%1$d Hz 模式</string>
+    <string name="dualscreen_asynchronous_display">雙螢幕</string>
+    <string name="only_theupper_screen_displayed">僅上螢幕</string>
+    <string name="only_following_screen_displayed">僅下螢幕</string>
+    <string name="swap_screens_mode_text">互換螢幕</string>
+    <string name="sliding_dual_screen">雙螢幕</string>
+    <string name="sliding_main_screen">上螢幕</string>
+    <string name="sliding_secondary_screen">下螢幕</string>
+    <string name="sliding_stick_led">搖桿燈效</string>
+    <string name="navigation_screen_control_text">模式</string>
+    <string name="navigation_task_manage_text">工作</string>
+    <string name="navigation_system_set_text">設定</string>
+    <string name="navigation_edit_text">編輯</string>
+    <string name="hardware_label_temp">溫度</string>
+    <string name="hardware_label_fan">風扇</string>
+    <string name="hardware_label_cpu">CPU</string>
+    <string name="hardware_label_gpu">GPU</string>
+    <string name="hardware_label_pwr">功耗</string>
+    <string name="hardware_label_ram">RAM</string>
+    <string name="status_cd_bluetooth">藍牙</string>
+    <string name="status_cd_wifi">Wi-Fi</string>
+
+    <!-- Overlay Stock Quick Toggles & Dialogs -->
+    <string name="key_focus_mode_title_text">焦點模式</string>
+    <string name="key_focus_mode_touch_switchable">自動鎖定</string>
+    <string name="key_focus_mode_lock_on_upper_screen">上螢幕</string>
+    <string name="key_focus_mode_lock_on_lower_screen">下螢幕</string>
+    <string name="text_performance_mode_title">效能模式</string>
+    <string name="text_performance_mode_normal">標準效能</string>
+    <string name="text_performance_mode_performance">中效能</string>
+    <string name="text_performance_mode_height_performance">高效能</string>
+    <string name="text_fan_control_title">風扇控制</string>
+    <string name="text_fan_control_off">已關閉</string>
+    <string name="text_fan_control_low_speed">靜音模式</string>
+    <string name="text_fan_control_smart">智慧模式</string>
+    <string name="text_fan_control_medium_speed">運動模式</string>
+    <string name="text_fan_control_custom">自訂</string>
+    <string name="text_handle_style_title">手把配置</string>
+    <string name="fan_option_xbox_style">Xbox 風格</string>
+    <string name="fan_option_odin_style">標準風格</string>
+    <string name="fan_option_retro_style">Retro 風格</string>
+    <string name="fan_option_disable">停用</string>
+    <string name="text_clear_memory_title">清理記憶體</string>
+    <string name="text_charging_separation_title">旁路供電</string>
+    <string name="text_vibration_open_title">震動回饋</string>
+    <string name="text_led_lights_open_title">氛圍燈效</string>
+    <string name="force_landscape_mode_text">強制橫向</string>
+    <string name="text_theme_mode_title">主題模式</string>
+    <string name="text_system_theme">系統主題</string>
+    <string name="text_light_theme">淺色主題</string>
+    <string name="text_dark_theme">深色主題</string>
+    <string name="tip_title_text">提示</string>
+    <string name="tip_dialog_cb_text_no_more_tip">不再顯示</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">確認</string>
+
+    <!-- Overlay Extended Quick Toggle Labels & Dialogs -->
+    <string name="qs_label_screen_cast_casting">投放中</string>
+    <string name="qs_label_screen_cast_connecting">連線中…</string>
+    <string name="qs_label_touch_locked">已鎖定觸控</string>
+    <string name="qs_label_screenshot_top">擷取：上螢幕</string>
+    <string name="qs_label_screenshot_bottom">擷取：下螢幕</string>
+    <string name="qs_label_screenshot_both">擷取：雙螢幕</string>
+    <string name="qs_label_screen_record_stop">停止 (%1$s)</string>
+    <string name="qs_label_trigger_analog">板機：類比</string>
+    <string name="qs_label_trigger_digital">板機：數位</string>
+    <string name="qs_label_trigger_both">板機：雙模式</string>
+    <string name="dialog_theme_stock_format">%1$s（原廠）</string>
+    <string name="dialog_theme_sync_format">%1$s（%2$s）</string>
+    <string name="dialog_trigger_mode_title">L2 / R2 板機模式</string>
+    <string name="dialog_trigger_mode_both">雙模式（類比＋數位）</string>
+    <string name="dialog_trigger_mode_analog">僅類比</string>
+    <string name="dialog_trigger_mode_digital">僅數位</string>
+    <string name="dialog_screenshot_title">擷取螢幕畫面</string>
+    <string name="dialog_screen_target_top">上螢幕</string>
+    <string name="dialog_screen_target_bottom">下螢幕</string>
+    <string name="dialog_screen_target_both">雙螢幕</string>
+    <string name="dialog_screenshot_set_as_default">設為預設</string>
+    <string name="dialog_screen_record_title">錄製螢幕畫面</string>
+    <string name="dialog_screen_record_internal_audio">遊戲內部音訊</string>
+    <string name="dialog_screen_record_microphone">麥克風</string>
+    <string name="dialog_screen_record_frame_rate">更新率</string>
+    <string name="dialog_screen_record_fps_option">%1$d FPS</string>
+    <string name="dialog_theme_inject_os_colors">將主題色彩套用至系統</string>
+    <string name="dialog_fan_speed_cd">風扇轉速</string>
+
+    <!-- Overlay Toasts -->
+    <plurals name="toast_clean_process_result">
+        <item quantity="other">已清理 %1$d 個處理程序，剩餘記憶體 %2$s</item>
+    </plurals>
+    <string name="toast_clean_process_successful">清理完成</string>
+    <plurals name="toast_cleared_recent_apps">
+        <item quantity="other">已清除 %1$d 個最近使用的應用程式</item>
+    </plurals>
+    <string name="toast_cleared_recent_apps_zero">已清除最近使用的應用程式</string>
+    <string name="toast_clear_recent_apps_failed">無法清除最近使用的應用程式</string>
+    <string name="toast_swapped_screens">已互換上下螢幕應用程式</string>
+    <string name="toast_swap_screens_none">沒有可移動的前景應用程式可互換</string>
+    <string name="toast_touch_lock_enabled_assistant">已鎖定下螢幕觸控（開啟助手即可解鎖）</string>
+    <string name="toast_touch_lock_enabled_manager">已鎖定下螢幕觸控（開啟管理員即可解鎖）</string>
+    <string name="toast_touch_lock_disabled">已解鎖下螢幕觸控</string>
+    <string name="toast_screenshot_top_saved">已將上螢幕擷取畫面儲存至 Pictures/Screenshots</string>
+    <string name="toast_screenshot_bottom_saved">已將下螢幕擷取畫面儲存至 Pictures/Screenshots</string>
+    <string name="toast_screenshot_both_saved">已將雙螢幕擷取畫面儲存至 Pictures/Screenshots</string>
+    <string name="toast_screenshot_top_failed">擷取上螢幕畫面失敗</string>
+    <string name="toast_screenshot_bottom_failed">擷取下螢幕畫面失敗</string>
+    <string name="toast_screenshot_both_failed">擷取雙螢幕畫面失敗</string>
+    <string name="toast_recording_low_storage_start">儲存空間不足（&lt;250 MB），無法開始錄影</string>
+    <string name="toast_recording_start_failed">無法啟動螢幕錄影</string>
+    <string name="toast_recording_saved_to_movies">已將螢幕錄影儲存至 Movies/ScreenRecordings</string>
+    <string name="toast_recording_saved_low_storage">已儲存錄影（因儲存空間不足而停止）</string>
+    <string name="toast_recording_stopped">已停止螢幕錄影</string>
+    <string name="toast_cast_settings_unavailable">此裝置無法使用投放設定</string>
+    <string name="toast_cast_choose_on_top">請在上螢幕選擇投放裝置</string>
+    <string name="toast_screen_cast_disconnect_failed">無法中斷螢幕投放連線</string>
+    <string name="toast_screen_cast_disconnected_device">已中斷與 %1$s 的連線</string>
+    <string name="toast_screen_cast_disconnected">已中斷螢幕投放</string>
+    <string name="toast_clustertune_not_installed">尚未安裝 ClusterTune</string>
+    <string name="toast_clustertune_top_screen_off">上螢幕已關閉 — 請先切換至雙螢幕或僅上螢幕模式</string>
+    <string name="toast_clustertune_overlay_permission_denied">請先在 ClusterTune 中啟用浮動視窗權限</string>
+    <string name="toast_clustertune_open_failed">無法開啟 ClusterTune</string>
+
+    <!-- Quick Setting Categories & Tiles Metadata -->
+    <string name="qs_cat_stock_title">原廠 %1$s 快速圖塊</string>
+    <string name="qs_cat_stock_desc">內建 %1$s 雙螢幕助手快速設定（預設開啟）</string>
+    <string name="qs_cat_android_system_title">Android 系統圖塊</string>
+    <string name="qs_cat_android_system_desc">標準 Android 無線通訊、通知與顯示控制（預設關閉）</string>
+    <string name="qs_cat_tools_title">實用工具</string>
+    <string name="qs_cat_tools_desc">雙螢幕多工公用程式與 %1$s 硬體工具（預設關閉）</string>
+
+    <string name="qs_tile_focus_lock_title">按鍵\n焦點鎖定</string>
+    <string name="qs_tile_focus_lock_desc">切換手把焦點至上螢幕、下螢幕或觸控自動切換模式</string>
+    <string name="qs_tile_performance_mode_title">效能模式</string>
+    <string name="qs_tile_performance_mode_desc">在標準、中效能與高效能設定檔之間切換</string>
+    <string name="qs_tile_fan_control_title">風扇控制</string>
+    <string name="qs_tile_fan_control_desc">設定散熱風扇模式或自訂風扇轉速</string>
+    <string name="qs_tile_clear_memory_title">清理\n記憶體</string>
+    <string name="qs_tile_clear_memory_desc">釋放背景記憶體並關閉非必要背景處理程序</string>
+    <string name="qs_tile_controller_style_title">手把配置</string>
+    <string name="qs_tile_controller_style_desc">在 Xbox、%1$s 或停用手把按鍵配置之間切換</string>
+    <string name="qs_tile_charging_separation_title">旁路供電</string>
+    <string name="qs_tile_charging_separation_desc">略過電池充電並直接透過 USB-C 為裝置供電</string>
+    <string name="qs_tile_vibration_title">震動回饋</string>
+    <string name="qs_tile_vibration_desc">切換系統觸覺回饋與震動</string>
+    <string name="qs_tile_ambient_light_title">氛圍燈效</string>
+    <string name="qs_tile_ambient_light_desc">切換搖桿與側邊 RGB 氛圍燈光</string>
+    <string name="qs_tile_force_landscape_title">強制橫向</string>
+    <string name="qs_tile_force_landscape_desc">強制下螢幕應用程式以橫向顯示</string>
+    <string name="qs_tile_theme_mode_title">主題模式</string>
+    <string name="qs_tile_theme_mode_desc">切換助手浮動視窗與系統主題配色</string>
+    <string name="qs_tile_theme_mode_desc_manager">切換管理員浮動視窗與系統主題配色</string>
+    <string name="qs_tile_wifi_title">Wi-Fi</string>
+    <string name="qs_tile_wifi_desc">切換 Wi-Fi 無線網路連線</string>
+    <string name="qs_tile_bluetooth_title">藍牙</string>
+    <string name="qs_tile_bluetooth_desc">切換藍牙連線狀態</string>
+    <string name="qs_tile_dnd_title">勿擾模式</string>
+    <string name="qs_tile_dnd_desc">遊戲期間靜音通知與提醒</string>
+    <string name="qs_tile_airplane_mode_title">飛航模式</string>
+    <string name="qs_tile_airplane_mode_desc">關閉所有無線通訊以節省電力</string>
+    <string name="qs_tile_screen_cast_title">螢幕投放</string>
+    <string name="qs_tile_screen_cast_desc">透過 Chromecast 或 Miracast 無線投放畫面，或中斷目前的投放連線</string>
+    <string name="qs_tile_touch_lock_title">觸控鎖定</string>
+    <string name="qs_tile_touch_lock_desc">停用下螢幕觸控輸入並維持畫面顯示</string>
+    <string name="qs_tile_screenshot_title">螢幕擷取</string>
+    <string name="qs_tile_screenshot_desc">擷取上螢幕、下螢幕或雙螢幕畫面</string>
+    <string name="qs_tile_screen_record_title">螢幕錄影</string>
+    <string name="qs_tile_screen_record_desc">錄製上螢幕、下螢幕或雙螢幕的影片與音訊</string>
+    <string name="qs_tile_trigger_mode_title">板機模式</string>
+    <string name="qs_tile_trigger_mode_desc">在類比、數位與雙模式之間切換 L2/R2 板機輸入</string>
+    <string name="qs_tile_charge_limit_80_title" formatted="false">80%\n充電上限</string>
+    <string name="qs_tile_charge_limit_80_desc" formatted="false">將充電上限限制在 80% 以保護電池長期健康度</string>
+    <string name="qs_tile_gamepad_mouse_mode_title">滑鼠模式</string>
+    <string name="qs_tile_gamepad_mouse_mode_desc">切換虛擬手把轉滑鼠游標模式</string>
+    <string name="qs_tile_key_mapper_title">按鍵映射</string>
+    <string name="qs_tile_key_mapper_desc">切換 %1$s 螢幕按鍵映射（Key Adapter）</string>
+    <string name="qs_tile_keep_screen_on_title">保持\n螢幕常亮</string>
+    <string name="qs_tile_keep_screen_on_desc">防止螢幕因閒置而自動休眠</string>
+    <string name="qs_tile_prevent_accidental_home_title">鎖定\n主畫面鍵</string>
+    <string name="qs_tile_prevent_accidental_home_desc">防止遊戲期間誤觸主畫面鍵</string>
+    <string name="qs_tile_clear_all_tasks_title">清除\n所有工作</string>
+    <string name="qs_tile_clear_all_tasks_desc">關閉所有最近使用的應用程式工作而不終止背景服務</string>
+    <string name="qs_tile_cluster_tune_desc">在上螢幕開啟 ClusterTune 設定檔選擇彈出視窗</string>
+
+    <!-- Themes & UI Look -->
+    <string name="ui_look_auto">自動</string>
+    <string name="ui_look_auto_with_native">自動 (%1$s)</string>
+    <string name="ui_look_ayn_smooth">AYN 圓潤風格</string>
+    <string name="ui_look_ayn_short">AYN</string>
+    <string name="ui_look_retroid_pixel">Retroid 像素風格</string>
+    <string name="ui_look_retroid_short">Retroid</string>
+
+    <string name="theme_stock_system">跟隨系統（原廠）</string>
+    <string name="theme_stock_system_short">跟隨系統</string>
+    <string name="theme_stock_light">淺色（原廠）</string>
+    <string name="theme_stock_light_short">淺色</string>
+    <string name="theme_stock_dark">深色（原廠）</string>
+    <string name="theme_stock_dark_short">深色</string>
+    <string name="theme_sync_megingiard">與 Megingiard 同步</string>
+    <string name="theme_sync_megingiard_short">Megingiard 同步</string>
+    <string name="theme_megingiard_dark">深色</string>
+    <string name="theme_megingiard_dark_oled">純黑 OLED</string>
+    <string name="theme_norse_forest">北歐森林</string>
+    <string name="theme_mjolnir_steel">雷神之鎚鋼鐵</string>
+    <string name="theme_mjolnir_short">雷神之鎚</string>
+    <string name="theme_valhalla_sunset">英靈殿日落</string>
+    <string name="theme_valhalla_short">英靈殿</string>
+    <string name="theme_aurora_borealis">極光</string>
+    <string name="theme_aurora_short">極光</string>
+    <string name="theme_retro_phosphor">復古螢光綠</string>
+    <string name="theme_royal_asgard">皇家阿斯嘉</string>
+    <string name="theme_source_stock">原廠</string>
+    <string name="theme_source_sync_megingiard">與 Megingiard 同步</string>
+    <string name="theme_source_custom_palette">自訂配色</string>
+
+    <!-- Companion Settings Categories & Sub-pages -->
+    <string name="settings_cat_general">一般</string>
+    <string name="settings_cat_quick_toggles">快速圖塊</string>
+    <string name="settings_cat_appearance">外觀</string>
+    <string name="settings_cat_updates">更新</string>
+    <string name="settings_cat_diagnostics">診斷</string>
+    <string name="settings_subpage_custom_color">自訂顏色</string>
+    <string name="settings_subpage_enable_disable">啟用 / 停用</string>
+    <string name="settings_subpage_licenses">授權與聲明</string>
+    <string name="settings_subpage_license_app">應用程式授權</string>
+    <string name="settings_subpage_license_androidx">AndroidX 與 Compose</string>
+    <string name="settings_subpage_license_kotlin">Kotlin 與 Coroutines</string>
+
+    <!-- Companion Settings: General -->
+    <string name="settings_replace_stock_title">取代原廠助手</string>
+    <string name="settings_replace_stock_desc_active_ayn">已停用原廠 DualScreenAssistant；按下實體 AYN 鍵將開啟 %1$s</string>
+    <string name="settings_replace_stock_desc_active_retroid">已停用原廠 DualScreenAssistant；按下實體雙螢幕鍵將開啟 %1$s</string>
+    <string name="settings_replace_stock_desc_inactive_ayn">目前使用原廠 DualScreenAssistant；啟用後可接管實體 AYN 鍵</string>
+    <string name="settings_replace_stock_desc_inactive_retroid">目前使用原廠 DualScreenAssistant；啟用後可接管實體雙螢幕鍵</string>
+    <string name="settings_accurate_game_fps_title">精準遊戲 FPS 計數器</string>
+    <string name="settings_accurate_game_fps_desc">量測目前顯示器前景遊戲／應用程式的真實畫面更新率，取代原廠全域 SurfaceFlinger 計數器</string>
+    <string name="settings_cpu_max_speed_mode_title">CPU 最高頻率模式</string>
+    <string name="settings_cpu_max_speed_mode_desc">顯示晶片真實硬體最高頻率（AYN Thor 風格）或目前效能模式上限（Retroid Duo 風格）</string>
+    <string name="settings_cpu_max_speed_perf_limit">效能模式上限</string>
+    <string name="settings_cpu_max_speed_hardware_max">硬體最大值</string>
+    <string name="settings_temp_unit_title">溫度單位</string>
+    <string name="settings_temp_unit_desc">設定浮動視窗 CPU 溫度顯示為攝氏（°C）或華氏（°F），亦可直接點擊溫度卡片切換</string>
+    <string name="settings_temp_unit_celsius">攝氏 (°C)</string>
+    <string name="settings_temp_unit_fahrenheit">華氏 (°F)</string>
+    <string name="settings_screenshot_display_title">預設擷取螢幕</string>
+    <string name="settings_screenshot_display_desc">選擇點擊螢幕擷取快速圖塊時直接擷取的顯示器，或選擇「每次詢問」於每次點擊時挑選（長按圖塊可隨時選擇）</string>
+    <string name="settings_screenshot_ask_every_time">每次詢問</string>
+    <string name="settings_screenshot_top">上螢幕</string>
+    <string name="settings_screenshot_bottom">下螢幕</string>
+    <string name="settings_screenshot_both">雙螢幕</string>
+    <string name="settings_show_edit_button_title">在浮動視窗顯示編輯按鈕</string>
+    <string name="settings_show_edit_button_desc">在底部導覽列顯示「編輯」按鈕，點擊後可於上螢幕開啟設定並維持浮動視窗開啟</string>
+    <string name="settings_remember_last_tab_title">記住上次開啟的分頁</string>
+    <string name="settings_remember_last_tab_desc_assistant">重新開啟助手時保留上次開啟的浮動視窗分頁（模式或設定）</string>
+    <string name="settings_remember_last_tab_desc_manager">重新開啟管理員時保留上次開啟的浮動視窗分頁（模式或設定）</string>
+    <string name="settings_remember_last_qs_page_title">記住上次快速圖塊頁面</string>
+    <string name="settings_remember_last_qs_page_desc_assistant">切換分頁或重新開啟助手時保留上次開啟的快速圖塊頁面</string>
+    <string name="settings_remember_last_qs_page_desc_manager">切換分頁或重新開啟管理員時保留上次開啟的快速圖塊頁面</string>
+    <string name="settings_show_swap_screens_title">顯示互換螢幕按鈕</string>
+    <string name="settings_show_swap_screens_desc">在「模式」分頁的螢幕控制卡片中顯示第 4 個按鈕，可互換上下螢幕的前景應用程式</string>
+    <string name="settings_show_led_slider_title">顯示搖桿燈效亮度滑桿</string>
+    <string name="settings_show_led_slider_desc">在「模式」分頁新增第 4 條亮度滑桿以控制搖桿與氛圍燈亮度</string>
+    <string name="settings_confirm_close_bottom_title">關閉下螢幕前顯示確認提示</string>
+    <string name="settings_confirm_close_bottom_desc">在關閉下螢幕顯示前顯示喚醒方式提醒對話框</string>
+    <string name="settings_promote_manager_title">幹得好，助手！你升職了！</string>
+    <string name="settings_promote_manager_desc_promoted">已升級為 Better Dual Screen Manager（關閉開關可降級）</string>
+    <string name="settings_promote_manager_desc_unpromoted">將應用程式升級為 Better Dual Screen Manager</string>
+    <string name="settings_toast_promoted">恭喜升職！</string>
+    <string name="settings_toast_demoted">回到助手崗位。</string>
+    <string name="settings_licenses_title">授權條款與第三方聲明</string>
+    <string name="settings_licenses_desc">Source-Available 應用程式授權條款與內附第三方字型及函式庫致謝</string>
+    <string name="settings_action_view">檢視</string>
+
+    <!-- Companion Settings: Quick Toggles -->
+    <string name="settings_qs_layout_title">快速設定版面配置</string>
+    <string name="settings_qs_reorder_idle">按 A 鍵使用方向鍵調整順序，或點擊圖塊後再點擊目標位置移動</string>
+    <string name="settings_qs_reorder_moving">正在移動「%1$s」— 使用方向鍵調整位置，按 A 或 B 放下</string>
+    <string name="settings_qs_reorder_selected">已選取 #%1$d「%2$s」— 按 A 鍵抓取並移動，按 B 鍵退出</string>
+    <string name="settings_qs_reorder_fallback">使用方向鍵選取圖塊，按 A 鍵抓取移動，或按 B 鍵退出</string>
+    <string name="settings_qs_pill_moving">移動中 #%1$d</string>
+    <string name="settings_qs_pill_slot">位置 #%1$d</string>
+    <string name="settings_qs_pill_reorder">調整順序</string>
+    <string name="settings_qs_enable_disable_title">啟用 / 停用圖塊</string>
+    <string name="settings_qs_enable_disable_desc">設定 %1$s、Android 系統圖塊與實用工具</string>
+    <plurals name="settings_qs_active_count_pill">
+        <item quantity="other">已啟用 %1$d / %2$d</item>
+    </plurals>
+    <string name="settings_qs_reset_title">重設快速圖塊</string>
+    <string name="settings_qs_reset_confirm_title">確認重設為預設值</string>
+    <string name="settings_qs_reset_desc_modified">還原預設的圖塊順序與分類顯示狀態</string>
+    <string name="settings_qs_reset_desc_default">所有圖塊目前皆為預設順序與顯示狀態</string>
+    <string name="settings_qs_reset_confirm_desc">再按一次 A 鍵重設圖塊順序與顯示狀態，或按 B 鍵取消</string>
+    <string name="settings_action_reset">重設</string>
+    <string name="settings_action_confirm_reset">確認重設</string>
+    <plurals name="settings_qs_visibility_header">
+        <item quantity="other">圖塊顯示狀態（已啟用 %1$d / %2$d）</item>
+    </plurals>
+    <string name="settings_qs_visibility_desc">「%1$s」預設為啟用；Android 系統圖塊與實用工具預設為停用。至少須保留 1 個圖塊啟用。</string>
+    <string name="settings_qs_category_count_header">%1$s（%2$d / %3$d）</string>
+    <string name="settings_qs_min_one_required">%1$s（至少須保留 1 個圖塊啟用）</string>
+
+    <!-- Companion Settings: Appearance -->
+    <string name="settings_theme_source_title">主題來源</string>
+    <string name="settings_theme_source_desc_with_sync">選擇原廠主題、即時 Megingiard 同步或獨立自訂配色</string>
+    <string name="settings_theme_source_desc_no_sync">選擇原廠主題或獨立自訂配色</string>
+    <string name="settings_stock_theme_title">原廠主題模式</string>
+    <string name="settings_stock_theme_desc">選擇內建 %1$s 雙螢幕助手外觀</string>
+    <string name="settings_megingiard_sync_title">即時 Megingiard 主題同步</string>
+    <string name="settings_megingiard_sync_desc">已與 Megingiard 同步（%1$s）</string>
+    <string name="settings_megingiard_sync_pill">已同步</string>
+    <string name="settings_custom_palette_title">自訂配色</string>
+    <string name="settings_custom_palette_desc_assistant">設定啟動器與助手浮動視窗的色彩配置</string>
+    <string name="settings_custom_palette_desc_manager">設定啟動器與管理員浮動視窗的色彩配置</string>
+    <string name="settings_accent_color_title">強調色</string>
+    <string name="settings_accent_color_desc">為「%1$s」選擇預設亮點強調色</string>
+    <string name="settings_custom_color_title">自訂顏色</string>
+    <string name="settings_custom_color_desc">微調色相、飽和度與亮度以建立自訂強調色</string>
+    <string name="settings_ui_look_title">浮動視窗介面風格</string>
+    <string name="settings_ui_look_desc">在所有主題中套用圓潤 AYN 風格或像素藝術 Retroid 風格</string>
+    <string name="settings_retroid_readability_title">提升 Retroid 風格可讀性</string>
+    <string name="settings_retroid_readability_desc">使用 Retroid 介面風格時放大浮動視窗圖塊、滑桿、遙測數值與對話框的像素字體</string>
+    <string name="settings_inject_os_theme_title">將主題色彩注入系統</string>
+    <string name="settings_inject_os_theme_desc">透過 theme_customization_overlay_packages 將目前主題配色套用至 Android 系統介面與設定</string>
+
+    <!-- Companion Settings: Custom Color Sub-page -->
+    <string name="settings_color_hue_title">色相</string>
+    <string name="settings_color_hue_desc">色環上的基礎色相角度</string>
+    <string name="settings_color_saturation_title">飽和度</string>
+    <string name="settings_color_saturation_desc">從中性灰階到純粹鮮豔色彩的強度</string>
+    <string name="settings_color_brightness_title">亮度</string>
+    <string name="settings_color_brightness_desc">強調色的明暗程度</string>
+    <string name="settings_color_undo_title">復原顏色變更</string>
+    <string name="settings_color_undo_desc_changed">從 %1$s 還原回 %2$s</string>
+    <string name="settings_color_undo_desc_unchanged">尚無未儲存的顏色調整（%1$s）</string>
+    <string name="settings_color_action_undo">復原</string>
+    <string name="settings_color_save_title">儲存顏色</string>
+    <string name="settings_color_save_desc">將 %1$s 套用為自訂強調色</string>
+
+    <!-- Companion Settings: Licenses & Notices -->
+    <string name="licenses_section_app">應用程式授權</string>
+    <string name="licenses_app_desc">© 2026 Maik Thomalla / Stormpanda • 專有原始碼可用授權（僅限個人非商業免費使用，非開源授權）</string>
+    <string name="licenses_app_pill">原始碼可用 v1.0</string>
+    <string name="licenses_section_fonts">第三方開源字型</string>
+    <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
+    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • 內附像素介面標籤字型 (res/font/tcc_pixel_label.ttf)</string>
+    <string name="licenses_dosiyagi_title">DOSIyagiBoldface</string>
+    <string name="licenses_dosiyagi_desc">© 2022 Damheo Lee • 內附像素數值顯示字型 (res/font/tcc_pixel_display.ttf)</string>
+    <string name="licenses_dosiyagi_action">MIT（僅限字型）</string>
+    <string name="licenses_section_libraries">第三方開源函式庫</string>
+    <string name="licenses_androidx_title">AndroidX 與 Jetpack Compose</string>
+    <string name="licenses_androidx_desc">© The Android Open Source Project • Android Jetpack 與 Compose 介面執行環境 (androidx.*)</string>
+    <string name="licenses_kotlin_title">Kotlin 標準函式庫與 Coroutines</string>
+    <string name="licenses_kotlin_desc">© 2010–2025 JetBrains s.r.o. 及貢獻者 • Kotlin 執行環境與協程 (org.jetbrains.*)</string>
+    <string name="licenses_detail_app_title">Better Dual Screen Assistant 原始碼可用授權 v1.0</string>
+    <string name="licenses_detail_app_scope">適用於 Better Dual Screen Assistant 原始碼與 APK 建置版本（僅限個人非商業免費使用）。</string>
+    <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL 開放字型授權 1.1</string>
+    <string name="licenses_detail_fusion_pixel_scope">字型授權範圍（僅限 Fusion Pixel）：僅適用於 TakWolf 所製作之內附字型 res/font/tcc_pixel_label.ttf。</string>
+    <string name="licenses_detail_dosiyagi_title">DOSIyagiBoldface — MIT 授權（僅限字型檔案）</string>
+    <string name="licenses_detail_dosiyagi_scope">字型授權範圍（僅限 DOSIyagiBoldface）：僅適用於 Damheo Lee 所製作之 res/font/tcc_pixel_display.ttf，不適用於 Better Dual Screen Assistant。</string>
+    <string name="licenses_detail_androidx_title">AndroidX 與 Jetpack Compose — Apache 授權 2.0</string>
+    <string name="licenses_detail_androidx_scope">僅適用於未經修改之 Android Jetpack 與 Jetpack Compose 執行環境函式庫 (androidx.*)。</string>
+    <string name="licenses_detail_kotlin_title">Kotlin 標準函式庫與 Coroutines — Apache 授權 2.0</string>
+    <string name="licenses_detail_kotlin_scope">僅適用於未經修改之 Kotlin 標準函式庫與 Kotlinx Coroutines 執行環境函式庫 (org.jetbrains.*)。</string>
+    <string name="licenses_detail_default_title">授權聲明</string>
+    <string name="licenses_link_open">開啟 ↗</string>
+    <string name="licenses_link_focused">A • %1$s</string>
+
+    <!-- Companion Settings: Diagnostics (Debug) -->
+    <string name="diag_privileged_helper_title">特權輔助程式 (UID 0)</string>
+    <string name="diag_privileged_helper_desc">記憶體常駐的 Root Binder 常駐程式，負責螢幕熄滅、亮度控制與解除安裝復原</string>
+    <string name="diag_status_connected">已連線</string>
+    <string name="diag_status_disconnected">未連線</string>
+    <string name="diag_pserver_title">PServerBinder Root 服務</string>
+    <string name="diag_pserver_desc">%1$s 韌體於 ServiceManager 中的 Root 指令執行服務</string>
+    <string name="diag_status_available">可用</string>
+    <string name="diag_status_unavailable">不可用</string>
+    <string name="diag_stock_process_title">原廠 DualScreenAssistant 處理程序</string>
+    <string name="diag_stock_process_desc">以 SIGSTOP 暫時凍結 %1$s</string>
+    <string name="diag_status_suppressed">已暫停</string>
+    <string name="diag_status_active">執行中</string>
+    <string name="diag_megingiard_title">Megingiard 主題提供者</string>
+    <string name="diag_megingiard_desc">已連線至 Megingiard 主題提供者（%1$s）</string>
+    <string name="diag_status_detected">已偵測</string>
+    <string name="diag_reconnect_title">重新連線特權橋接</string>
+    <string name="diag_reconnect_desc">重新建立 UID 0 輔助程式連線、重新授予權限並重新整理狀態</string>
+    <string name="diag_action_refreshing">重新整理中…</string>
+    <string name="diag_action_reconnect">重新連線</string>
+    <string name="diag_section_device_build">裝置與建置資訊</string>
+    <string name="diag_topology_title">%1$s 顯示器拓撲</string>
+    <string name="diag_topology_desc">上螢幕 (displayId = %1$d)：1920×1080 • 下螢幕 (displayId = %2$d)：%3$d×%4$d (%5$d dpi)</string>
+    <string name="diag_app_version_title">應用程式版本</string>
+    <string name="diag_font_credits_title">第三方字型致謝</string>
+    <string name="diag_font_credits_desc">Fusion Pixel © 2022 TakWolf (SIL OFL 1.1 — 僅限字型) • DOSIyagiBoldface © 2022 Damheo Lee (MIT License — 僅限字型)</string>
+
+    <!-- Common Gamepad and Dialog Strings (Megingiard shared/ui) -->
+    <string name="settings_close">關閉</string>
+    <string name="settings_support_app">贊助支持</string>
+    <string name="cd_drag_reorder">拖曳以重新排序</string>
+    <string name="gamepad_action_save">儲存</string>
+    <string name="gamepad_action_save_and_exit">儲存並離開</string>
+    <string name="gamepad_action_save_and_exit_desc">套用並儲存變更</string>
+    <string name="gamepad_action_discard_and_exit">捨棄並離開</string>
+    <string name="gamepad_action_discard_and_exit_desc">還原變更並離開</string>
+    <string name="gamepad_action_discard">捨棄</string>
+    <string name="gamepad_action_confirm">確認</string>
+    <string name="gamepad_action_delete">刪除</string>
+    <string name="gamepad_action_move">移動</string>
+    <string name="gamepad_action_moving">移動中</string>
+    <string name="gamepad_previous">上一個</string>
+    <string name="gamepad_next">下一個</string>
+    <string name="gamepad_toggle_on">開啟</string>
+    <string name="gamepad_toggle_off">關閉</string>
+    <string name="gamepad_color_option">色彩選項 %1$d</string>
+    <string name="gamepad_color_selected">已選取</string>
+    <string name="gamepad_search_placeholder">搜尋</string>
+    <string name="gamepad_search_clear">清除搜尋</string>
+    <string name="gamepad_category_all">全部</string>
+    <string name="gamepad_slider_fine_adjustment_toast">使用 L2 / R2 進行微調</string>
+    <string name="gamepad_reorder_empty">沒有可排序的項目</string>
+
+    <!-- Updates Settings (Megingiard parity) -->
+    <string name="settings_up_to_date">目前已是最新版本！</string>
+    <string name="settings_check_failed">檢查失敗</string>
+    <string name="settings_auto_update_check">自動檢查更新</string>
+    <string name="settings_check_for_updates">檢查更新</string>
+    <string name="settings_update_available_banner">有可用更新：%1$s</string>
+    <string name="settings_update_available_banner_desc">GitHub Releases 上有新版本可供下載</string>
+    <string name="settings_update_now_btn">更新</string>
+    <string name="settings_update_available_tag">GitHub 上有 %1$s 版本可用</string>
+    <string name="settings_app_version">目前版本：%1$s</string>
+    <string name="settings_add_to_obtainium">加入 Obtainium</string>
+    <string name="help_settings_auto_update_desc">每次開啟時自動檢查 GitHub Releases 是否有新版本</string>
+    <string name="help_settings_add_to_obtainium_desc">開啟 Obtainium 以自動追蹤並安裝 Better Dual Screen Assistant 的 GitHub 更新</string>
+    <string name="help_settings_add_to_obtainium_manager_desc">開啟 Obtainium 以自動追蹤並安裝 Better Dual Screen Manager 的 GitHub 更新</string>
+    <string name="gamepad_action_checking">檢查中</string>
+</resources>

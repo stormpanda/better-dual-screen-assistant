@@ -1936,18 +1936,32 @@ private fun ReorderableTccTile(
 
             Spacer(modifier = Modifier.height(3.dp))
 
+            val tileLabel = tile.gridTitle(context)
+            val hasCjk = remember(tileLabel) {
+                tileLabel.codePoints().anyMatch { cp ->
+                    Character.UnicodeScript.of(cp) == Character.UnicodeScript.HAN
+                }
+            }
             Box(
                 modifier = Modifier
-                    .width(70.dp)
-                    .height(if (boost) 32.dp else 23.dp)
+                    .width(76.dp)
+                    .height(if (boost) 34.dp else 25.dp)
                     .padding(horizontal = 1.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
                 Text(
-                    text = tile.gridTitle(context),
+                    text = tileLabel,
                     color = textColor,
-                    fontSize = if (boost) 14.5.sp else 10.sp,
-                    lineHeight = if (boost) 16.sp else 11.sp,
+                    fontSize = if (hasCjk) {
+                        if (boost) 12.sp else 9.sp
+                    } else {
+                        if (boost) 14.5.sp else 10.sp
+                    },
+                    lineHeight = if (hasCjk) {
+                        if (boost) 14.sp else 11.sp
+                    } else {
+                        if (boost) 16.sp else 11.sp
+                    },
                     style = labelStyle,
                     fontWeight = if (!isRetroidLook && (isCursorSelected || isGrabbed)) {
                         FontWeight.SemiBold
