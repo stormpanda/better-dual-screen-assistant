@@ -286,6 +286,8 @@
     <string name="settings_screenshot_both">Оба экрана</string>
     <string name="settings_show_edit_button_title">Показывать кнопку «Изменить» в оверлее</string>
     <string name="settings_show_edit_button_desc">Показывать кнопку «Изменить» в нижней строке навигации, чтобы открыть настройки на верхнем экране, не закрывая оверлей</string>
+    <string name="settings_show_tasks_button_title">Показывать кнопку «Задачи» в оверлее</string>
+    <string name="settings_show_tasks_button_desc">Показывать кнопку «Задачи» в нижней строке навигации, чтобы открывать меню недавних приложений на нижнем экране</string>
     <string name="settings_remember_last_tab_title">Помнить открытую вкладку</string>
     <string name="settings_remember_last_tab_desc_assistant">Сохранять последнюю открытую вкладку оверлея («Режим» или «Настройки») при повторном открытии помощника</string>
     <string name="settings_remember_last_tab_desc_manager">Сохранять последнюю открытую вкладку оверлея («Режим» или «Настройки») при повторном открытии менеджера</string>
