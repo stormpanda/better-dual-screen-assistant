@@ -17,6 +17,7 @@ import android.util.Log
 import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.R
 import com.stormpanda.betterdualscreenassistant.overlay.ScreenOverlayManager
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
@@ -87,6 +88,8 @@ class AssistantForegroundService : Service() {
     lateinit var mappingServiceClient: MappingServiceClient
         private set
     lateinit var overlayManager: ScreenOverlayManager
+        private set
+    lateinit var pluginRegistry: PluginRegistry
         private set
 
     private var lastTccToggleElapsedMs: Long = 0L
@@ -223,6 +226,26 @@ class AssistantForegroundService : Service() {
         }
     }
 
+    private val pluginPackageReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!::pluginRegistry.isInitialized) return
+            val action = intent?.action
+            val pkg = intent?.data?.schemeSpecificPart
+            val replacing = intent?.getBooleanExtra(Intent.EXTRA_REPLACING, false) == true
+            serviceScope.launch(Dispatchers.IO) {
+                pluginRegistry.onPackageChanged(action, pkg, replacing)
+            }
+        }
+    }
+
+    private val userUnlockedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_USER_UNLOCKED && ::pluginRegistry.isInitialized) {
+                pluginRegistry.onUserUnlocked()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -237,6 +260,15 @@ class AssistantForegroundService : Service() {
         enforceStockTakeoverIfPreferred()
 
         repository = SystemSettingsRepository.getInstance(applicationContext).also { it.register() }
+        pluginRegistry = PluginRegistry.getInstance(applicationContext).also { registry ->
+            registry.onPluginTilesRemovedListener = { removedKeys ->
+                repository.prunePluginTilesFromOrder(removedKeys)
+            }
+            registry.onPluginTileEnablementChangedListener = {
+                val activePlugins = registry.activePluginTilesMap(DeviceProfile.current(applicationContext)).size
+                repository.ensureAtLeastOneTileEnabled(activePlugins)
+            }
+        }
         telemetryMonitor = TelemetryMonitor(applicationContext)
         overviewProxyClient = OverviewProxyClient(applicationContext).also { it.bind() }
         overlayManager = ScreenOverlayManager(
@@ -258,6 +290,16 @@ class AssistantForegroundService : Service() {
             PrivilegedBridge.isHelperConnected.first { it }
             withContext(Dispatchers.IO) {
                 repository.reconcileImePinModeOnStartup()
+            }
+        }
+        serviceScope.launch {
+            pluginRegistry.toastEvents.collect { event ->
+                overlayManager.showBottomToast(event.message)
+            }
+        }
+        serviceScope.launch {
+            pluginRegistry.dismissOverlayEvents.collect {
+                overlayManager.hideAssistantOverlay()
             }
         }
         serviceScope.launch {
@@ -327,6 +369,26 @@ class AssistantForegroundService : Service() {
             filter,
             android.Manifest.permission.DUMP,
             null,
+            Context.RECEIVER_EXPORTED
+        )
+
+        val pkgFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }
+        registerReceiver(
+            pluginPackageReceiver,
+            pkgFilter,
+            Context.RECEIVER_EXPORTED
+        )
+
+        val unlockFilter = IntentFilter(Intent.ACTION_USER_UNLOCKED)
+        registerReceiver(
+            userUnlockedReceiver,
+            unlockFilter,
             Context.RECEIVER_EXPORTED
         )
     }
@@ -476,6 +538,14 @@ class AssistantForegroundService : Service() {
             unregisterReceiver(systemEventsReceiver)
         } catch (_: Throwable) {
         }
+        try {
+            unregisterReceiver(pluginPackageReceiver)
+        } catch (_: Throwable) {
+        }
+        try {
+            unregisterReceiver(userUnlockedReceiver)
+        } catch (_: Throwable) {
+        }
         overlayManager.hideAssistantOverlay(immediate = true)
         telemetryMonitor.stop()
         overviewProxyClient.unbind()
@@ -490,6 +560,9 @@ class AssistantForegroundService : Service() {
         val newLocaleTags = newConfig.locales.toLanguageTags()
         if (newLocaleTags != lastLocaleTags) {
             lastLocaleTags = newLocaleTags
+            if (::pluginRegistry.isInitialized) {
+                pluginRegistry.refreshPlugins()
+            }
             if (::repository.isInitialized) {
                 updateForegroundNotification(
                     promoted = repository.promotedToManager.value,

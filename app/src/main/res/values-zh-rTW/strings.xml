@@ -369,7 +369,7 @@
     <!-- Companion Settings: Licenses & Notices -->
     <string name="licenses_section_app">應用程式授權</string>
     <string name="licenses_app_desc">© 2026 Maik Thomalla / Stormpanda • 專有原始碼可用授權（僅限個人非商業免費使用，非開源授權）</string>
-    <string name="licenses_app_pill">原始碼可用 v1.0</string>
+    <string name="licenses_app_pill">原始碼可用 v1.1</string>
     <string name="licenses_section_fonts">第三方開源字型</string>
     <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
     <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • 內附像素介面標籤字型 (res/font/tcc_pixel_label.ttf)</string>
@@ -381,7 +381,7 @@
     <string name="licenses_androidx_desc">© The Android Open Source Project • Android Jetpack 與 Compose 介面執行環境 (androidx.*)</string>
     <string name="licenses_kotlin_title">Kotlin 標準函式庫與 Coroutines</string>
     <string name="licenses_kotlin_desc">© 2010–2025 JetBrains s.r.o. 及貢獻者 • Kotlin 執行環境與協程 (org.jetbrains.*)</string>
-    <string name="licenses_detail_app_title">Better Dual Screen Assistant 原始碼可用授權 v1.0</string>
+    <string name="licenses_detail_app_title">Better Dual Screen Assistant 原始碼可用授權 v1.1</string>
     <string name="licenses_detail_app_scope">適用於 Better Dual Screen Assistant 原始碼與 APK 建置版本（僅限個人非商業免費使用）。</string>
     <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL 開放字型授權 1.1</string>
     <string name="licenses_detail_fusion_pixel_scope">字型授權範圍（僅限 Fusion Pixel）：僅適用於 TakWolf 所製作之內附字型 res/font/tcc_pixel_label.ttf。</string>

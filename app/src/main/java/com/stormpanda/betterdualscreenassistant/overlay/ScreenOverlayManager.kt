@@ -43,6 +43,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.stormpanda.betterdualscreenassistant.MainActivity
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.privileged.PServerClient
 import com.stormpanda.betterdualscreenassistant.privileged.PrivilegedBridge
 import com.stormpanda.betterdualscreenassistant.system.ClusterTuneLaunchResult
@@ -51,7 +52,9 @@ import com.stormpanda.betterdualscreenassistant.system.OverviewProxyClient
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.system.TelemetryMonitor
 import com.stormpanda.betterdualscreenassistant.ui.overlay.AssistantOverlayScreen
+import com.stormpanda.betterdualscreenassistant.ui.theme.AppThemeOption
 import com.stormpanda.betterdualscreenassistant.ui.theme.computeOverlayNormalizedDensity
+import com.stormpanda.betterdualscreenassistant.ui.theme.resolveTccPalette
 import com.stormpanda.megingiard.update.UpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -390,6 +393,19 @@ class ScreenOverlayManager(
                 assistantView = composeView
                 assistantLifecycle = lifecycleOwner
                 isAssistantShowing = true
+                val pluginRegistry = PluginRegistry.getInstance(context)
+                pluginRegistry.setOverlayShowing(true)
+                val systemNight = (context.resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                val isDark = resolveTccPalette(
+                    option = AppThemeOption.fromId(repository.themeMode.value),
+                    systemDark = systemNight,
+                    customAccentArgb = repository.customAccentArgb.value,
+                    syncedOption = repository.syncedMegingiardOption.value,
+                    syncedAccentArgb = repository.syncedMegingiardAccentArgb.value
+                ).isDark
+                pluginRegistry.dispatchRefreshAllEnabledTiles(currentProfile, isDark)
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to add assistant overlay on display $targetDisplayId", t)
                 lifecycleOwner.onDestroy()
@@ -407,6 +423,7 @@ class ScreenOverlayManager(
             assistantView = null
             assistantLifecycle = null
             isAssistantShowing = false
+            PluginRegistry.getInstance(context).setOverlayShowing(false)
             telemetryMonitor.stop()
             repository.reapplyTouchDisableForCurrentMode()
 
