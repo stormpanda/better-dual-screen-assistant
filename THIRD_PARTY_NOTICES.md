@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-> **Application License Note:** Better Dual Screen Assistant itself is proprietary, source-available software governed by the [Better Dual Screen Assistant Source-Available License v1.0](LICENSE) — it is **not** licensed under MIT or any OSI open-source license.
+> **Application License Note:** Better Dual Screen Assistant itself is proprietary, source-available software governed by the [Better Dual Screen Assistant Source-Available License v1.1](LICENSE) — it is **not** licensed under MIT or any OSI open-source license.
 >
 > The open-source copyright notices and license terms below apply **solely** to the third-party font files and runtime libraries bundled with or linked by the application (including the documented font subsets/modifications per entry).
 

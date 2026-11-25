@@ -19,7 +19,9 @@ enum class AppLanguage(
     val nativeLabel: String
 ) {
     SYSTEM(tag = null, nativeLabel = ""),
-    ENGLISH(tag = "en", nativeLabel = "English");
+    ENGLISH(tag = "en", nativeLabel = "English"),
+    TRADITIONAL_CHINESE(tag = "zh-TW", nativeLabel = "繁體中文 (台灣)"),
+    RUSSIAN(tag = "ru", nativeLabel = "Русский");
 
     fun displayLabel(context: Context): String =
         if (this == SYSTEM) context.getString(R.string.language_system_default) else nativeLabel

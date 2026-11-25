@@ -1,5 +1,5 @@
 Better Dual Screen Assistant Source-Available License
-Version 1.0
+Version 1.1
 
 Copyright (c) 2026 Maik Thomalla / Stormpanda
 
@@ -34,6 +34,15 @@ Commercial device manufacturers, retailers, and distributors are strictly prohib
 ### 2.3 Redistribution and Modification
 * **Source Code:** You may modify the source code for your own personal, non-commercial use. Without the prior written permission of the Copyright Holder, you may not redistribute, publish, or share your modified source code, except that you are permitted to publish your modified source code in a public fork of the official repository on GitHub (or other hosting platform) solely for the purpose of preparing and submitting a Pull Request directly to the official upstream Better Dual Screen Assistant repository.
 * **Binaries:** Without the prior written permission of the Copyright Holder, you may not redistribute compiled binary versions of this software (either modified or unmodified). Official unmodified binary releases (e.g., APKs, releases hosted on GitHub) may only be distributed by directing users to download them from the official upstream Better Dual Screen Assistant repository/releases page, unless otherwise authorized in writing. Sharing compiled test binaries (e.g., APKs) of modified versions is strictly prohibited, except for sending test binaries privately and directly to the Copyright Holder solely for review and testing.
+
+### 2.4 Third-Party Plugins and Plugin API
+Without the prior written permission of the Copyright Holder, you may develop, publish, and distribute independent third-party plugins or apps that integrate with Better Dual Screen Assistant through its documented Plugin API (and may copy the public interface constants, schema definitions, and code examples from `docs/PLUGIN_API.md` solely for that purpose) **only if** your plugin or integrating app satisfies all of the following conditions:
+* **Strictly Free and Non-Commercial:** The plugin or integrating app must be distributed completely free of charge and solely for non-commercial use. Paid applications, in-app purchases, subscriptions, paywalled features, advertisements, monetized analytics/tracking SDKs, and commercial bundling are strictly prohibited. Optional, non-gated voluntary donations (such as Ko-fi, GitHub Sponsors, or Buy Me a Coffee) that do not lock or restrict any functionality are permitted.
+* **Publicly Source-Available:** The complete corresponding source code for every publicly distributed version of the plugin or integrating app must be made publicly accessible (for example, in a public Git repository) so users can inspect and audit it. The plugin does not need to use an OSI-approved open-source license, provided its source code remains publicly viewable and verifiable.
+* **Attribution and Link to BDSA:** The plugin or integrating app must include a clear, visible link to the official Better Dual Screen Assistant repository (`https://github.com/Stormpanda/better-dual-screen-assistant`) in the application UI and/or its public README or project page.
+* **No Bundling or Implied Endorsement:** The plugin must remain a standalone application, must not bundle or redistribute Better Dual Screen Assistant (in source or binary form), and must not imply official affiliation with or endorsement by Better Dual Screen Assistant or the Copyright Holder.
+
+Independent plugins that comply with this Section 2.4 are separate works governed by their own licenses. Better Dual Screen Assistant and the Copyright Holder do not audit, endorse, or assume any warranty, support obligation, or liability whatsoever for third-party plugins, which users install and enable strictly at their own risk. Any plugin or app that fails to comply with this Section 2.4 is not granted permission to integrate with Better Dual Screen Assistant's Plugin API or reuse its API documentation or examples without a separate written agreement from the Copyright Holder.
 
 ## 3. Contributions
 By submitting any contribution (including pull requests, bug reports, feature suggestions, or modifications) to the official Better Dual Screen Assistant repository, you grant the Copyright Holder a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable license to use, reproduce, modify, display, perform, sublicense, and distribute your contribution, under this License or any subsequent license version chosen by the Copyright Holder, without any compensation or acknowledgement required.

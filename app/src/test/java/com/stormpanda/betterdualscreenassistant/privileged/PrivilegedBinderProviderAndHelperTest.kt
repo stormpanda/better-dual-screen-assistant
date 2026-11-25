@@ -1477,9 +1477,10 @@ class PrivilegedBinderProviderAndHelperTest {
         val committedPalettes = mutableListOf<Pair<List<String>, List<Int>>>()
         helperBinder.commitOsThemeOverlaysOverride = { names, colors ->
             committedPalettes.add(names.toList() to colors.toList())
+            true
         }
 
-        fun sendApplyOsTheme(names: Array<String>, colors: IntArray) {
+        fun sendApplyOsTheme(names: Array<String>, colors: IntArray): Int {
             val data = Parcel.obtain().apply {
                 writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
                 writeStringArray(names)
@@ -1493,20 +1494,171 @@ class PrivilegedBinderProviderAndHelperTest {
             assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0))
             reply.setDataPosition(0)
             reply.readException()
+            val result = reply.readInt()
             data.recycle()
             reply.recycle()
-            ShadowLooper.idleMainLooper(50L, TimeUnit.MILLISECONDS)
+            return result
         }
 
         val sampleNames = arrayOf("android:color/system_shade_active_dark", "android:color/system_accent1_100")
         val sampleColors = intArrayOf(0xFFCC0000.toInt(), 0xFFCC0000.toInt())
 
-        sendApplyOsTheme(sampleNames, sampleColors)
-        sendApplyOsTheme(sampleNames, sampleColors)
+        assertEquals(1, sendApplyOsTheme(sampleNames, sampleColors))
+        assertEquals(1, sendApplyOsTheme(sampleNames, sampleColors))
 
         assertEquals(2, committedPalettes.size)
         assertEquals(sampleColors.toList(), committedPalettes[0].second)
         assertEquals(sampleColors.toList(), committedPalettes[1].second)
+    }
+
+    @Test
+    fun `isOsThemeOverlayHealthy checks enabled state and priority relative to SystemUI Monet overlays`() {
+        assertFalse(PrivilegedHelperMain.isOsThemeOverlayHealthy(emptyList()))
+
+        assertFalse(
+            PrivilegedHelperMain.isOsThemeOverlayHealthy(
+                listOf(
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "neutral", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.shell", "os_theme", false)
+                )
+            )
+        )
+
+        assertTrue(
+            PrivilegedHelperMain.isOsThemeOverlayHealthy(
+                listOf(
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "neutral", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "accent", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "dynamic", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.shell", "os_theme", true)
+                )
+            )
+        )
+
+        // SystemUI dynamic re-registered after com.android.shell:os_theme -> unhealthy
+        assertFalse(
+            PrivilegedHelperMain.isOsThemeOverlayHealthy(
+                listOf(
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "neutral", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.shell", "os_theme", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "dynamic", true)
+                )
+            )
+        )
+
+        // Disabled SystemUI overlay after shell:os_theme does not shadow it
+        assertTrue(
+            PrivilegedHelperMain.isOsThemeOverlayHealthy(
+                listOf(
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.shell", "os_theme", true),
+                    PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "accent", false)
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `HelperBinder TRANSACTION_REASSERT_OS_THEME_IF_NEEDED self-heals outranked overlays with rate limiting and reports commit failures`() {
+        val helperBinder = createAuthorizedHelperBinder()
+        var commitCount = 0
+        var commitShouldSucceed = false
+        var nowMs = 10_000L
+        var overlayStack: List<PrivilegedHelperMain.OverlayStackEntry> = emptyList()
+
+        helperBinder.commitOsThemeOverlaysOverride = { _, _ ->
+            commitCount++
+            commitShouldSucceed
+        }
+        helperBinder.androidOverlayInfosOverride = { overlayStack }
+        helperBinder.elapsedRealtimeProvider = { nowMs }
+
+        fun sendApply(names: Array<String>, colors: IntArray): Int {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+                writeStringArray(names)
+                writeIntArray(colors)
+                writeInt(2)
+                writeInt(2)
+                writeString("")
+                writeString("")
+            }
+            val reply = Parcel.obtain()
+            assertTrue(helperBinder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0))
+            reply.setDataPosition(0)
+            reply.readException()
+            val ok = reply.readInt()
+            data.recycle()
+            reply.recycle()
+            return ok
+        }
+
+        fun sendReassert(): Int {
+            val data = Parcel.obtain().apply {
+                writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            }
+            val reply = Parcel.obtain()
+            assertTrue(
+                helperBinder.transact(
+                    PrivilegedHelperMain.TRANSACTION_REASSERT_OS_THEME_IF_NEEDED,
+                    data,
+                    reply,
+                    0
+                )
+            )
+            reply.setDataPosition(0)
+            reply.readException()
+            val status = reply.readInt()
+            data.recycle()
+            reply.recycle()
+            return status
+        }
+
+        val sampleNames = arrayOf("android:color/system_accent1_100")
+        val sampleColors = intArrayOf(0xFFCC0000.toInt())
+
+        // Inactive before any apply
+        assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_INACTIVE, sendReassert())
+
+        // Failed commit returns 0 and leaves osThemeOverlayActive false
+        assertEquals(0, sendApply(sampleNames, sampleColors))
+        assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_INACTIVE, sendReassert())
+
+        // Successful apply activates overlay
+        commitShouldSucceed = true
+        commitCount = 0
+        assertEquals(1, sendApply(sampleNames, sampleColors))
+        assertEquals(1, commitCount)
+
+        // Healthy stack -> no re-commit
+        overlayStack = listOf(
+            PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "accent", true),
+            PrivilegedHelperMain.OverlayStackEntry("com.android.shell", "os_theme", true)
+        )
+        assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_HEALTHY, sendReassert())
+        assertEquals(1, commitCount)
+
+        // Unhealthy stack (SystemUI outranks shell:os_theme) -> re-commits
+        overlayStack = listOf(
+            PrivilegedHelperMain.OverlayStackEntry("com.android.shell", "os_theme", true),
+            PrivilegedHelperMain.OverlayStackEntry("com.android.systemui", "accent", true)
+        )
+        assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_REASSERTED, sendReassert())
+        assertEquals(2, commitCount)
+
+        // Min-interval cooldown (500ms) blocks immediate spam
+        nowMs += 100L
+        assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_FAILED, sendReassert())
+        assertEquals(2, commitCount)
+
+        // Burst window limit (5 per 10s)
+        for (i in 0 until 4) {
+            nowMs += 600L
+            assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_REASSERTED, sendReassert())
+        }
+        assertEquals(6, commitCount)
+        nowMs += 600L
+        assertEquals(PrivilegedHelperMain.OS_THEME_REASSERT_FAILED, sendReassert())
+        assertEquals(6, commitCount)
     }
 
     private interface FakeMediaRouter2ManagerCallback : android.os.IInterface

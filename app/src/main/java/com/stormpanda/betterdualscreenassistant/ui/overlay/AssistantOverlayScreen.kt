@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -45,6 +46,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
@@ -56,6 +58,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.core.content.res.ResourcesCompat
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.plugin.BdsaPluginContract
+import com.stormpanda.betterdualscreenassistant.plugin.PluginIconLoader
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.QuickSettingTileId
 import com.stormpanda.betterdualscreenassistant.system.ScreenCastState
@@ -77,12 +82,14 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.TccTheme
 import com.stormpanda.betterdualscreenassistant.ui.theme.aynDp
 import com.stormpanda.betterdualscreenassistant.ui.theme.retroidContentOnAccent
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -156,6 +163,7 @@ fun AssistantOverlayScreen(
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
     val showEditButton by repository.showEditButton.collectAsState()
+    val showTasksButton by repository.showTasksButton.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
     val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
 
@@ -178,6 +186,8 @@ fun AssistantOverlayScreen(
 
     var activeDialog by remember { mutableStateOf(ActiveDialog.NONE) }
     val coroutineScope = rememberCoroutineScope()
+    val pluginRegistry = remember(context) { PluginRegistry.getInstance(context) }
+    val activePluginPicker by pluginRegistry.activePickerRequest.collectAsState()
 
     DisposableEffect(activeTab) {
         if (activeTab == 1) {
@@ -214,8 +224,12 @@ fun AssistantOverlayScreen(
                             (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
                                 event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_B)
                         ) {
+                            val pickerToClear = activePluginPicker
                             if (activeDialog != ActiveDialog.NONE) {
                                 activeDialog = ActiveDialog.NONE
+                                true
+                            } else if (pickerToClear != null) {
+                                pluginRegistry.clearActivePicker(expectedRequestId = pickerToClear.requestId)
                                 true
                             } else {
                                 onDismissOverlayRequest()
@@ -238,7 +252,7 @@ fun AssistantOverlayScreen(
 
                 Column(
                     modifier = contentWidthModifier.focusProperties {
-                        canFocus = activeDialog == ActiveDialog.NONE
+                        canFocus = activeDialog == ActiveDialog.NONE && activePluginPicker == null
                     }
                 ) {
                     StatusBarRow(
@@ -287,6 +301,7 @@ fun AssistantOverlayScreen(
 
                     NavigationBarSection(
                         activeTab = activeTab,
+                        showTasksButton = showTasksButton,
                         showEditButton = showEditButton,
                         onSelectTab = onSelectTab,
                         onOpenRecents = onOpenRecentsRequest,
@@ -318,6 +333,18 @@ fun AssistantOverlayScreen(
                     onCaptureScreenshotRequest = onCaptureScreenshotRequest,
                     onStartScreenRecordingRequest = onStartScreenRecordingRequest
                 )
+
+                val currentPluginPicker = activePluginPicker
+                if (activeDialog == ActiveDialog.NONE && currentPluginPicker != null) {
+                    PluginPickerDialogOverlay(
+                        request = currentPluginPicker,
+                        pluginRegistry = pluginRegistry,
+                        coroutineScope = coroutineScope,
+                        onDismiss = {
+                            pluginRegistry.clearActivePicker(expectedRequestId = currentPluginPicker.requestId)
+                        }
+                    )
+                }
             }
         }
     }
@@ -572,6 +599,8 @@ private data class QuickSettingTileModel(
     @param:DrawableRes val iconRes: Int,
     val selected: Boolean,
     val onLongClick: (() -> Unit)? = null,
+    val iconBitmap: ImageBitmap? = null,
+    val enabled: Boolean = true,
     val onClick: () -> Unit
 ) {
     constructor(
@@ -579,7 +608,15 @@ private data class QuickSettingTileModel(
         @DrawableRes iconRes: Int,
         selected: Boolean,
         onClick: () -> Unit
-    ) : this(label = label, iconRes = iconRes, selected = selected, onLongClick = null, onClick = onClick)
+    ) : this(
+        label = label,
+        iconRes = iconRes,
+        selected = selected,
+        onLongClick = null,
+        iconBitmap = null,
+        enabled = true,
+        onClick = onClick
+    )
 }
 
 @Composable
@@ -625,13 +662,191 @@ private fun buildQuickSettingTileModels(
     val preventAccidentalHome by repository.preventAccidentalHome.collectAsState()
     val screenshotTargetMode by repository.screenshotTargetMode.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
-    val quickTileOrder by repository.quickTileOrder.collectAsState()
+    val unifiedQuickTileOrder by repository.unifiedQuickTileOrder.collectAsState()
     val disabledQuickTiles by repository.disabledQuickTiles.collectAsState()
+    val pluginRegistry = remember(context) { PluginRegistry.getInstance(context) }
+    val plugins by pluginRegistry.plugins.collectAsState()
+    val enabledPluginTileKeys by pluginRegistry.enabledPluginTileKeys.collectAsState()
+    val pluginRuntimeStates by pluginRegistry.tileRuntimeStates.collectAsState()
+    val isDarkTheme = LocalTccColors.current.isDark
+    val isRetroidLook = LocalTccLookSpec.current.isRetroid
+
+    val activePluginTiles = remember(plugins, enabledPluginTileKeys, profile) {
+        pluginRegistry.activePluginTilesMap(profile)
+    }
+
+    val timerTrackingEntries = remember(activePluginTiles, pluginRuntimeStates) {
+        activePluginTiles.keys.mapNotNull { key ->
+            val state = pluginRuntimeStates[key] ?: return@mapNotNull null
+            if (state.timerBaseMs > 0L) Triple(key, state.timerBaseMs, state.timerCountDown) else null
+        }
+    }
+    var pluginTimerNowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(timerTrackingEntries) {
+        if (timerTrackingEntries.isEmpty()) return@LaunchedEffect
+        while (isActive) {
+            val now = System.currentTimeMillis()
+            pluginTimerNowMs = now
+            val needsMoreTicks = timerTrackingEntries.any { (_, baseMs, countDown) ->
+                !countDown || baseMs > now
+            }
+            if (!needsMoreTicks) break
+            delay(500L)
+        }
+    }
+
+    // Track countdown tiles that already triggered a single expiry refresh while this overlay is open.
+    val notifiedExpiredTimers = remember { mutableMapOf<String, Long>() }
+    LaunchedEffect(activePluginTiles, pluginRuntimeStates, pluginTimerNowMs, isDarkTheme) {
+        for ((key, pair) in activePluginTiles) {
+            val runtimeState = pluginRuntimeStates[key]
+            if (runtimeState == null || runtimeState.timerBaseMs <= 0L || !runtimeState.timerCountDown) {
+                notifiedExpiredTimers.remove(key)
+                continue
+            }
+            val effectiveNow = maxOf(pluginTimerNowMs, runtimeState.updatedAtMs)
+            val (_, finished) = BdsaPluginContract.resolveLiveTimerLabel(runtimeState, effectiveNow)
+            if (finished && notifiedExpiredTimers[key] != runtimeState.timerBaseMs) {
+                notifiedExpiredTimers[key] = runtimeState.timerBaseMs
+                pluginRegistry.dispatchRefreshTile(pair.second, isDarkTheme)
+            }
+        }
+    }
+
+    val desiredPluginIconRequests = remember(activePluginTiles, pluginRuntimeStates, isRetroidLook) {
+        buildMap {
+            for ((key, pair) in activePluginTiles) {
+                val (plugin, tileDef) = pair
+                val runtimeState = pluginRuntimeStates[key]
+                val desiredResId = if (isRetroidLook) {
+                    (runtimeState?.pixelIconResId?.takeIf { it != 0 })
+                        ?: tileDef.pixelIconResId.takeIf { it != 0 }
+                        ?: (runtimeState?.iconResId?.takeIf { it != 0 })
+                        ?: tileDef.iconResId
+                } else {
+                    (runtimeState?.iconResId?.takeIf { it != 0 })
+                        ?: tileDef.iconResId
+                }
+                if (desiredResId != 0) {
+                    put(key, Triple(plugin.packageName, plugin.versionCode, desiredResId))
+                }
+            }
+        }
+    }
+    val initialCachedPluginIcons = remember(desiredPluginIconRequests) {
+        buildMap {
+            for ((key, req) in desiredPluginIconRequests) {
+                PluginIconLoader.getCachedIconBitmap(req.first, req.second, req.third)?.let {
+                    put(key, it)
+                }
+            }
+        }
+    }
+    val pluginIconBitmaps by produceState(
+        initialValue = initialCachedPluginIcons,
+        desiredPluginIconRequests
+    ) {
+        val allCached = desiredPluginIconRequests.values.all { req ->
+            PluginIconLoader.isCached(req.first, req.second, req.third)
+        }
+        if (allCached) {
+            value = initialCachedPluginIcons
+            return@produceState
+        }
+        val loaded = withContext(Dispatchers.IO) {
+            buildMap {
+                for ((key, req) in desiredPluginIconRequests) {
+                    PluginIconLoader.loadIconBitmap(
+                        context = context,
+                        packageName = req.first,
+                        versionCode = req.second,
+                        resId = req.third
+                    )?.let { put(key, it) }
+                }
+            }
+        }
+        value = loaded
+    }
+
+    // Overlay-only periodic refresh for tiles that explicitly opt into refresh_interval_ms (>= 1000ms).
+    val periodicRefreshSchedule = remember(activePluginTiles, pluginRuntimeStates) {
+        activePluginTiles.entries.mapNotNull { (key, pair) ->
+            val tileDef = pair.second
+            val interval = pluginRuntimeStates[key]?.refreshIntervalMs ?: tileDef.refreshIntervalMs
+            if (interval >= BdsaPluginContract.MIN_REFRESH_INTERVAL_MS) {
+                tileDef to interval
+            } else {
+                null
+            }
+        }
+    }
+    LaunchedEffect(periodicRefreshSchedule, isDarkTheme) {
+        if (periodicRefreshSchedule.isEmpty()) return@LaunchedEffect
+        val lastFiredMs = HashMap<String, Long>()
+        val startMs = SystemClock.elapsedRealtime()
+        for ((tileDef, _) in periodicRefreshSchedule) {
+            lastFiredMs[tileDef.tileKey] = startMs
+        }
+        while (isActive) {
+            val minStep = periodicRefreshSchedule.minOf { it.second }.coerceAtLeast(BdsaPluginContract.MIN_REFRESH_INTERVAL_MS)
+            delay(minStep.coerceAtMost(1_000L))
+            val nowElapsed = SystemClock.elapsedRealtime()
+            for ((tileDef, intervalMs) in periodicRefreshSchedule) {
+                val prev = lastFiredMs[tileDef.tileKey] ?: startMs
+                if (nowElapsed - prev >= intervalMs) {
+                    lastFiredMs[tileDef.tileKey] = nowElapsed
+                    pluginRegistry.dispatchRefreshTile(tileDef, isDarkTheme)
+                }
+            }
+        }
+    }
+
+    val orderedKeys = remember(unifiedQuickTileOrder, activePluginTiles) {
+        val list = unifiedQuickTileOrder.toMutableList()
+        for (pluginKey in activePluginTiles.keys) {
+            if (pluginKey !in list) {
+                list.add(pluginKey)
+            }
+        }
+        list
+    }
 
     val isRecordingScreen = screenRecordingState.isRecording
 
     return buildList {
-        for (tileId in quickTileOrder) {
+        for (rawKey in orderedKeys) {
+            if (BdsaPluginContract.isPluginTileKey(rawKey)) {
+                val (_, tileDef) = activePluginTiles[rawKey] ?: continue
+                val runtimeState = pluginRuntimeStates[rawKey]
+                val liveTimerResult = if (runtimeState != null && runtimeState.timerBaseMs > 0L) {
+                    val effectiveNowMs = maxOf(pluginTimerNowMs, runtimeState.updatedAtMs)
+                    BdsaPluginContract.resolveLiveTimerLabel(runtimeState, effectiveNowMs)
+                } else {
+                    null to false
+                }
+                val effectiveLabel = liveTimerResult.first ?: runtimeState?.label ?: tileDef.gridTitle
+                val effectiveSelected = runtimeState?.selected ?: false
+                val effectiveEnabled = runtimeState?.enabled ?: true
+                val iconBitmap = pluginIconBitmaps[rawKey]
+                add(
+                    QuickSettingTileModel(
+                        label = effectiveLabel,
+                        iconRes = R.drawable.ic_qs_plugin_default,
+                        selected = effectiveSelected,
+                        onLongClick = if (tileDef.supportsLongPress) {
+                            { pluginRegistry.dispatchTileLongClick(tileDef, isDarkTheme) }
+                        } else {
+                            null
+                        },
+                        iconBitmap = iconBitmap,
+                        enabled = effectiveEnabled,
+                        onClick = { pluginRegistry.dispatchTileClick(tileDef, isDarkTheme) }
+                    )
+                )
+                continue
+            }
+
+            val tileId = QuickSettingTileId.fromKey(rawKey) ?: continue
             if (!tileId.isSupportedOn(profile, isClusterTuneInstalled) || tileId in disabledQuickTiles) continue
             when (tileId) {
                 QuickSettingTileId.FOCUS_LOCK -> if (dualScreenMode == 0) {
@@ -783,11 +998,11 @@ private fun buildQuickSettingTileModels(
                 }
                 QuickSettingTileId.TRIGGER_MODE -> {
                     val triggerLabel = when (triggerMode) {
-                        1 -> stringResource(R.string.qs_label_trigger_analog)
-                        0 -> stringResource(R.string.qs_label_trigger_digital)
+                        SystemSettingsRepository.TRIGGER_MODE_ANALOG -> stringResource(R.string.qs_label_trigger_analog)
+                        SystemSettingsRepository.TRIGGER_MODE_DIGITAL -> stringResource(R.string.qs_label_trigger_digital)
                         else -> stringResource(R.string.qs_label_trigger_both)
                     }
-                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != 2) {
+                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != SystemSettingsRepository.TRIGGER_MODE_BOTH) {
                         onOpenDialog(ActiveDialog.TRIGGER_MODE)
                     })
                 }
@@ -1503,7 +1718,9 @@ private fun QuickSettingsGridPage(
                                 onClick = item.onClick,
                                 onLongClick = item.onLongClick,
                                 variant = TccTileVariant.QUICK_SETTING,
-                                maxLabelWidth = cellAllowance
+                                maxLabelWidth = cellAllowance,
+                                iconBitmap = item.iconBitmap,
+                                enabled = item.enabled
                             )
                         }
                     }
@@ -1516,6 +1733,7 @@ private fun QuickSettingsGridPage(
 @Composable
 private fun NavigationBarSection(
     activeTab: Int,
+    showTasksButton: Boolean,
     showEditButton: Boolean,
     onSelectTab: (Int) -> Unit,
     onOpenRecents: () -> Unit,
@@ -1528,10 +1746,11 @@ private fun NavigationBarSection(
     val viewport = LocalOverlayViewport.current
     val aspectFrac = viewport.aspectFraction()
 
-    val rowFraction = if (showEditButton) {
-        navSpec.narrowRowFraction4 + (navSpec.wideRowFraction4 - navSpec.narrowRowFraction4) * aspectFrac
-    } else {
-        navSpec.narrowRowFraction3 + (navSpec.wideRowFraction3 - navSpec.narrowRowFraction3) * aspectFrac
+    val navItemCount = 2 + (if (showTasksButton) 1 else 0) + (if (showEditButton) 1 else 0)
+    val rowFraction = when (navItemCount) {
+        4 -> navSpec.narrowRowFraction4 + (navSpec.wideRowFraction4 - navSpec.narrowRowFraction4) * aspectFrac
+        3 -> navSpec.narrowRowFraction3 + (navSpec.wideRowFraction3 - navSpec.narrowRowFraction3) * aspectFrac
+        else -> navSpec.narrowRowFraction2 + (navSpec.wideRowFraction2 - navSpec.narrowRowFraction2) * aspectFrac
     }
 
     BoxWithConstraints(
@@ -1541,7 +1760,6 @@ private fun NavigationBarSection(
             .padding(vertical = navSpec.innerVerticalPadding),
         contentAlignment = Alignment.Center
     ) {
-        val navItemCount = if (showEditButton) 4 else 3
         val maxNavLabelWidth = (((maxWidth * rowFraction) / navItemCount) - (navSpec.itemHorizontalPadding * 2))
             .coerceAtLeast(64.dp)
         val itemModifier = Modifier.padding(horizontal = navSpec.itemHorizontalPadding)
@@ -1561,15 +1779,17 @@ private fun NavigationBarSection(
                 modifier = itemModifier
             )
 
-            TccButton(
-                label = stringResource(R.string.navigation_task_manage_text),
-                iconRes = R.drawable.ic_task_manage,
-                selected = false,
-                onClick = onOpenRecents,
-                variant = TccTileVariant.NAV_BAR,
-                maxLabelWidth = maxNavLabelWidth,
-                modifier = itemModifier
-            )
+            if (showTasksButton) {
+                TccButton(
+                    label = stringResource(R.string.navigation_task_manage_text),
+                    iconRes = R.drawable.ic_task_manage,
+                    selected = false,
+                    onClick = onOpenRecents,
+                    variant = TccTileVariant.NAV_BAR,
+                    maxLabelWidth = maxNavLabelWidth,
+                    modifier = itemModifier
+                )
+            }
 
             TccButton(
                 label = stringResource(R.string.navigation_system_set_text),

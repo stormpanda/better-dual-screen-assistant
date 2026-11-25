@@ -48,6 +48,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -58,11 +59,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
@@ -242,7 +245,9 @@ fun TccButton(
     modifier: Modifier = Modifier,
     variant: TccTileVariant = TccTileVariant.QUICK_SETTING,
     maxLabelWidth: Dp? = null,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    iconBitmap: ImageBitmap? = null,
+    enabled: Boolean = true
 ) {
     val colors = LocalTccColors.current
     val lookSpec = LocalTccLookSpec.current
@@ -302,10 +307,12 @@ fun TccButton(
 
     Box(
         modifier = modifier
+            .alpha(if (enabled) 1f else 0.45f)
             .clip(outerFocusShape)
             .background(if (isFocused) colors.panelBackgroundSelected else Color.Transparent)
             .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { event ->
+                if (!enabled) return@onKeyEvent false
                 val native = event.nativeKeyEvent
                 val isConfirmKey = native.keyCode == KeyEvent.KEYCODE_BUTTON_A ||
                     native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
@@ -337,6 +344,7 @@ fun TccButton(
             .then(
                 if (onLongClick != null) {
                     Modifier.combinedClickable(
+                        enabled = enabled,
                         interactionSource = interactionSource,
                         indication = null,
                         onClick = onClick,
@@ -344,6 +352,7 @@ fun TccButton(
                     )
                 } else {
                     Modifier.clickable(
+                        enabled = enabled,
                         interactionSource = interactionSource,
                         indication = null,
                         onClick = onClick
@@ -365,8 +374,13 @@ fun TccButton(
                     .tccTileBackground(colors, isRetroid, selected),
                 contentAlignment = Alignment.Center
             ) {
+                val iconPainter = if (iconBitmap != null) {
+                    remember(iconBitmap) { BitmapPainter(iconBitmap) }
+                } else {
+                    painterResource(id = tccDrawable(iconRes))
+                }
                 Image(
-                    painter = painterResource(id = tccDrawable(iconRes)),
+                    painter = iconPainter,
                     contentDescription = label,
                     colorFilter = ColorFilter.tint(iconTint),
                     modifier = Modifier.size(iconBoxSize),
@@ -927,7 +941,9 @@ data class TccDialogOption(
     val label: String,
     @param:DrawableRes val iconRes: Int,
     val preserveIconColors: Boolean = false,
-    val swatchColors: Pair<Color, Color>? = null
+    val swatchColors: Pair<Color, Color>? = null,
+    val subtitle: String? = null,
+    val iconBitmap: ImageBitmap? = null
 )
 
 @Composable
@@ -1015,6 +1031,7 @@ fun TccOptionDialog(
     onSelectOption: (Int) -> Unit,
     onDismiss: () -> Unit,
     @DrawableRes titleIconRes: Int? = null,
+    titleIconBitmap: ImageBitmap? = null,
     showCustomFanSlider: Boolean = false,
     customFanSpeed: Int = 50,
     onCustomFanSpeedChange: ((Int) -> Unit)? = null,
@@ -1084,11 +1101,20 @@ fun TccOptionDialog(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
+                    modifier = Modifier.padding(
+                        start = rowHorizontalPad,
+                        end = rowHorizontalPad,
+                        bottom = dialogSpec.headerBottomPadding
+                    )
                 ) {
-                    if (titleIconRes != null) {
+                    if (titleIconBitmap != null || titleIconRes != null) {
+                        val headerPainter = if (titleIconBitmap != null) {
+                            remember(titleIconBitmap) { BitmapPainter(titleIconBitmap) }
+                        } else {
+                            painterResource(id = tccDrawable(titleIconRes!!))
+                        }
                         Image(
-                            painter = painterResource(id = tccDrawable(titleIconRes)),
+                            painter = headerPainter,
                             contentDescription = null,
                             colorFilter = ColorFilter.tint(colors.primary),
                             modifier = Modifier.size(dialogSpec.headerIconSize)
@@ -1100,7 +1126,9 @@ fun TccOptionDialog(
                         color = colors.primary,
                         fontSize = dialogSpec.titleFontSize,
                         style = labelStyle,
-                        fontWeight = FontWeight.Normal
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Box(
@@ -1126,7 +1154,14 @@ fun TccOptionDialog(
                     fontSize = dialogSpec.titleFontSize,
                     style = labelStyle,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = dialogSpec.headerBottomPadding)
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(
+                        start = rowHorizontalPad,
+                        end = rowHorizontalPad,
+                        bottom = dialogSpec.headerBottomPadding
+                    )
                 )
             }
 
@@ -1147,7 +1182,7 @@ fun TccOptionDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(dialogSpec.rowHeight)
+                            .heightIn(min = dialogSpec.rowHeight)
                             .background(if (isRowFocused) colors.panelBackgroundSelected else Color.Transparent)
                             .focusRequester(optionFocusRequesters[index])
                             .onFocusChanged { isRowFocused = it.isFocused }
@@ -1162,7 +1197,10 @@ fun TccOptionDialog(
                                 }
                             }
                             .clickable { onSelectOption(option.id) }
-                            .padding(horizontal = rowHorizontalPad),
+                            .padding(
+                                horizontal = rowHorizontalPad,
+                                vertical = if (!option.subtitle.isNullOrBlank()) 6.dp else 0.dp
+                            ),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -1189,7 +1227,14 @@ fun TccOptionDialog(
                                             .background(accentSwatch)
                                     )
                                 }
-                            } else {
+                            } else if (option.iconBitmap != null) {
+                                Image(
+                                    painter = remember(option.iconBitmap) { BitmapPainter(option.iconBitmap) },
+                                    contentDescription = option.label,
+                                    colorFilter = ColorFilter.tint(colors.primary),
+                                    modifier = Modifier.size(dialogSpec.optionIconSize)
+                                )
+                            } else if (option.iconRes != 0) {
                                 val resolvedIcon = if (option.preserveIconColors && !isRetroid) {
                                     option.iconRes
                                 } else {
@@ -1206,16 +1251,31 @@ fun TccOptionDialog(
                                     modifier = Modifier.size(dialogSpec.optionIconSize)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(dialogSpec.optionIconGap * widthScale))
-                            Text(
-                                text = option.label,
-                                color = colors.primary,
-                                fontSize = dialogSpec.optionFontSize,
-                                style = labelStyle,
-                                fontWeight = FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (option.swatchColors != null || option.iconBitmap != null || option.iconRes != 0) {
+                                Spacer(modifier = Modifier.width(dialogSpec.optionIconGap * widthScale))
+                            }
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                                Text(
+                                    text = option.label,
+                                    color = colors.primary,
+                                    fontSize = dialogSpec.optionFontSize,
+                                    style = labelStyle,
+                                    fontWeight = FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!option.subtitle.isNullOrBlank()) {
+                                    Text(
+                                        text = option.subtitle,
+                                        color = colors.secondary,
+                                        fontSize = dialogSpec.optionFontSize * 0.78f,
+                                        style = labelStyle,
+                                        fontWeight = FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
 
                         TccRadioCheckIndicator(

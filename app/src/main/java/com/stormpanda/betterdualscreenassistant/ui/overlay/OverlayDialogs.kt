@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,8 +35,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import android.view.KeyEvent
 import androidx.compose.ui.res.stringResource
@@ -44,6 +47,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stormpanda.betterdualscreenassistant.R
+import com.stormpanda.betterdualscreenassistant.plugin.PluginIconLoader
+import com.stormpanda.betterdualscreenassistant.plugin.PluginPickerRequest
+import com.stormpanda.betterdualscreenassistant.plugin.PluginRegistry
 import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
 import com.stormpanda.betterdualscreenassistant.ui.components.TccDialogCheckboxRow
@@ -67,9 +73,11 @@ import com.stormpanda.betterdualscreenassistant.ui.theme.resolveResponsiveDialog
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccDrawable
 import com.stormpanda.betterdualscreenassistant.ui.theme.tccTextStyle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal enum class ActiveDialog {
     NONE,
@@ -441,9 +449,9 @@ internal fun AssistantOverlayDialogHost(
         ActiveDialog.TRIGGER_MODE -> {
             val triggerMode by repository.triggerMode.collectAsState()
             val options = listOf(
-                TccDialogOption(id = 1, label = stringResource(R.string.dialog_trigger_mode_analog), iconRes = R.drawable.ic_qs_trigger_mode),
-                TccDialogOption(id = 0, label = stringResource(R.string.dialog_trigger_mode_digital), iconRes = R.drawable.ic_qs_trigger_mode),
-                TccDialogOption(id = 2, label = stringResource(R.string.dialog_trigger_mode_both), iconRes = R.drawable.ic_qs_trigger_mode)
+                TccDialogOption(id = SystemSettingsRepository.TRIGGER_MODE_ANALOG, label = stringResource(R.string.dialog_trigger_mode_analog), iconRes = R.drawable.ic_qs_trigger_mode),
+                TccDialogOption(id = SystemSettingsRepository.TRIGGER_MODE_DIGITAL, label = stringResource(R.string.dialog_trigger_mode_digital), iconRes = R.drawable.ic_qs_trigger_mode),
+                TccDialogOption(id = SystemSettingsRepository.TRIGGER_MODE_BOTH, label = stringResource(R.string.dialog_trigger_mode_both), iconRes = R.drawable.ic_qs_trigger_mode)
             )
             TccOptionDialog(
                 title = stringResource(R.string.dialog_trigger_mode_title),
@@ -520,6 +528,131 @@ internal fun AssistantOverlayDialogHost(
             )
         }
     }
+}
+
+@Composable
+internal fun PluginPickerDialogOverlay(
+    request: PluginPickerRequest,
+    pluginRegistry: PluginRegistry,
+    coroutineScope: CoroutineScope,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val isDark = LocalTccColors.current.isDark
+    val pluginVersionCode = remember(request.packageName) {
+        pluginRegistry.findPluginForPackage(request.packageName)?.versionCode ?: 0L
+    }
+    val initialTitleBitmap = remember(request.packageName, pluginVersionCode, request.titleIconResId) {
+        PluginIconLoader.getCachedIconBitmap(
+            packageName = request.packageName,
+            versionCode = pluginVersionCode,
+            resId = request.titleIconResId
+        )
+    }
+    val titleIconBitmap by produceState<ImageBitmap?>(
+        initialValue = initialTitleBitmap,
+        request.packageName,
+        pluginVersionCode,
+        request.titleIconResId
+    ) {
+        if (request.titleIconResId == 0 ||
+            PluginIconLoader.isCached(request.packageName, pluginVersionCode, request.titleIconResId)
+        ) {
+            value = initialTitleBitmap
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            PluginIconLoader.loadIconBitmap(
+                context = context,
+                packageName = request.packageName,
+                versionCode = pluginVersionCode,
+                resId = request.titleIconResId
+            )
+        }
+    }
+    val initialOptionBitmaps = remember(request.requestId, pluginVersionCode) {
+        buildMap {
+            request.options.forEach { option ->
+                if (option.iconResId != 0) {
+                    PluginIconLoader.getCachedIconBitmap(
+                        packageName = request.packageName,
+                        versionCode = pluginVersionCode,
+                        resId = option.iconResId
+                    )?.let { put(option.id, it) }
+                }
+            }
+        }
+    }
+    val optionBitmaps by produceState(
+        initialValue = initialOptionBitmaps,
+        request.requestId,
+        pluginVersionCode
+    ) {
+        val allCached = request.options.all { option ->
+            option.iconResId == 0 ||
+                PluginIconLoader.isCached(request.packageName, pluginVersionCode, option.iconResId)
+        }
+        if (allCached) {
+            value = initialOptionBitmaps
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            buildMap {
+                request.options.forEach { option ->
+                    if (option.iconResId != 0) {
+                        PluginIconLoader.loadIconBitmap(
+                            context = context,
+                            packageName = request.packageName,
+                            versionCode = pluginVersionCode,
+                            resId = option.iconResId
+                        )?.let { put(option.id, it) }
+                    }
+                }
+            }
+        }
+    }
+    val dialogOptions = remember(request.requestId, optionBitmaps) {
+        request.options.mapIndexed { index, option ->
+            TccDialogOption(
+                id = index,
+                label = option.label,
+                iconRes = 0,
+                subtitle = option.subtitle,
+                iconBitmap = optionBitmaps[option.id]
+            )
+        }
+    }
+    val initialSelectedIdx = remember(request.requestId) {
+        request.selectedOptionId?.let { selId ->
+            request.options.indexOfFirst { it.id == selId }
+        } ?: -1
+    }
+    var selectedIdx by remember(request.requestId) { mutableStateOf(initialSelectedIdx) }
+    var selectionSubmitted by remember(request.requestId) { mutableStateOf(false) }
+
+    TccOptionDialog(
+        title = request.title,
+        titleIconRes = if (titleIconBitmap == null) R.drawable.ic_qs_plugin_default else null,
+        titleIconBitmap = titleIconBitmap,
+        options = dialogOptions,
+        selectedId = selectedIdx,
+        onSelectOption = { idx ->
+            if (selectionSubmitted) return@TccOptionDialog
+            val picked = request.options.getOrNull(idx) ?: return@TccOptionDialog
+            selectionSubmitted = true
+            selectedIdx = idx
+            pluginRegistry.dispatchOptionSelected(
+                request = request,
+                optionId = picked.id,
+                isDarkTheme = isDark
+            )
+            coroutineScope.launch {
+                delay(180L)
+                pluginRegistry.clearActivePicker(expectedRequestId = request.requestId)
+            }
+        },
+        onDismiss = onDismiss
+    )
 }
 
 @Composable

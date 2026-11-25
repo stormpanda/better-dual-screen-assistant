@@ -909,10 +909,10 @@ class GamepadScaffoldTouchNavigationTest {
         assertNull(findNodeWithTextOrNull(activity, "BetterDualScreenManager"))
         assertEquals("Better Dual Screen Assistant", activity.title.toString())
 
-        // Enter General deck and navigate to the Promotion toggle (12th card, 11 D-pad Down presses)
+        // Enter General deck and navigate to the Promotion toggle (14th card, 13 D-pad Down presses)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 100)
-        repeat(11) {
+        repeat(13) {
             sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
             idleCompose(activity, 80)
         }
@@ -1009,7 +1009,7 @@ class GamepadScaffoldTouchNavigationTest {
         idleCompose(activity, 300)
         sendKey(activity, KeyEvent.KEYCODE_DPAD_RIGHT)
         idleCompose(activity, 100)
-        repeat(11) {
+        repeat(13) {
             sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
             idleCompose(activity, 80)
         }
@@ -1017,7 +1017,7 @@ class GamepadScaffoldTouchNavigationTest {
 
         sendKey(activity, KeyEvent.KEYCODE_BUTTON_A)
         idleCompose(activity, 500)
-        assertNotNull(findNodeWithTextOrNull(activity, "Source-Available v1.0"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Source-Available v1.1"))
         assertNotNull(findNodeWithTextOrNull(activity, "Fusion Pixel 12px Monospaced"))
         assertNotNull(findNodeWithTextOrNull(activity, "DOSIyagiBoldface"))
         assertNotNull(findNodeWithTextOrNull(activity, "MIT (Font Only)"))
@@ -1028,7 +1028,7 @@ class GamepadScaffoldTouchNavigationTest {
         )
 
         // 4. Drill into Better Dual Screen Assistant app license -> single continuous document pane
-        tapClickableNodeWithText(activity, "Source-Available v1.0")
+        tapClickableNodeWithText(activity, "Source-Available v1.1")
         idleCompose(activity, 500)
         val appLicenseDocNode = findNodeWithText(activity, "1. Grant of Rights")
         val fullDocRenderedText = appLicenseDocNode.config.getOrNull(SemanticsProperties.Text)
@@ -1043,7 +1043,7 @@ class GamepadScaffoldTouchNavigationTest {
         // Scroll via D-pad Down inside the continuous document pane without leaving the sub-page
         sendKey(activity, KeyEvent.KEYCODE_DPAD_DOWN)
         idleCompose(activity, 200)
-        assertNotNull(findNodeWithTextOrNull(activity, "Better Dual Screen Assistant Source-Available License v1.0"))
+        assertNotNull(findNodeWithTextOrNull(activity, "Better Dual Screen Assistant Source-Available License v1.1"))
 
         // 5. Back out to overview and drill into DOSIyagiBoldface -> explicitly scopes MIT to the font file
         enterTouchMode(activity)

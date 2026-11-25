@@ -166,7 +166,7 @@ The **Retroid Pocket Duo** (`sun` / `CQ7790S`) is a clamshell dual-screen Androi
 ### 6.3 Gamepad & Key Mapping Specifics
 
 - **Controller Style (`temp_abxy_layout_mode`)**: `0` = `"Xbox"`, `1` = **`"Retro"`** (`standardControllerLabel = "Retro"`), `2` = `"Disconnect"` (Disabled).
-- **Trigger Mode (`trigger_input_mode`)**: `0` = Digital Only, `1` = Analog Only, `2` = Both (Analog + Digital).
+- **Trigger Mode (`trigger_input_mode`)**: `0` = Analog Only, `1` = Digital Only, `2` = Both (Analog + Digital).
 - **Overlay Dismissal via `MappingServiceClient`**: Binds `com.rp.mapping` (`RsMapping.apk`) and registers **`["HOME", "BACK"]`** (`dismissOverlayOnBackMapping = true`).
 
 ---
