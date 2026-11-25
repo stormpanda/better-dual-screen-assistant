@@ -2,6 +2,8 @@
 
 Third-party Android apps can add quick toggles directly to Better Dual Screen Assistant (BDSA) with **no SDK dependency** and **no background service required**.
 
+> **Reference Demo Project**: Check out [bdsa-plugin-api-demo](https://github.com/stormpanda/bdsa-plugin-api-demo) for a complete, ready-to-build example plugin implementing the BDSA Plugin API (v1).
+
 ## Licensing Requirements
 
 Per **Section 2.4** of the [BDSA Source-Available License v1.1](../LICENSE), third-party plugins integrating with BDSA (without separate written permission) must:
