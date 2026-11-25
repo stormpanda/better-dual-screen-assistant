@@ -221,6 +221,8 @@ object PServerClient {
             }
             if (shouldClearOsTheme) {
                 PrivilegedBridge.clearOsThemeOverlay(context, -1)
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+                    .invalidateOsThemeSignature()
             }
             exec("pm enable $stockPkg", wait = true)
             exec("pm enable $stockPkg/.services.TccServices", wait = true)
@@ -233,6 +235,11 @@ object PServerClient {
             r.isSuccess
         } else {
             if (PrivilegedBridge.suppressStockAssistant() == true) {
+                if (context != null) {
+                    com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+                        .getInstanceIfInitialized()
+                        ?.requestOsThemeIntegrityCheck()
+                }
                 return true
             }
             var rEnable = Result.failure<String>(IllegalStateException("Not attempted"))
@@ -336,6 +343,11 @@ object PServerClient {
                 } else {
                     break
                 }
+            }
+            if (rEnable.isSuccess && context != null) {
+                com.stormpanda.betterdualscreenassistant.system.SystemSettingsRepository
+                    .getInstanceIfInitialized()
+                    ?.requestOsThemeIntegrityCheck()
             }
             rEnable.isSuccess
         }

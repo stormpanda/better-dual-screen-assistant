@@ -163,6 +163,7 @@ fun AssistantOverlayScreen(
     val syncedMegingiardOption by repository.syncedMegingiardOption.collectAsState()
     val syncedMegingiardAccentArgb by repository.syncedMegingiardAccentArgb.collectAsState()
     val showEditButton by repository.showEditButton.collectAsState()
+    val showTasksButton by repository.showTasksButton.collectAsState()
     val screenRecordingState by repository.screenRecordingState.collectAsState()
     val activeTab by activeTabFlow.collectAsState() // 0 = Mode, 1 = Settings
 
@@ -300,6 +301,7 @@ fun AssistantOverlayScreen(
 
                     NavigationBarSection(
                         activeTab = activeTab,
+                        showTasksButton = showTasksButton,
                         showEditButton = showEditButton,
                         onSelectTab = onSelectTab,
                         onOpenRecents = onOpenRecentsRequest,
@@ -996,11 +998,11 @@ private fun buildQuickSettingTileModels(
                 }
                 QuickSettingTileId.TRIGGER_MODE -> {
                     val triggerLabel = when (triggerMode) {
-                        1 -> stringResource(R.string.qs_label_trigger_analog)
-                        0 -> stringResource(R.string.qs_label_trigger_digital)
+                        SystemSettingsRepository.TRIGGER_MODE_ANALOG -> stringResource(R.string.qs_label_trigger_analog)
+                        SystemSettingsRepository.TRIGGER_MODE_DIGITAL -> stringResource(R.string.qs_label_trigger_digital)
                         else -> stringResource(R.string.qs_label_trigger_both)
                     }
-                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != 2) {
+                    add(QuickSettingTileModel(triggerLabel, R.drawable.ic_qs_trigger_mode, triggerMode != SystemSettingsRepository.TRIGGER_MODE_BOTH) {
                         onOpenDialog(ActiveDialog.TRIGGER_MODE)
                     })
                 }
@@ -1731,6 +1733,7 @@ private fun QuickSettingsGridPage(
 @Composable
 private fun NavigationBarSection(
     activeTab: Int,
+    showTasksButton: Boolean,
     showEditButton: Boolean,
     onSelectTab: (Int) -> Unit,
     onOpenRecents: () -> Unit,
@@ -1743,10 +1746,11 @@ private fun NavigationBarSection(
     val viewport = LocalOverlayViewport.current
     val aspectFrac = viewport.aspectFraction()
 
-    val rowFraction = if (showEditButton) {
-        navSpec.narrowRowFraction4 + (navSpec.wideRowFraction4 - navSpec.narrowRowFraction4) * aspectFrac
-    } else {
-        navSpec.narrowRowFraction3 + (navSpec.wideRowFraction3 - navSpec.narrowRowFraction3) * aspectFrac
+    val navItemCount = 2 + (if (showTasksButton) 1 else 0) + (if (showEditButton) 1 else 0)
+    val rowFraction = when (navItemCount) {
+        4 -> navSpec.narrowRowFraction4 + (navSpec.wideRowFraction4 - navSpec.narrowRowFraction4) * aspectFrac
+        3 -> navSpec.narrowRowFraction3 + (navSpec.wideRowFraction3 - navSpec.narrowRowFraction3) * aspectFrac
+        else -> navSpec.narrowRowFraction2 + (navSpec.wideRowFraction2 - navSpec.narrowRowFraction2) * aspectFrac
     }
 
     BoxWithConstraints(
@@ -1756,7 +1760,6 @@ private fun NavigationBarSection(
             .padding(vertical = navSpec.innerVerticalPadding),
         contentAlignment = Alignment.Center
     ) {
-        val navItemCount = if (showEditButton) 4 else 3
         val maxNavLabelWidth = (((maxWidth * rowFraction) / navItemCount) - (navSpec.itemHorizontalPadding * 2))
             .coerceAtLeast(64.dp)
         val itemModifier = Modifier.padding(horizontal = navSpec.itemHorizontalPadding)
@@ -1776,15 +1779,17 @@ private fun NavigationBarSection(
                 modifier = itemModifier
             )
 
-            TccButton(
-                label = stringResource(R.string.navigation_task_manage_text),
-                iconRes = R.drawable.ic_task_manage,
-                selected = false,
-                onClick = onOpenRecents,
-                variant = TccTileVariant.NAV_BAR,
-                maxLabelWidth = maxNavLabelWidth,
-                modifier = itemModifier
-            )
+            if (showTasksButton) {
+                TccButton(
+                    label = stringResource(R.string.navigation_task_manage_text),
+                    iconRes = R.drawable.ic_task_manage,
+                    selected = false,
+                    onClick = onOpenRecents,
+                    variant = TccTileVariant.NAV_BAR,
+                    maxLabelWidth = maxNavLabelWidth,
+                    modifier = itemModifier
+                )
+            }
 
             TccButton(
                 label = stringResource(R.string.navigation_system_set_text),

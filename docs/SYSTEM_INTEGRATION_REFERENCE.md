@@ -46,7 +46,7 @@ Managed primarily in [`SystemSettingsRepository.kt`](file:///Users/maikthomalla/
 | `joystick_light_enabled` | `0` = Disabled, `1` = Enabled | `1` | Fallback/persistent state for joystick RGB ambient lighting. |
 | `led_light_brightness_percent` | `0..100` | `100` | Brightness percentage of the joystick RGB LEDs. |
 | `force_landscape` | `0` = Disabled, `1` = Enabled | `0` | Forces portrait-only applications to rotate into landscape. |
-| `trigger_input_mode` | `0` = Digital only<br>`1` = Analog only<br>`2` = Both Analog & Digital | `2` | L2/R2 Hall-effect shoulder trigger output mode. |
+| `trigger_input_mode` | `0` = Analog only<br>`1` = Digital only<br>`2` = Both Analog & Digital | `2` | L2/R2 Hall-effect shoulder trigger output mode. |
 | `global_gamepad_to_mouse_mode` | `0` = Disabled, `1` = Enabled | `0` | Virtual gamepad-to-mouse pointer mode. |
 | `key_adapter_enable` | `0` = Disabled, `1` = Enabled | `1` | Master enable flag for AYN's built-in on-screen key mapper service. |
 | `is_show_floatingIcon` | `0` = Hidden, `1` = Visible | `0` | Shows or hides the floating Key Mapper overlay icon. |

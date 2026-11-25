@@ -164,7 +164,7 @@
 ### 6.3 Gamepad & Key Mapping Specifics
 
 - **Controller Style (`temp_abxy_layout_mode`)**: `0` = `"Xbox"`, `1` = `"<Odin | Retro>"`, `2` = Disconnect.
-- **Trigger Mode (`trigger_input_mode`)**: `0` = Digital, `1` = Analog, `2` = Both.
+- **Trigger Mode (`trigger_input_mode`)**: `0` = Analog, `1` = Digital, `2` = Both.
 - **Overlay Dismissal via `MappingServiceClient`**: Listens to `<["HOME"] vs ["HOME", "BACK"]>` via `com.ro.mapping.action.MAPPING_SERVICE`.
 
 ---

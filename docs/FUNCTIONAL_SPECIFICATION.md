@@ -199,7 +199,7 @@ All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | `touch_lock` | **Bottom Touch Lock** (`Bottom Touch Locked` / `Bottom Touch Lock`) | Instant Toggle | Disables touchscreen input on the bottom display (`sys.temp.disabled.touch = "0,1"`) while keeping the bottom display visible (ideal for watching video or preventing accidental palm touches). While the Assistant Overlay itself is open, bottom touch is temporarily unlocked so you can interact with the overlay, then re-locked automatically when the overlay closes. |
 | `screenshot` | **Screenshot** | Modal Dialog | Opens a 3-option modal (**Top Screen**, **Bottom Screen**, **Both Screens**). Dismisses the overlay, waits `320ms` for the exit animation to finish, resolves physical SurfaceFlinger display IDs (`port=131` / `port=132`), captures lossless PNGs to `/sdcard/Pictures/Screenshots/Screenshot_<timestamp>_<Top|Bottom>.png`, indexes them via `MediaScannerConnection`, and displays a confirmation toast. |
 | `screen_record` | **Screen Record** (`Screen Record` / `MM:SS`) | Modal Dialog / Instant Stop | Opens the **Screen Record** modal (**Top Screen**, **Bottom Screen**, or GPU-composited **Both Screens** at `30`/`60 FPS`, with optional **Internal Game Audio** and **Microphone** mixing) saved to `/sdcard/Movies/ScreenRecordings`; while recording, displays the live elapsed timer and stops recording on tap. |
-| `trigger_mode` | **L2/R2 Trigger Mode** (`Trigger: Analog` / `Trigger: Digital` / `Trigger: Both`) | Modal Dialog | Configures L2/R2 shoulder trigger input mode (`Settings.System["trigger_input_mode"]`: `1` = Analog only, `0` = Digital only, `2` = Both Analog & Digital). |
+| `trigger_mode` | **L2/R2 Trigger Mode** (`Trigger: Analog` / `Trigger: Digital` / `Trigger: Both`) | Modal Dialog | Configures L2/R2 shoulder trigger input mode (`Settings.System["trigger_input_mode"]`: `0` = Analog only, `1` = Digital only, `2` = Both Analog & Digital). |
 | `charge_limit_80` | **80% Charge Limit** | Instant Toggle | Caps battery charging at 80% (`Settings.System["percent_80_charge_limit"]`: `0` / `1`) to preserve long-term battery health. |
 | `gamepad_mouse_mode` | **Virtual Mouse** | Instant Toggle | Toggles virtual gamepad-to-mouse cursor mode (`Settings.System["global_gamepad_to_mouse_mode"]`: `0` / `1`). |
 | `key_mapper` | **Key Mapper Overlay** | Instant Toggle | Toggles the built-in AYN screen-mapping floating overlay (`Settings.System["is_show_floatingIcon"]`: `0` / `1`, ensuring `key_adapter_enable = 1`). |
@@ -254,10 +254,10 @@ Located along the bottom `30%` of the **Settings** tab (`Tab 1`), the telemetry 
 
 ### 3.7 Bottom Navigation Bar
 
-Centered at the bottom of the overlay (`80dp` height pill container in `NavigationBarSection`), the navigation bar contains 3 buttons (or 4 when **Show Edit Button in Overlay** is enabled):
+Centered at the bottom of the overlay (`80dp` height pill container in `NavigationBarSection`), the navigation bar contains 2–4 buttons depending on **Show Tasks Button in Overlay** and **Show Edit Button in Overlay**:
 
 1. **Mode** (`Tab 0`): Switches the main card to the **Mode** tab (Screen Modes, Swap Screens, Brightness, Volume). Highlighted when active.
-2. **Task**: Dismisses the Assistant Overlay (`hideOverlay()`) and invokes `OverviewProxyClient.toggleRecentAppsOnBottomScreen()` (`IOverviewProxy` transaction `6` with `displayId = 4`) to open the Android Recents / Task Switcher specifically for the bottom screen.
+2. **Tasks** *(Optional, ON by default)*: Dismisses the Assistant Overlay (`hideOverlay()`) and invokes `OverviewProxyClient.toggleRecentAppsOnBottomScreen()` (`IOverviewProxy` transaction `6` with `displayId = 4`) to open the Android Recents / Task Switcher specifically for the bottom screen.
 3. **Settings** (`Tab 1`): Switches the main card to the **Settings** tab (Frame Rate, Quick Settings Pager, Live Telemetry). Highlighted when active.
 4. **Edit** *(Optional, ON by default)*: Launches the **Companion Settings App** (`MainActivity`) on the Top Screen (`displayId = 0` via `ActivityOptions.setLaunchDisplayId(0)`), while keeping the Assistant Overlay open on the Bottom Screen (`displayId = 4`) for side-by-side live editing.
 
@@ -301,7 +301,8 @@ Configures core assistant behavior and optional UI controls:
 | **Replace Stock Assistant** | `replace_stock_assistant` | `ON` | When enabled, suppresses the built-in `com.odin.dualscreen.assistant` so Better Dual Screen Assistant handles all physical AYN button presses and overlays. Turning this `OFF` immediately hides our overlay and wakes/restarts the stock assistant. |
 | **Accurate Game FPS Counter** | `accurate_game_fps` | `ON` | Measures real foreground game/app frame rate on the active display instead of the stock global `SurfaceFlinger` page-flip counter. |
 | **Temperature Unit** | `temp_fahrenheit` | `Celsius (°C)` | Switches the overlay CPU `TEMP` readout between **Celsius (`℃`)** and **Fahrenheit (`℉`)** (also toggleable directly by tapping the `TEMP` card in the overlay). |
-| **Show Edit Button in Overlay** | `show_edit_button` | `ON` | Shows or hides the 4th **Edit** button in the overlay's bottom navigation bar. |
+| **Show Edit Button in Overlay** | `show_edit_button` | `ON` | Shows or hides the **Edit** button in the overlay's bottom navigation bar. |
+| **Show Tasks Button in Overlay** | `show_tasks_button` | `ON` | Shows or hides the **Tasks** button in the overlay's bottom navigation bar. |
 | **Remember Last Open Tab** | `remember_last_tab` | `ON` | When `ON`, reopening the overlay restores whichever tab (**Mode** or **Settings**) was last active (`last_active_tab`). When `OFF`, the overlay always opens on the **Mode** tab. |
 | **Show Swap Screens Button** | `show_swap_screens_button` | `ON` | Shows or hides the 4th **Swap Screens** action button in the **Mode** tab's Screen Mode panel. |
 | **Show Stick LED Brightness Slider** | `show_led_brightness_slider` | `ON` | Shows or hides the 4th **Stick LED** brightness slider inside the **Mode** tab's Brightness panel. |

@@ -21,6 +21,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PatternMatcher
 import android.os.PowerManager
 import android.os.SystemClock
 import android.app.UiModeManager
@@ -98,6 +99,9 @@ class SystemSettingsRepository(private val context: Context) {
         const val KEY_MIN_REFRESH_RATE = "min_refresh_rate"
         const val KEY_LED_BRIGHTNESS_PERCENT = "led_light_brightness_percent"
         const val KEY_TRIGGER_INPUT_MODE = "trigger_input_mode"
+        const val TRIGGER_MODE_ANALOG = 0
+        const val TRIGGER_MODE_DIGITAL = 1
+        const val TRIGGER_MODE_BOTH = 2
         const val KEY_CHARGE_LIMIT_80 = "percent_80_charge_limit"
         const val KEY_GAMEPAD_MOUSE_MODE = "global_gamepad_to_mouse_mode"
         const val KEY_ADAPTER_ENABLE = "key_adapter_enable"
@@ -112,6 +116,7 @@ class SystemSettingsRepository(private val context: Context) {
         const val PREF_SHOW_LED_BRIGHTNESS_SLIDER = "show_led_brightness_slider"
         const val PREF_SHOW_SWAP_SCREENS_BUTTON = "show_swap_screens_button"
         const val PREF_SHOW_EDIT_BUTTON = "show_edit_button"
+        const val PREF_SHOW_TASKS_BUTTON = "show_tasks_button"
         const val PREF_ACCURATE_GAME_FPS = "accurate_game_fps"
         const val PREF_CPU_FREQ_SCALING_MODE = "cpu_freq_scaling_mode"
         const val PREF_TEMP_FAHRENHEIT = "temp_fahrenheit"
@@ -174,7 +179,15 @@ class SystemSettingsRepository(private val context: Context) {
             }
         }
 
+        fun getInstanceIfInitialized(): SystemSettingsRepository? = instance
+
+        fun invalidateOsThemeSignature() {
+            lastAppliedOsThemeSignature = ""
+        }
+
+        private const val ACTION_OVERLAY_CHANGED = "android.intent.action.OVERLAY_CHANGED"
         private const val OS_THEME_SYNC_DEBOUNCE_MS = 650L
+        private const val OS_THEME_OVERLAY_REASSERT_DEBOUNCE_MS = 120L
         internal const val REFRESH_RATE_WRITE_SETTLE_DELAY_MS = 220L
 
         private val MEGINGIARD_RELEASE_THEME_URI: Uri =
@@ -265,6 +278,34 @@ class SystemSettingsRepository(private val context: Context) {
             f
         }
         dispatchOrDeferOsThemeSync(force = force)
+    }
+
+    private val osThemeIntegrityCheckRunnable = Runnable {
+        if (!_injectOsTheme.value) return@Runnable
+        val option = AppThemeOption.fromId(_themeMode.value)
+        if (option == AppThemeOption.STOCK_SYSTEM ||
+            option == AppThemeOption.STOCK_LIGHT ||
+            option == AppThemeOption.STOCK_DARK
+        ) {
+            return@Runnable
+        }
+        val deferred = synchronized(osThemeDeferLock) {
+            if (activeSettingsUiTokens.isNotEmpty()) {
+                pendingDeferredOsThemeSync = true
+                pendingDeferredOsThemeForce = true
+                true
+            } else {
+                false
+            }
+        }
+        if (deferred) return@Runnable
+        if (!PrivilegedBridge.hasActiveOsThemeRequest()) {
+            syncOsThemeIfNeeded(force = true)
+        } else {
+            PrivilegedBridge.reassertOsThemeIfNeeded(context) {
+                mainHandler.post { scheduleFloatingIconGestureGuardResync() }
+            }
+        }
     }
 
     private val debouncedRefreshRateWriteRunnable = Runnable {
@@ -399,6 +440,11 @@ class SystemSettingsRepository(private val context: Context) {
     )
     val showEditButton: StateFlow<Boolean> = _showEditButton.asStateFlow()
 
+    private val _showTasksButton = MutableStateFlow(
+        prefs.getBoolean(PREF_SHOW_TASKS_BUTTON, true)
+    )
+    val showTasksButton: StateFlow<Boolean> = _showTasksButton.asStateFlow()
+
     private val _accurateGameFps = MutableStateFlow(
         prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
     )
@@ -448,8 +494,8 @@ class SystemSettingsRepository(private val context: Context) {
     private val _touchLockEnabled = MutableStateFlow(false)
     val touchLockEnabled: StateFlow<Boolean> = _touchLockEnabled.asStateFlow()
 
-    // Trigger Mode: 1 = Analog, 0 = Digital, 2 = Both
-    private val _triggerMode = MutableStateFlow(getInt(KEY_TRIGGER_INPUT_MODE, 2))
+    // Trigger Mode: 0 = Analog, 1 = Digital, 2 = Both
+    private val _triggerMode = MutableStateFlow(getInt(KEY_TRIGGER_INPUT_MODE, TRIGGER_MODE_BOTH))
     val triggerMode: StateFlow<Int> = _triggerMode.asStateFlow()
 
     private val _chargeLimit80 = MutableStateFlow(getInt(KEY_CHARGE_LIMIT_80, 0) == 1)
@@ -694,6 +740,10 @@ class SystemSettingsRepository(private val context: Context) {
                 _showEditButton.value =
                     prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
             }
+            PREF_SHOW_TASKS_BUTTON -> {
+                _showTasksButton.value =
+                    prefs.getBoolean(PREF_SHOW_TASKS_BUTTON, true)
+            }
             PREF_ACCURATE_GAME_FPS -> {
                 _accurateGameFps.value =
                     prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
@@ -768,9 +818,30 @@ class SystemSettingsRepository(private val context: Context) {
                     scheduleScreenCastStateRefresh()
                 }
                 Intent.ACTION_USER_UNLOCKED -> {
+                    _themeMode.value = readSavedThemeMode()
+                    _customAccentArgb.value = prefs.getInt(
+                        PREF_CUSTOM_ACCENT_ARGB,
+                        DEFAULT_MEGINGIARD_ACCENT_ARGB
+                    )
+                    _injectOsTheme.value = prefs.getBoolean(PREF_INJECT_OS_THEME, false)
                     registerMegingiardContentObservers()
-                    refreshMegingiardSyncedTheme()
+                    refreshMegingiardSyncedThemeAsync(
+                        changedUri = null,
+                        debounceOsSyncMs = 0L,
+                        forceScheduleOsSync = true,
+                        forceApplyOsTheme = true
+                    )
                 }
+            }
+        }
+    }
+
+    private val overlayChangedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_OVERLAY_CHANGED) return
+            val pkg = intent.data?.schemeSpecificPart
+            if (pkg == null || pkg == "android") {
+                requestOsThemeIntegrityCheck()
             }
         }
     }
@@ -930,6 +1001,11 @@ class SystemSettingsRepository(private val context: Context) {
             addDataScheme("package")
         }
         context.registerReceiver(megingiardPackageReceiver, pkgFilter, Context.RECEIVER_NOT_EXPORTED)
+        val overlayFilter = IntentFilter(ACTION_OVERLAY_CHANGED).apply {
+            addDataScheme("package")
+            addDataSchemeSpecificPart("android", PatternMatcher.PATTERN_LITERAL)
+        }
+        context.registerReceiver(overlayChangedReceiver, overlayFilter, Context.RECEIVER_NOT_EXPORTED)
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
             try {
                 context.registerReceiver(
@@ -964,6 +1040,8 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun unregister() {
+        mainHandler.removeCallbacks(debouncedOsThemeSyncRunnable)
+        mainHandler.removeCallbacks(osThemeIntegrityCheckRunnable)
         mainHandler.removeCallbacks(debouncedRefreshRateWriteRunnable)
         mainHandler.removeCallbacks(floatingIconEarlyResyncRunnable)
         mainHandler.removeCallbacks(floatingIconLateResyncRunnable)
@@ -1004,6 +1082,10 @@ class SystemSettingsRepository(private val context: Context) {
         }
         try {
             context.unregisterReceiver(megingiardPackageReceiver)
+        } catch (_: Throwable) {
+        }
+        try {
+            context.unregisterReceiver(overlayChangedReceiver)
         } catch (_: Throwable) {
         }
         if (isDualScreenVolumeKeyReceiverRegistered) {
@@ -1078,6 +1160,7 @@ class SystemSettingsRepository(private val context: Context) {
         _showLedBrightnessSlider.value = prefs.getBoolean(PREF_SHOW_LED_BRIGHTNESS_SLIDER, true)
         _showSwapScreensButton.value = prefs.getBoolean(PREF_SHOW_SWAP_SCREENS_BUTTON, true)
         _showEditButton.value = prefs.getBoolean(PREF_SHOW_EDIT_BUTTON, true)
+        _showTasksButton.value = prefs.getBoolean(PREF_SHOW_TASKS_BUTTON, true)
         _accurateGameFps.value = prefs.getBoolean(PREF_ACCURATE_GAME_FPS, true)
         _cpuFreqScalingMode.value = prefs.getBoolean(PREF_CPU_FREQ_SCALING_MODE, false)
         _tempFahrenheit.value = prefs.getBoolean(PREF_TEMP_FAHRENHEIT, false)
@@ -1091,7 +1174,7 @@ class SystemSettingsRepository(private val context: Context) {
         _dndEnabled.value = readDndEnabled()
         _airplaneModeEnabled.value = readAirplaneModeEnabled()
         refreshScreenCastStateAsync()
-        _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, 2)
+        _triggerMode.value = getInt(KEY_TRIGGER_INPUT_MODE, TRIGGER_MODE_BOTH)
         _chargeLimit80.value = getInt(KEY_CHARGE_LIMIT_80, 0) == 1
         _gamepadMouseMode.value = getInt(KEY_GAMEPAD_MOUSE_MODE, 0) == 1
         _keyMapperEnabled.value = getInt(KEY_ADAPTER_ENABLE, 1) == 1
@@ -1861,7 +1944,8 @@ class SystemSettingsRepository(private val context: Context) {
     private fun refreshMegingiardSyncedThemeAsync(
         changedUri: Uri?,
         debounceOsSyncMs: Long,
-        forceScheduleOsSync: Boolean = false
+        forceScheduleOsSync: Boolean = false,
+        forceApplyOsTheme: Boolean = false
     ) {
         themeSyncExecutor.execute {
             val candidates = buildMegingiardCandidateUris(changedUri)
@@ -1896,10 +1980,12 @@ class SystemSettingsRepository(private val context: Context) {
                                 editor.remove(PREF_SYNCED_MEGINGIARD_ACCENT_ARGB)
                             }
                             editor.apply()
-                            if (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
-                                (changed || forceScheduleOsSync || debounceOsSyncMs == 0L)
+                            if (forceApplyOsTheme ||
+                                debounceOsSyncMs == 0L ||
+                                (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id &&
+                                    (changed || forceScheduleOsSync))
                             ) {
-                                scheduleOsThemeSync(debounceOsSyncMs)
+                                scheduleOsThemeSync(debounceOsSyncMs, force = forceApplyOsTheme)
                             }
                             return@execute
                         }
@@ -1908,10 +1994,11 @@ class SystemSettingsRepository(private val context: Context) {
                 }
             }
             _isMegingiardProviderAvailable.value = anyProviderInstalled || isAnyMegingiardInstalled()
-            if (debounceOsSyncMs == 0L ||
+            if (forceApplyOsTheme ||
+                debounceOsSyncMs == 0L ||
                 (_themeMode.value == AppThemeOption.SYNC_MEGINGIARD.id && forceScheduleOsSync)
             ) {
-                scheduleOsThemeSync(debounceOsSyncMs)
+                scheduleOsThemeSync(debounceOsSyncMs, force = forceApplyOsTheme)
             }
         }
     }
@@ -1974,6 +2061,19 @@ class SystemSettingsRepository(private val context: Context) {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    fun requestOsThemeIntegrityCheck() {
+        if (!_injectOsTheme.value) return
+        val option = AppThemeOption.fromId(_themeMode.value)
+        if (option == AppThemeOption.STOCK_SYSTEM ||
+            option == AppThemeOption.STOCK_LIGHT ||
+            option == AppThemeOption.STOCK_DARK
+        ) {
+            return
+        }
+        mainHandler.removeCallbacks(osThemeIntegrityCheckRunnable)
+        mainHandler.postDelayed(osThemeIntegrityCheckRunnable, OS_THEME_OVERLAY_REASSERT_DEBOUNCE_MS)
     }
 
     private fun dispatchOrDeferOsThemeSync(force: Boolean = false) {
@@ -2109,8 +2209,12 @@ class SystemSettingsRepository(private val context: Context) {
                 scheduleFloatingIconGestureGuardResync()
             }
             else -> {
-                val sig = "ON:MG:${option.id}:${_customAccentArgb.value}:" +
-                    "${_syncedMegingiardOption.value.id}:${_syncedMegingiardAccentArgb.value}:$savedNight"
+                val sig = if (option == AppThemeOption.SYNC_MEGINGIARD) {
+                    "ON:MG:${option.id}:${_customAccentArgb.value}:" +
+                        "${_syncedMegingiardOption.value.id}:${_syncedMegingiardAccentArgb.value}:$savedNight"
+                } else {
+                    "ON:MG:${option.id}:${_customAccentArgb.value}:$savedNight"
+                }
                 if (!force && lastAppliedOsThemeSignature == sig) return
                 lastAppliedOsThemeSignature = sig
                 val palette = resolveTccPalette(
@@ -2384,6 +2488,11 @@ class SystemSettingsRepository(private val context: Context) {
         _showEditButton.value = enabled
     }
 
+    fun setShowTasksButton(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_SHOW_TASKS_BUTTON, enabled).apply()
+        _showTasksButton.value = enabled
+    }
+
     fun setAccurateGameFps(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_ACCURATE_GAME_FPS, enabled).apply()
         _accurateGameFps.value = enabled
@@ -2500,7 +2609,7 @@ class SystemSettingsRepository(private val context: Context) {
     }
 
     fun setTriggerMode(mode: Int) {
-        val normalized = mode.coerceIn(0, 2)
+        val normalized = mode.coerceIn(TRIGGER_MODE_ANALOG, TRIGGER_MODE_BOTH)
         PrivilegedBridge.putSystemSettingInt(context, KEY_TRIGGER_INPUT_MODE, normalized)
         _triggerMode.value = normalized
     }

@@ -64,7 +64,7 @@ object PrivilegedBridge {
     @Volatile
     private var panel1BacklightBlanked: Boolean = false
 
-    private class PendingOsThemeRequest(
+    private class OsThemeRequest(
         val apply: Boolean,
         val resourceNames: Array<String>,
         val colorValues: IntArray,
@@ -75,7 +75,10 @@ object PrivilegedBridge {
     )
 
     @Volatile
-    private var pendingOsThemeRequest: PendingOsThemeRequest? = null
+    private var desiredOsThemeRequest: OsThemeRequest? = null
+
+    @Volatile
+    private var lastDeliveredOsThemeRequest: OsThemeRequest? = null
 
     private val _isHelperConnected = MutableStateFlow(false)
     val isHelperConnected: StateFlow<Boolean> = _isHelperConnected.asStateFlow()
@@ -120,11 +123,18 @@ object PrivilegedBridge {
         if (panel1BacklightBlanked || syncBacklightSysfs) {
             dispatchBacklightPowerToBinder(binder, 1, panel1BacklightBlanked)
         }
-        pendingOsThemeRequest?.let { req ->
-            scope.launch {
-                if (dispatchOsThemeRequestToBinder(binder, req)) {
-                    if (pendingOsThemeRequest === req) {
-                        pendingOsThemeRequest = null
+        desiredOsThemeRequest?.let { req ->
+            if (req.apply || lastDeliveredOsThemeRequest !== req) {
+                scope.launch {
+                    if (dispatchOsThemeRequestToBinder(binder, req)) {
+                        if (desiredOsThemeRequest === req) {
+                            if (req.apply) {
+                                lastDeliveredOsThemeRequest = req
+                            } else {
+                                desiredOsThemeRequest = null
+                                lastDeliveredOsThemeRequest = null
+                            }
+                        }
                     }
                 }
             }
@@ -1154,7 +1164,7 @@ object PrivilegedBridge {
         injectedThemeJson: String,
         savedThemeJson: String
     ) {
-        val req = PendingOsThemeRequest(
+        val req = OsThemeRequest(
             apply = true,
             resourceNames = resourceNames,
             colorValues = colorValues,
@@ -1163,14 +1173,14 @@ object PrivilegedBridge {
             injectedThemeJson = injectedThemeJson,
             savedThemeJson = savedThemeJson
         )
-        pendingOsThemeRequest = req
+        desiredOsThemeRequest = req
         val appContext = context.applicationContext
         scope.launch {
             val binder = helperBinder
             if (binder != null && binder.isBinderAlive) {
                 if (dispatchOsThemeRequestToBinder(binder, req)) {
-                    if (pendingOsThemeRequest === req) {
-                        pendingOsThemeRequest = null
+                    if (desiredOsThemeRequest === req) {
+                        lastDeliveredOsThemeRequest = req
                     }
                     return@launch
                 }
@@ -1180,7 +1190,7 @@ object PrivilegedBridge {
     }
 
     fun clearOsThemeOverlay(context: Context?, restoreNightMode: Int, restoreThemeJson: String = "") {
-        val req = PendingOsThemeRequest(
+        val req = OsThemeRequest(
             apply = false,
             resourceNames = emptyArray(),
             colorValues = IntArray(0),
@@ -1189,14 +1199,15 @@ object PrivilegedBridge {
             injectedThemeJson = "",
             savedThemeJson = restoreThemeJson
         )
-        pendingOsThemeRequest = req
+        desiredOsThemeRequest = req
         val appContext = context?.applicationContext
         scope.launch {
             val binder = helperBinder
             if (binder != null && binder.isBinderAlive) {
                 if (dispatchOsThemeRequestToBinder(binder, req)) {
-                    if (pendingOsThemeRequest === req) {
-                        pendingOsThemeRequest = null
+                    if (desiredOsThemeRequest === req) {
+                        desiredOsThemeRequest = null
+                        lastDeliveredOsThemeRequest = null
                     }
                     return@launch
                 }
@@ -1205,9 +1216,75 @@ object PrivilegedBridge {
         }
     }
 
+    fun hasActiveOsThemeRequest(): Boolean =
+        desiredOsThemeRequest?.let { it.apply && it.resourceNames.isNotEmpty() } == true
+
+    fun reassertOsThemeIfNeeded(context: Context, onReasserted: (() -> Unit)? = null) {
+        val appContext = context.applicationContext
+        scope.launch {
+            val req = desiredOsThemeRequest ?: return@launch
+            if (!req.apply || req.resourceNames.isEmpty()) return@launch
+            val binder = helperBinder
+            if (binder == null || !binder.isBinderAlive) {
+                ensureStarted(appContext)
+                return@launch
+            }
+            if (lastDeliveredOsThemeRequest !== req) {
+                if (dispatchOsThemeRequestToBinder(binder, req)) {
+                    if (desiredOsThemeRequest === req) {
+                        lastDeliveredOsThemeRequest = req
+                    }
+                    onReasserted?.invoke()
+                } else {
+                    ensureStarted(appContext)
+                }
+                return@launch
+            }
+            when (queryAndReassertOsThemeOnBinder(binder)) {
+                null -> ensureStarted(appContext)
+                PrivilegedHelperMain.OS_THEME_REASSERT_REASSERTED -> {
+                    onReasserted?.invoke()
+                }
+                PrivilegedHelperMain.OS_THEME_REASSERT_INACTIVE -> {
+                    if (dispatchOsThemeRequestToBinder(binder, req)) {
+                        if (desiredOsThemeRequest === req) {
+                            lastDeliveredOsThemeRequest = req
+                        }
+                        onReasserted?.invoke()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun queryAndReassertOsThemeOnBinder(binder: IBinder): Int? {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(PrivilegedHelperMain.DESCRIPTOR)
+            if (!binder.transact(
+                    PrivilegedHelperMain.TRANSACTION_REASSERT_OS_THEME_IF_NEEDED,
+                    data,
+                    reply,
+                    0
+                )
+            ) {
+                return null
+            }
+            reply.readException()
+            reply.readInt()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to reassert OS theme overlay via PrivilegedHelperMain", t)
+            null
+        } finally {
+            data.recycle()
+            reply.recycle()
+        }
+    }
+
     private fun dispatchOsThemeRequestToBinder(
         binder: IBinder,
-        req: PendingOsThemeRequest
+        req: OsThemeRequest
     ): Boolean {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
@@ -1220,14 +1297,20 @@ object PrivilegedBridge {
                 data.writeInt(req.savedNightMode)
                 data.writeString(req.injectedThemeJson)
                 data.writeString(req.savedThemeJson)
-                binder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0)
+                if (!binder.transact(PrivilegedHelperMain.TRANSACTION_APPLY_OS_THEME, data, reply, 0)) {
+                    return false
+                }
+                reply.readException()
+                if (reply.dataAvail() >= 4) reply.readInt() != 0 else true
             } else {
                 data.writeInt(req.targetNightMode)
                 data.writeString(req.savedThemeJson)
-                binder.transact(PrivilegedHelperMain.TRANSACTION_CLEAR_OS_THEME, data, reply, 0)
+                if (!binder.transact(PrivilegedHelperMain.TRANSACTION_CLEAR_OS_THEME, data, reply, 0)) {
+                    return false
+                }
+                reply.readException()
+                true
             }
-            reply.readException()
-            true
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to dispatch OS theme request to PrivilegedHelperMain", t)
             false
@@ -1777,6 +1860,7 @@ object PrivilegedBridge {
         bottomScreenShowCoverWindow = false
         panel0BacklightBlanked = false
         panel1BacklightBlanked = false
-        pendingOsThemeRequest = null
+        desiredOsThemeRequest = null
+        lastDeliveredOsThemeRequest = null
     }
 }

@@ -89,8 +89,38 @@ object PrivilegedHelperMain {
     const val TRANSACTION_IS_STOCK_ASSISTANT_ACTIVE = IBinder.FIRST_CALL_TRANSACTION + 30
     const val TRANSACTION_SUPPRESS_STOCK_ASSISTANT = IBinder.FIRST_CALL_TRANSACTION + 31
     const val TRANSACTION_GET_PIN_SCREEN_MODE = IBinder.FIRST_CALL_TRANSACTION + 32
+    const val TRANSACTION_REASSERT_OS_THEME_IF_NEEDED = IBinder.FIRST_CALL_TRANSACTION + 33
 
-    const val HELPER_PROTOCOL_VERSION = 28
+    const val HELPER_PROTOCOL_VERSION = 29
+    const val OS_THEME_REASSERT_HEALTHY = 0
+    const val OS_THEME_REASSERT_REASSERTED = 1
+    const val OS_THEME_REASSERT_INACTIVE = 2
+    const val OS_THEME_REASSERT_FAILED = -1
+    internal val SYSUI_MONET_OVERLAY_NAMES: Set<String> = setOf("neutral", "accent", "dynamic")
+    internal const val OS_THEME_REASSERT_MIN_INTERVAL_MS = 500L
+    internal const val OS_THEME_REASSERT_WINDOW_MS = 10_000L
+    internal const val OS_THEME_REASSERT_MAX_PER_WINDOW = 5
+
+    internal data class OverlayStackEntry(
+        val packageName: String,
+        val overlayName: String?,
+        val isEnabled: Boolean
+    )
+
+    internal fun isOsThemeOverlayHealthy(entries: List<OverlayStackEntry>): Boolean {
+        val shellIdx = entries.indexOfLast {
+            it.packageName == OS_THEME_OWNING_PACKAGE && it.overlayName == OS_THEME_OVERLAY_NAME
+        }
+        if (shellIdx < 0 || !entries[shellIdx].isEnabled) {
+            return false
+        }
+        val highestSysUiIdx = entries.indexOfLast {
+            it.packageName == SYSUI_PACKAGE &&
+                it.overlayName in SYSUI_MONET_OVERLAY_NAMES &&
+                it.isEnabled
+        }
+        return highestSysUiIdx < shellIdx
+    }
     const val DESCRIPTOR_WINDOW_SESSION = "android.view.IWindowSession"
 
     internal val CAST_PROJECTION_PACKAGES: Set<String> = setOf(
@@ -480,20 +510,20 @@ object PrivilegedHelperMain {
         @Volatile
         private var pendingThemeRestoreJson: String = ""
 
-        private val finishThemeJsonRestoreRunnable = Runnable {
-            val json = pendingThemeRestoreJson
-            pendingThemeRestoreJson = ""
-            if (json.isNotEmpty() && !osThemeOverlayActive && !isShuttingDown) {
-                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, json)
-            }
-        }
+        private val osThemeLock = Any()
 
-        private val reassertOverlayPriorityRunnable = Runnable {
-            if (!osThemeOverlayActive || isShuttingDown) return@Runnable
-            val names = lastOverlayResourceNames
-            val values = lastOverlayColorValues
-            if (names.isNotEmpty() && names.size == values.size) {
-                commitOsThemeFabricatedOverlays(names, values)
+        private var lastOsThemeReassertElapsedMs: Long = 0L
+
+        private val recentOsThemeReassertTimestamps = ArrayDeque<Long>()
+
+        private val finishThemeJsonRestoreRunnable = Runnable {
+            val json = synchronized(osThemeLock) {
+                val j = pendingThemeRestoreJson
+                pendingThemeRestoreJson = ""
+                if (j.isNotEmpty() && !osThemeOverlayActive && !isShuttingDown) j else ""
+            }
+            if (json.isNotEmpty()) {
+                putSecureSettingInternal(KEY_THEME_CUSTOMIZATION_PACKAGES, json)
             }
         }
 
@@ -542,7 +572,9 @@ object PrivilegedHelperMain {
         internal var screenshotCaptureOverride: ((Int, String, String) -> Boolean)? = null
         internal var screenCastStateOverride: (() -> HelperCastStatus)? = null
         internal var disconnectScreenCastOverride: (() -> Boolean)? = null
-        internal var commitOsThemeOverlaysOverride: ((Array<String>, IntArray) -> Unit)? = null
+        internal var commitOsThemeOverlaysOverride: ((Array<String>, IntArray) -> Boolean)? = null
+        internal var androidOverlayInfosOverride: (() -> List<OverlayStackEntry>?)? = null
+        internal var elapsedRealtimeProvider: () -> Long = { SystemClock.elapsedRealtime() }
         internal var allowedWindowSessionCodesOverride: Set<Int>? = null
 
         private val allowedWindowSessionCodes: Set<Int> by lazy {
@@ -1118,7 +1150,8 @@ object PrivilegedHelperMain {
                         val savedNightMode = data.readInt()
                         val injectedThemeJson = data.readString() ?: ""
                         val savedThemeJson = data.readString() ?: ""
-                        mainHandler.post {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val applied = try {
                             applyOsThemeOverlayInternal(
                                 resourceNames = resourceNames,
                                 colorValues = colorValues,
@@ -1127,15 +1160,21 @@ object PrivilegedHelperMain {
                                 injectedThemeJson = injectedThemeJson,
                                 savedThemeJson = savedThemeJson
                             )
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
                         }
                         reply?.writeNoException()
+                        reply?.writeInt(if (applied) 1 else 0)
                         true
                     }
                     TRANSACTION_CLEAR_OS_THEME -> {
                         val restoreNightMode = data.readInt()
                         val restoreThemeJson = data.readString() ?: ""
-                        mainHandler.post {
+                        val callingToken = Binder.clearCallingIdentity()
+                        try {
                             clearOsThemeOverlayInternal(restoreNightMode, restoreThemeJson)
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
                         }
                         reply?.writeNoException()
                         true
@@ -1337,6 +1376,17 @@ object PrivilegedHelperMain {
                         val mode = getPinScreenModeInternal()
                         reply?.writeNoException()
                         reply?.writeInt(mode)
+                        true
+                    }
+                    TRANSACTION_REASSERT_OS_THEME_IF_NEEDED -> {
+                        val callingToken = Binder.clearCallingIdentity()
+                        val status = try {
+                            reassertOsThemeIfNeededInternal()
+                        } finally {
+                            Binder.restoreCallingIdentity(callingToken)
+                        }
+                        reply?.writeNoException()
+                        reply?.writeInt(status)
                         true
                     }
                     else -> super.onTransact(code, data, reply, flags)
@@ -2425,10 +2475,11 @@ object PrivilegedHelperMain {
             savedNightMode: Int,
             @Suppress("UNUSED_PARAMETER") injectedThemeJson: String,
             savedThemeJson: String
-        ) {
-            mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+        ): Boolean = synchronized(osThemeLock) {
             mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
             pendingThemeRestoreJson = ""
+            lastOsThemeReassertElapsedMs = 0L
+            recentOsThemeReassertTimestamps.clear()
             if (savedNightMode == 1 || savedNightMode == 2) {
                 savedStockNightMode = savedNightMode
             }
@@ -2438,19 +2489,15 @@ object PrivilegedHelperMain {
                 } catch (_: Throwable) {
                 }
             }
-            val nightChanged = if (targetNightMode == 1 || targetNightMode == 2) {
+            if (targetNightMode == 1 || targetNightMode == 2) {
                 setNightModeInternal(targetNightMode)
-            } else {
-                false
             }
             if (resourceNames.isNotEmpty() && resourceNames.size == colorValues.size) {
                 lastOverlayResourceNames = resourceNames
                 lastOverlayColorValues = colorValues
-                osThemeOverlayActive = true
-                commitOsThemeFabricatedOverlays(resourceNames, colorValues)
-                if (nightChanged) {
-                    mainHandler.postDelayed(reassertOverlayPriorityRunnable, 200L)
-                }
+                val committed = commitOsThemeFabricatedOverlays(resourceNames, colorValues)
+                osThemeOverlayActive = committed
+                return@synchronized committed
             } else {
                 lastOverlayResourceNames = emptyArray()
                 lastOverlayColorValues = IntArray(0)
@@ -2468,18 +2515,18 @@ object PrivilegedHelperMain {
                 ) {
                     restoreStockThemeJsonInternal(savedThemeJson)
                 }
+                return@synchronized true
             }
         }
 
         private fun commitOsThemeFabricatedOverlays(
             resourceNames: Array<String>,
             colorValues: IntArray
-        ) {
+        ): Boolean {
             commitOsThemeOverlaysOverride?.let {
-                it(resourceNames, colorValues)
-                return
+                return it(resourceNames, colorValues)
             }
-            val om = overlayManagerProxy ?: return
+            val om = overlayManagerProxy ?: return false
             try {
                 val sysRes = android.content.res.Resources.getSystem()
                 val builderClass = Class.forName("android.content.om.FabricatedOverlay\$Builder")
@@ -2577,7 +2624,7 @@ object PrivilegedHelperMain {
                     }
                 }
                 if (shellCount == 0) {
-                    return
+                    return false
                 }
                 val shellOverlay = buildOverlay.invoke(shellBuilder)
                 val neutralOverlay = if (neutralCount > 0) buildOverlay.invoke(neutralBuilder) else null
@@ -2643,8 +2690,86 @@ object PrivilegedHelperMain {
 
                 val commitMethod = om.javaClass.getMethod("commit", tx.javaClass)
                 commitMethod.invoke(om, tx)
+                return true
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to commit FabricatedOverlay for OS theme", t)
+                return false
+            }
+        }
+
+        private fun getAndroidOverlayStackInternal(): List<OverlayStackEntry>? {
+            androidOverlayInfosOverride?.let { return it() }
+            val om = overlayManagerProxy ?: return null
+            return try {
+                val method = om.javaClass.getMethod(
+                    "getOverlayInfosForTarget",
+                    String::class.java,
+                    Int::class.javaPrimitiveType
+                )
+                val list = method.invoke(om, "android", 0) as? List<*> ?: return null
+                val entries = ArrayList<OverlayStackEntry>(list.size)
+                for (item in list) {
+                    if (item == null) continue
+                    val cls = item.javaClass
+                    val pkg = try {
+                        cls.getMethod("getPackageName").invoke(item) as? String
+                    } catch (_: Throwable) {
+                        cls.getField("packageName").get(item) as? String
+                    } ?: continue
+                    val overlayName = try {
+                        cls.getMethod("getOverlayName").invoke(item) as? String
+                    } catch (_: Throwable) {
+                        try {
+                            cls.getField("overlayName").get(item) as? String
+                        } catch (_: Throwable) {
+                            null
+                        }
+                    }
+                    val enabled = try {
+                        cls.getMethod("isEnabled").invoke(item) as? Boolean ?: false
+                    } catch (_: Throwable) {
+                        false
+                    }
+                    entries.add(OverlayStackEntry(pkg, overlayName, enabled))
+                }
+                entries
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to inspect android overlay stack", t)
+                null
+            }
+        }
+
+        private fun reassertOsThemeIfNeededInternal(): Int = synchronized(osThemeLock) {
+            if (isShuttingDown) return@synchronized OS_THEME_REASSERT_HEALTHY
+            if (!osThemeOverlayActive) return@synchronized OS_THEME_REASSERT_INACTIVE
+            val names = lastOverlayResourceNames
+            val values = lastOverlayColorValues
+            if (names.isEmpty() || names.size != values.size) {
+                return@synchronized OS_THEME_REASSERT_INACTIVE
+            }
+            val entries = getAndroidOverlayStackInternal() ?: return@synchronized OS_THEME_REASSERT_FAILED
+            if (isOsThemeOverlayHealthy(entries)) {
+                return@synchronized OS_THEME_REASSERT_HEALTHY
+            }
+            val now = elapsedRealtimeProvider()
+            while (recentOsThemeReassertTimestamps.isNotEmpty() &&
+                now - recentOsThemeReassertTimestamps.first() >= OS_THEME_REASSERT_WINDOW_MS
+            ) {
+                recentOsThemeReassertTimestamps.removeFirst()
+            }
+            if ((lastOsThemeReassertElapsedMs > 0L &&
+                    now - lastOsThemeReassertElapsedMs in 0L until OS_THEME_REASSERT_MIN_INTERVAL_MS) ||
+                recentOsThemeReassertTimestamps.size >= OS_THEME_REASSERT_MAX_PER_WINDOW
+            ) {
+                Log.w(TAG, "Rate-limited OS theme overlay re-assertion")
+                return@synchronized OS_THEME_REASSERT_FAILED
+            }
+            lastOsThemeReassertElapsedMs = now
+            recentOsThemeReassertTimestamps.addLast(now)
+            return@synchronized if (commitOsThemeFabricatedOverlays(names, values)) {
+                OS_THEME_REASSERT_REASSERTED
+            } else {
+                OS_THEME_REASSERT_FAILED
             }
         }
 
@@ -2670,10 +2795,11 @@ object PrivilegedHelperMain {
             restoreNightMode: Int,
             restoreThemeJson: String,
             synchronous: Boolean = false
-        ) {
-            mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
+        ) = synchronized(osThemeLock) {
             mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
             pendingThemeRestoreJson = ""
+            lastOsThemeReassertElapsedMs = 0L
+            recentOsThemeReassertTimestamps.clear()
             lastOverlayResourceNames = emptyArray()
             lastOverlayColorValues = IntArray(0)
             val hadOverlay = hasRegisteredBdsaThemeOverlay()
@@ -2753,7 +2879,6 @@ object PrivilegedHelperMain {
         }
 
         private fun unregisterOsThemeOverlayOnly() {
-            mainHandler.removeCallbacks(reassertOverlayPriorityRunnable)
             mainHandler.removeCallbacks(finishThemeJsonRestoreRunnable)
             pendingThemeRestoreJson = ""
             val om = overlayManagerProxy ?: return

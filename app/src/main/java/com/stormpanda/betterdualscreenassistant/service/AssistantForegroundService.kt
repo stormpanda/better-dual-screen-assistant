@@ -97,6 +97,7 @@ class AssistantForegroundService : Service() {
     private var postBroadcastStockCheckJob: Job? = null
     private var fallbackBroadcastRefreezeJob: Job? = null
     private var lastLocaleTags: String = ""
+    private var lastNightModeMask: Int = 0
 
     internal var modernParallelBroadcastQueueOverride: Boolean? = null
 
@@ -208,12 +209,14 @@ class AssistantForegroundService : Service() {
                 Intent.ACTION_SCREEN_ON -> {
                     overlayManager.onDeviceScreenInteractiveChanged(true)
                     repository.resyncFloatingIconGestureGuard()
+                    repository.requestOsThemeIntegrityCheck()
                     schedulePostScreenBroadcastStockCheck()
                 }
                 Intent.ACTION_USER_PRESENT -> {
                     repository.handleUserPresentImePinMode()
                     overlayManager.onDeviceScreenInteractiveChanged(true)
                     repository.resyncFloatingIconGestureGuard()
+                    repository.requestOsThemeIntegrityCheck()
                     schedulePostScreenBroadcastStockCheck()
                 }
                 Intent.ACTION_CLOSE_SYSTEM_DIALOGS -> {
@@ -254,6 +257,7 @@ class AssistantForegroundService : Service() {
             SystemSettingsRepository.PREFS_NAME
         ).getBoolean(SystemSettingsRepository.PREF_PROMOTED_TO_MANAGER, false)
         lastLocaleTags = resources.configuration.locales.toLanguageTags()
+        lastNightModeMask = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         startForeground(NOTIFICATION_ID, createForegroundNotification(initialPromoted))
 
         PrivilegedBridge.ensureInitialized(applicationContext)
@@ -557,6 +561,13 @@ class AssistantForegroundService : Service() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        val newNightModeMask = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        if (newNightModeMask != lastNightModeMask) {
+            lastNightModeMask = newNightModeMask
+            if (::repository.isInitialized) {
+                repository.requestOsThemeIntegrityCheck()
+            }
+        }
         val newLocaleTags = newConfig.locales.toLanguageTags()
         if (newLocaleTags != lastLocaleTags) {
             lastLocaleTags = newLocaleTags
