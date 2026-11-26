@@ -650,7 +650,10 @@ class TccThemeAndOverlayFormatTest {
         val coveredLocales = listOf(
             "en", "en-US", "de-DE", "fr-FR", "es-ES", "pt-BR", "it-IT", "hu-HU", "sr-Latn",
             // Cyrillic locales covered by the bundled label font's Cyrillic glyphs
-            "ru", "ru-RU", "uk-UA", "be-BY", "bg-BG", "mk-MK"
+            "ru", "ru-RU", "ru-Cyrl", "ru-Cyrl-RU",
+            "uk-UA", "uk-Cyrl-UA",
+            "be-BY", "be-Cyrl-BY",
+            "bg-BG", "bg-Cyrl-BG"
         )
         for (tag in coveredLocales) {
             assertTrue(
@@ -662,8 +665,8 @@ class TccThemeAndOverlayFormatTest {
         val fallbackLocales = listOf(
             // CJK scripts have no bundled glyph coverage
             "zh-TW", "zh-HK", "zh-Hant", "zh-CN", "zh-Hans", "ja-JP", "ko-KR",
-            // Cyrillic with characters beyond the bundled subset (Kazakh Ө/Ү/Ң, Mongolian Ө/Ү)
-            "kk-KZ", "mn-MN",
+            // Cyrillic with characters beyond the bundled subset (Macedonian Љ/Њ, Kazakh Ө/Ү/Ң, Mongolian Ө/Ү)
+            "mk", "mk-MK", "mk-Cyrl-MK", "kk-KZ", "kk-Cyrl-KZ", "mn-MN",
             // Serbian: Latin diacritics (č/ć/ž/đ) are missing from the subset
             "sr", "sr-Cyrl",
             "ar-SA", "he-IL", "th-TH", "hi-IN", "el-GR",

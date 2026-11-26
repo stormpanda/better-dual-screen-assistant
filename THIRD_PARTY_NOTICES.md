@@ -8,12 +8,12 @@
 
 ## 1. Fusion Pixel (`app/src/main/res/font/tcc_pixel_label.ttf`)
 
-- **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, `2025.07.02`)
+- **Upstream Font**: Fusion Pixel 12px Monospaced (`latin`, `2026.11.10`)
 - **Source**: https://github.com/TakWolf/fusion-pixel-font
 - **Copyright**: `Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"`
 - **License**: SIL Open Font License, Version 1.1 (applies solely to the bundled Fusion Pixel font file; reproduced below)
 - **Bundled Variant**:
-  - `tcc_pixel_label.ttf` - modified subset of the `zh_hans` variant: Cyrillic glyphs (U+0400-U+045F) and extended Latin added, unused arrow glyphs removed, family renamed to `BDSA Pixel 12 Label` per OFL reserved-font-name clause 3.
+  - `tcc_pixel_label.ttf` - modified subset of the `latin` variant (`2026.11.10`): Cyrillic glyphs covering Russian, Ukrainian, Belarusian, and Bulgarian (91 Cyrillic glyphs) and extended Latin added, unused arrow glyphs removed, and font family / PostScript name renamed to `BDSA Pixel 12 Label` (`BDSAPixel12Label-Regular`) per OFL reserved-font-name clause 3.
 
 ---
 

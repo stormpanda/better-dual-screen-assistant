@@ -16,9 +16,11 @@ libraries listed here:
    Source: https://github.com/TakWolf/fusion-pixel-font
    License: SIL Open Font License, Version 1.1 (applies solely to the bundled Fusion Pixel font file)
    Bundled variant:
-   - tcc_pixel_label.ttf - modified subset of the zh_hans variant (2025.07.02):
-     Cyrillic glyphs (U+0400-U+045F) and extended Latin added, unused arrow glyphs removed,
-     family renamed to "BDSA Pixel 12 Label" per OFL reserved-font-name clause 3.
+   - tcc_pixel_label.ttf - modified subset of the latin variant (2026.11.10):
+     Cyrillic glyphs covering Russian, Ukrainian, Belarusian, and Bulgarian (91 Cyrillic
+     glyphs) and extended Latin added, unused arrow glyphs removed, and font family /
+     PostScript name renamed to "BDSA Pixel 12 Label" ("BDSAPixel12Label-Regular") per
+     OFL reserved-font-name clause 3.
 
 2. DOSIyagiBoldface (Version 1.00 — res/font/tcc_pixel_display.ttf)
    Copyright (c) 2022 Damheo Lee
