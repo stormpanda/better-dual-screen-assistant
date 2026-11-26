@@ -1,8 +1,24 @@
 # Contributing to Better Dual Screen Assistant
 
-First of all, thank you for taking the time to contribute to Better Dual Screen Assistant! We are excited to collaborate with the community to build a state-of-the-art dual-screen assistant and system control experience for the **AYN Thor** Android handheld.
+Thank you for your interest in **Better Dual Screen Assistant** for the **AYN Thor** and **Retroid Pocket Duo** dual-screen handhelds!
 
-By contributing to this repository, you help make Better Dual Screen Assistant more robust and powerful for everyone.
+---
+
+## TL;DR — Contribution Policy (Please Read First)
+
+> [!IMPORTANT]
+> **Pull Requests are ONLY accepted for open issues explicitly labeled `pr-welcome` by `@stormpanda`.**
+>
+> - **Why?** This repository is actively developed using agentic coding workflows and enforces strict dual-device hardware, multi-display, and `UID 0` invariants across AYN Thor and Retroid Pocket Duo. Reviewing, commenting on, and amending external PRs takes significantly more maintainer time than implementing changes directly.
+> - **Questions ≠ PR Approval:** When the maintainer replies to an issue or asks clarifying questions, **that is for scoping — it is NOT an invitation to open a PR.** Please answer the question in the issue thread instead of submitting a PR.
+> - **Uninvited PRs:** PRs that do not link an open `pr-welcome` issue are automatically flagged with `needs-pr-welcome` by our PR policy check, are not guaranteed review, and may be closed without merge.
+
+### Highest-Value Ways to Contribute (No PR Needed!)
+
+1. **Report Bugs with Diagnostics:** Open a [Bug Report](https://github.com/stormpanda/better-dual-screen-assistant/issues/new?template=bug_report.yml) with your device model, firmware/Android version, reproduction steps, and `adb logcat` output.
+2. **Propose Features & Answer Scoping Questions:** Open a [Feature Request](https://github.com/stormpanda/better-dual-screen-assistant/issues/new?template=feature_request.yml) with clear behavior and edge cases, and reply directly when follow-up questions are asked.
+3. **Hardware Testing & Device Onboarding:** Help verify builds on hardware or capture device diagnostics for new dual-screen handhelds using [`docs/devices/DEVICE_PROFILE_TEMPLATE.md`](docs/devices/DEVICE_PROFILE_TEMPLATE.md).
+4. **Build Standalone Third-Party Plugins:** Want to add a custom Quick Setting tile, live timer, or picker dialog without modifying this repo? Build an independent plugin using our Zero-SDK [Third-Party Plugin API](docs/PLUGIN_API.md) (see [bdsa-plugin-api-demo](https://github.com/stormpanda/bdsa-plugin-api-demo)).
 
 ---
 
@@ -31,73 +47,74 @@ Please note the following terms regarding the code and how you are permitted to 
 
 The Better Dual Screen Assistant codebase and its development workflows are heavily optimized for **Google Antigravity** using **Gemini models**. The repository contains specific configurations, system prompts, rules, and scripts designed to enable seamless pair-programming with AI coding agents.
 
-### Custom Skills & Automated Workflows
-We define custom workspace-level agentic instructions and automation scripts inside the [.agents/skills/](.agents/skills) directory. These are structured as "skills" that can be executed to automate or verify work:
-* `bdsa-release`: Orchestrates the Better Dual Screen Assistant release lifecycle (creating `release/X.Y.Z` branches, setting release versions, building signed release APKs, generating SHA-256 checksums, compiling changelogs, uploading GitHub release drafts, merging back to `main`, and bumping development snapshot versions).
-* `bdsa-release-changelog`: Compares git tags or commit ranges and generates structured release changelogs in GitHub Markdown format.
+### Agent Rules & Custom Skills
+* **[AGENTS.md](AGENTS.md):** Defines the mandatory first-time contributor check (`.bdsa-contrib-notice-shown`), build/ADB rules, and all multi-display and `UID 0` architectural invariants. (`CLAUDE.md` and `.github/copilot-instructions.md` also point here.)
+* **[.agents/skills/](.agents/skills):** Workspace-level release and changelog skills (`bdsa-release`, `bdsa-release-changelog`).
 
-### Recommending Google Antigravity & Gemini
-We **strongly recommend** that all contributors adopt Google Antigravity paired with Gemini models for developing contributions in this codebase.
-> [!IMPORTANT]
-> Because our architectural invariants, multi-display windowing rules, privileged execution safeguards, and coding conventions are strictly enforced via the `.agents/` workflows and [AGENTS.md](AGENTS.md) rules, contributions developed using alternative tooling may produce significant code alignment and style review overhead. To avoid delays in reviewing and merging your Pull Requests, aligning your agentic stack with the project's native Antigravity setup is highly encouraged.
+> [!NOTE]
+> If you are using an AI coding agent on a `pr-welcome` issue (or for personal builds), ensure it reads [AGENTS.md](AGENTS.md) before modifying code. Unaligned AI-generated PRs that violate hardware or UI invariants create heavy review overhead and will be declined.
 
 ---
 
-## Code Guidelines & Conventions
+## Code Guidelines & Hardware Invariants
 
-To maintain codebase health, hardware safety, and high execution performance, please adhere to the following standards defined in [AGENTS.md](AGENTS.md):
+If you are working on an approved `pr-welcome` issue (or a personal build), adhere to the standards in [AGENTS.md](AGENTS.md):
 
 ### 1. Architectural Integrity
 Better Dual Screen Assistant is organized into clear package responsibilities within `:app`:
-* **`com.stormpanda.betterdualscreenassistant.overlay` (Bottom-Screen Overlay Layer):** Window lifecycle on `displayId = 4` (`ScreenOverlayManager`) and custom non-Material canvas UI (`AssistantOverlayScreen`, `TccWidgets`, `StatusBarRow`) preserving 1:1 visual and dimensional parity (`840dp × 732dp`, `1240×1080`) with the stock assistant.
-* **`com.stormpanda.betterdualscreenassistant.ui` (Top-Screen Companion & Theming Layer):** Gamepad-first Companion Settings App on `displayId = 0` (`CompanionSettingsScreen`), modal dialogs, theme palettes (`AppTheme`), and Android 13 Monet OS theme injection (`OsThemeOverlayManager`).
-* **`com.stormpanda.betterdualscreenassistant.privileged` (Privileged Execution & Watchdog Layer):** 3-tier privileged execution model (`PrivilegedBridge` -> `PrivilegedHelperMain` `UID 0` Binder daemon -> `PServerClient` root service), ephemeral stock `DualScreenAssistant` RAM suppression (`SIGSTOP`), and `IBinder.DeathRecipient` uninstall/force-stop recovery.
-* **`com.stormpanda.betterdualscreenassistant.system` (Hardware & System Integration Layer):** `Settings.System`/`Global`/`Secure` state repository (`SystemSettingsRepository`), sysfs hardware telemetry, and vendor Binder services (`VendorServices`: `IFanControlProvider`, `IOverviewProxy`, `IMappingService`).
-* **`com.stormpanda.betterdualscreenassistant.service` & `.receiver` (Lifecycle & Input State Machine):** Persistent foreground service (`AssistantForegroundService`), physical AYN/TCC button 3-state machine, and broadcast receivers (`TccKeyReceiver`, `BootReceiver`).
-* **`com.stormpanda.megingiard` (Shared Design System & Utilities):** Gamepad-first design system, 2D controller focus navigation (`SettingsFocusArea`), logging facade (`AppLog`), and GitHub/Obtainium update checker (`UpdateRepository`).
+* **`com.stormpanda.betterdualscreenassistant` (App Entry & Companion Settings):** `BetterDualScreenApp` and the gamepad-first Top-Screen Companion Settings App on `displayId = 0` (`MainActivity` / `BetterDualScreenSettingsScreen`).
+* **`com.stormpanda.betterdualscreenassistant.overlay` (Bottom-Screen Overlay Window Layer):** Display-context window lifecycle and blanking overlays on `profile.bottomDisplayId` (`ScreenOverlayManager`).
+* **`com.stormpanda.betterdualscreenassistant.ui` (Overlay UI, Custom Canvas Widgets & Theming Layer):** Bottom-screen overlay UI (`ui.overlay`: `AssistantOverlayScreen`, `OverlayDialogs`), custom non-Material canvas widgets (`ui.components`: `TccWidgets`), status bar (`ui.statusbar`: `StatusBarRow`), and canonical `720dp` viewport, look specs, and Monet `FabricatedOverlay` palette builders (`ui.theme`: `TccLookSpec`, `TccTheme`) preserving 1:1 visual and dimensional parity across **AYN Smooth** and **Retroid Pixel** looks.
+* **`com.stormpanda.betterdualscreenassistant.privileged` (Privileged Execution, Recording & Watchdog Layer):** 3-tier privileged execution model (`PrivilegedBridge` -> `PrivilegedHelperMain` `UID 0` daemon -> `PServerClient` root service), Android 13–16 Monet OS theme overlay injection/cleanup, hardware screen recording (`ScreenRecorderEngine`), ephemeral stock `DualScreenAssistant` RAM suppression (`SIGSTOP`), and `IBinder.DeathRecipient` uninstall/force-stop recovery.
+* **`com.stormpanda.betterdualscreenassistant.system` (Hardware & System Integration Layer):** `DeviceProfile` hardware abstraction, `Settings.System`/`Global`/`Secure` state repository (`SystemSettingsRepository`), `DirectBootPrefs`, `QuickSettingTileId`, sysfs/FPS telemetry (`TelemetryMonitor`), and vendor Binder services (`VendorServices`: `IFanControlProvider`, `IOverviewProxy` / `ILauncherProxy`, `IServerApi`).
+* **`com.stormpanda.betterdualscreenassistant.plugin` (Zero-SDK Plugin API Layer):** Manifest/XML discovery, icon loading, and `ContentProvider`/broadcast IPC for standalone third-party plugins (`BdsaPluginContract`, `PluginRegistry`, `BdsaPluginProvider`, `PluginIconLoader`, `PluginModels`).
+* **`com.stormpanda.betterdualscreenassistant.service` & `.receiver` (Lifecycle & Input State Machine):** Persistent foreground service (`AssistantForegroundService`), physical AYN / Dual Screen (`TCC`) button 3-state machine, and broadcast receivers (`TccKeyReceiver`, `BootReceiver`).
+* **`com.stormpanda.megingiard` (Shared Design System & Utilities):** Gamepad-first design system and 2D controller focus navigation (`GamepadScaffold`, `GamepadLayoutContainers`, `GamepadKeyHandlers`, `AppTheme`, `AppPalettes`), logging facade (`AppLog`), and GitHub/Obtainium update checker (`UpdateManager`).
 
-### 2. Multi-Display & Privileged Hardware Invariants
-* **Display 4 Overlay Sizing:** Always obtain the `WindowManager` from `context.createDisplayContext(display4)` with explicit pixel dimensions (`1240×1080` via `display.getRealSize()`), `Gravity.CENTER`, and `TYPE_APPLICATION_OVERLAY`. **Never** use `FLAG_LAYOUT_NO_LIMITS` on `displayId = 4`.
-* **Safe Ephemeral Stock Suppression:** Never leave `com.odin.dualscreen.assistant` or `.services.TccServices` permanently `pm disable`d on disk. Always follow the ephemeral `SIGSTOP` sequence documented in [AGENTS.md](AGENTS.md) and preserve automatic recovery in `PrivilegedHelperMain` upon uninstall or force-stop.
-* **Physical AYN Button State Machine:** Maintain strict 3-state handling (`onTccKeyDown` no-op, `onTccKeyLongPress` screen blanking, `onTccKeyShortPressUp` wake or `200ms` debounced overlay toggle) in `AssistantForegroundService` and single-receiver delegation in `TccKeyReceiver`.
-* **Bottom-Screen UI Parity:** Maintain the exact vertical heights (`44dp` status bar, `578dp` main panel card, `80dp` bottom navigation bar pill) and custom canvas widgets in `TccWidgets.kt` rather than substituting standard Material 3 sliders or cards on the bottom-screen overlay.
+### 2. Dual-Device & Privileged Hardware Invariants
+* **Dual-Device Support:** Preserve behavior across both **AYN Thor** (`displayId = 4`, `1240×1080`, Android 13 / SDK 33, `com.odin.dualscreen.assistant`, OLED layer + `-1.0f` brightness blanking) and **Retroid Pocket Duo** (`displayId = 2`, `1280×960`, Android 16 / SDK 36, `com.retroidpocket.dualscreen.assistant`, kernel `panel{0,1}-backlight/bl_power` blanking) via `DeviceProfile`.
+* **Bottom-Display Overlay Sizing & Windowing:** Obtain the `WindowManager` from `context.createDisplayContext(bottomDisplay)` with explicit pixel dimensions (`display.getRealSize()`), `Gravity.CENTER`, and privileged window type `2021` (`PRIVILEGED_OVERLAY_WINDOW_TYPE`, with `TYPE_APPLICATION_OVERLAY` `2038` fallback). **Never** use `FLAG_LAYOUT_NO_LIMITS` on the bottom display.
+* **Canonical Viewport & Custom Canvas Parity:** Render bottom-screen overlay UI inside `OverlayViewport` (canonical `720dp` short-edge coordinate space) driven by `LocalTccLookSpec` (`AynLookSpec` / `RetroidLookSpec` / `RetroidReadableLookSpec`) and custom canvas widgets in `TccWidgets.kt` rather than substituting standard Material 3 sliders or cards.
+* **Safe Ephemeral Stock Suppression:** Never leave `com.odin.dualscreen.assistant`, `com.retroidpocket.dualscreen.assistant`, or `.services.TccServices` permanently `pm disable`d on disk. Always follow the ephemeral `SIGSTOP` sequence documented in [AGENTS.md](AGENTS.md) and preserve automatic recovery in `PrivilegedHelperMain` upon uninstall, disable, opt-out, or force-stop.
+* **Physical TCC Button State Machine:** Maintain strict 3-state handling (key-down no-op, long-press screen blank/toggle, key-up wake or `200ms` debounced overlay toggle) in `AssistantForegroundService` and single-receiver delegation in `TccKeyReceiver`.
 
 ### 3. Kotlin & Compose Conventions
-* **Kotlin 2.0+:** Write modern Kotlin. Use `enum.entries` (never `enum.values()`). Use `kotlin.math.min`/`max` (never `java.lang.Math.*`).
+* **Kotlin 2.0+:** Use `enum.entries` (never `enum.values()`) and `kotlin.math.min`/`max` (never `java.lang.Math.*`).
 * **Imports:** Always use explicit, fully-qualified imports. **Do not use wildcard/star imports** (`import foo.*`).
 * **Constants:** Extract magic numbers, system setting keys, and sysfs paths to well-named `SCREAMING_SNAKE_CASE` constants.
 
 ### 4. Logging Guidelines
-* Route shared component logging through `com.stormpanda.megingiard.AppLog` or use consistent component tags (`BetterDSAApp`, `AssistantFgService`, `ScreenOverlayManager`, `SystemSettingsRepo`, `PrivilegedBridge`, `PrivilegedHelperMain`, `PServerClient`).
+* Route shared component logging through `com.stormpanda.megingiard.AppLog` or use consistent component tags (`AssistantFgService`, `ScreenOverlayManager`, `PrivilegedBridge`, `PrivilegedHelperMain`, `PServerClient`, `ScreenRecorderEngine`, `PluginRegistry`, `FanControlClient`, `OverviewProxyClient`, `MappingServiceClient`, `UpdateManager`).
 * Add informative logs at major lifecycle milestones, privileged Binder transactions, state mutations, and error fallback pathways.
 
 ---
 
-## How to Contribute
+## Submitting a Pull Request (Only for `pr-welcome` Issues)
 
-### Step 1: Open an Issue First
-**You must open a GitHub issue describing your proposed change and receive explicit approval/feedback from the maintainer before starting work.** This prevents duplicate work, ensures your proposal aligns with the architectural design, and guarantees your PR will be considered.
+> [!CAUTION]
+> Do **not** fork and open a Pull Request unless an open GitHub issue already has the **`pr-welcome`** label applied by `@stormpanda`. Uninvited PRs will automatically receive the `needs-pr-welcome` label from `.github/workflows/pr-gate.yml` and may be closed without review.
+
+### Step 1: Confirm `pr-welcome` Approval
+Verify that the target issue is **open** and carries the **`pr-welcome`** label applied by `@stormpanda`.
 
 ### Step 2: Fork and Branch
 1. Fork the official Better Dual Screen Assistant repository.
 2. Clone your fork locally.
-3. Create a new descriptive branch from `main`:
+3. Create a descriptive branch from `main`:
    ```bash
-   git checkout -b feature/my-amazing-feature
+   git checkout -b feature/my-approved-feature
    # or
-   git checkout -b bugfix/fix-overlay-animation
+   git checkout -b fix/my-approved-fix
    ```
 
 ### Step 3: Implement, Synchronize, and Verify
-1. **Sync with Upstream:** Before implementing and before submitting a PR, ensure your branch is updated to the latest commit on the upstream `main` branch:
+1. **Sync with Upstream:** Ensure your branch is rebased onto or merged with the latest upstream `main`:
    ```bash
    git fetch upstream
    git rebase upstream/main
-   # or merge
-   git merge upstream/main
    ```
-2. **Implement:** Write your code following the guidelines in [AGENTS.md](AGENTS.md).
-3. **Mandatory Testing & Build Verification:** Run the unit tests and verify a clean build locally before submitting any contribution to ensure there are no regressions:
+2. **Implement:** Follow [AGENTS.md](AGENTS.md) and keep changes strictly scoped to the `pr-welcome` issue.
+3. **Mandatory Testing & Build Verification:**
    ```bash
    # Run all unit tests
    ./gradlew testDebugUnitTest
@@ -106,17 +123,12 @@ Better Dual Screen Assistant is organized into clear package responsibilities wi
    ./scripts/debug.sh build
    ```
 4. **Mandatory Documentation Sync:**
-   - If your changes affect user-facing features, Quick Setting tiles, or Companion Settings options, you **must** update [`docs/FUNCTIONAL_SPECIFICATION.md`](docs/FUNCTIONAL_SPECIFICATION.md), [`docs/UI_AND_THEMING.md`](docs/UI_AND_THEMING.md), and [`README.md`](README.md).
-   - If your changes affect privileged execution, system settings keys, vendor Binder calls, or security properties, you **must** update [`docs/TECHNICAL_ARCHITECTURE.md`](docs/TECHNICAL_ARCHITECTURE.md), [`docs/SYSTEM_INTEGRATION_REFERENCE.md`](docs/SYSTEM_INTEGRATION_REFERENCE.md), and [`docs/SECURITY.md`](docs/SECURITY.md).
-5. **Hardware Verification:** If possible, verify your changes on physical hardware (**AYN Thor**).
+   - If your changes affect user-facing features, Quick Setting tiles, or Companion Settings options, update [`docs/FUNCTIONAL_SPECIFICATION.md`](docs/FUNCTIONAL_SPECIFICATION.md), [`docs/UI_AND_THEMING.md`](docs/UI_AND_THEMING.md), and [`README.md`](README.md).
+   - If your changes affect privileged execution, system settings keys, vendor Binder calls, device profiles, or security properties, update [`docs/TECHNICAL_ARCHITECTURE.md`](docs/TECHNICAL_ARCHITECTURE.md), [`docs/SYSTEM_INTEGRATION_REFERENCE.md`](docs/SYSTEM_INTEGRATION_REFERENCE.md), [`docs/SECURITY.md`](docs/SECURITY.md), and the relevant [`docs/devices/`](docs/devices/) doc.
+5. **Mandatory Real-Hardware Verification:** All code changes **must** be tested on real physical hardware on **at least one of the supported devices** (**AYN Thor** or **Retroid Pocket Duo**) before submitting a PR. Untested or emulator-only PRs will not be reviewed.
 
-### Step 4: Submit a Pull Request
-1. Commit your changes with clear, descriptive commit messages matching [Conventional Commits](https://www.conventionalcommits.org/).
-2. Push your branch to your GitHub fork.
-3. Open a Pull Request (PR) against the `main` branch of the official repository.
-4. Describe your changes clearly in the PR description. If a test binary is needed, contact the maintainer to arrange sending it privately; **never** attach compiled APKs or binaries publicly in GitHub comments or issues.
-
----
-
-## Need Help?
-If you have questions about the system architecture, need help getting your local build set up, or want to discuss a design, feel free to open a Discussion or Issue on GitHub. We're happy to collaborate!
+### Step 4: Open the Pull Request
+1. Commit changes using [Conventional Commits](https://www.conventionalcommits.org/).
+2. Push your branch to your fork and open a PR against `main`.
+3. Link the approved issue in the PR body (e.g., `Closes #<issue-number>`) so the automated `PR Policy Gate` passes and does not flag the PR with `needs-pr-welcome`.
+4. **Never** attach compiled APKs or binaries publicly in GitHub PRs or issues; if a test build is requested by the maintainer, arrange to share it privately.

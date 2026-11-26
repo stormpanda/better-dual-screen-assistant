@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Build a Third-Party Plugin (Zero-SDK Plugin API)
+    url: https://github.com/stormpanda/better-dual-screen-assistant/blob/main/docs/PLUGIN_API.md
+    about: Add custom Quick Setting tiles, timers, and picker dialogs without modifying this repo or waiting for a PR.
+  - name: Onboard a New Dual-Screen Device
+    url: https://github.com/stormpanda/better-dual-screen-assistant/blob/main/docs/devices/DEVICE_PROFILE_TEMPLATE.md
+    about: Capture hardware diagnostics with the 10-section template and ADB commands, then submit the filled profile via a Feature Request issue.

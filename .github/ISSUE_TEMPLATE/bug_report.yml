@@ -1,0 +1,75 @@
+name: Bug Report
+description: Report a crash, visual glitch, or hardware/system integration bug
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Detailed diagnostics (`adb logcat`, device model, firmware) are one of the highest-value ways to help this project.
+        Please **do not open a Pull Request** for this bug unless `@stormpanda` explicitly adds the `pr-welcome` label to this issue.
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - AYN Thor
+        - Retroid Pocket Duo
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App Version & Build Type
+      description: e.g., v1.x.x Release, Debug build, or commit hash
+      placeholder: "e.g., v1.2.0 (Release)"
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware / Android Version
+      description: Android version and stock firmware / OTA version if known
+      placeholder: "e.g., Android 13 (AYN Thor OTA ...)"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What Happened?
+      description: Describe the actual behavior vs. what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: ADB Logcat / Diagnostics (Optional)
+      description: Relevant `adb logcat` output (tags like `AssistantFgService`, `ScreenOverlayManager`, `PrivilegedBridge`, `PrivilegedHelperMain`, `PServerClient`, `ScreenRecorderEngine`). Please do not attach compiled APKs.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: policy_ack
+    attributes:
+      label: Contribution Policy Acknowledgment
+      options:
+        - label: I understand that opening or discussing this bug report is NOT an invitation to submit a Pull Request unless `@stormpanda` explicitly adds the `pr-welcome` label.
+          required: true

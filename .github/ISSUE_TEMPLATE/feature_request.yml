@@ -1,0 +1,58 @@
+name: Feature Request / Proposal
+description: Propose a new feature, UI improvement, or device enhancement (do not submit a PR unless labeled pr-welcome)
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Important:** Please **do NOT submit a Pull Request** unless `@stormpanda` explicitly adds the `pr-welcome` label to this issue.
+        Because this project is maintained using agentic coding workflows, reviewing external PRs takes more time than implementing features directly. If the maintainer asks clarifying questions on this issue, please **answer the questions here** rather than opening a PR.
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Target Device(s)
+      options:
+        - AYN Thor
+        - Retroid Pocket Duo
+        - Both devices
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Goal
+      description: What problem does this solve, or what workflow are you trying to improve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Desired Behavior
+      description: Describe clearly how this should work, including edge cases (e.g., screen blanking, gamepad focus, AYN/Dual Screen button behavior).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: plugin_api
+    attributes:
+      label: Could this be a standalone Plugin instead?
+      description: Custom Quick Setting tiles, live timers, and picker dialogs can be shipped independently via docs/PLUGIN_API.md without modifying the app.
+      options:
+        - No — requires core system/overlay integration
+        - Yes — would work as a plugin, just sharing the idea
+        - Not sure
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: policy_ack
+    attributes:
+      label: Contribution Policy Acknowledgment
+      options:
+        - label: I understand that opening or discussing this issue (including answering maintainer follow-up questions) is NOT an invitation to submit a Pull Request unless the `pr-welcome` label is explicitly applied.
+          required: true

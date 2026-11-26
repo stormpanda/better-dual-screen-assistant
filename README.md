@@ -44,7 +44,7 @@ Full functional and technical documentation is available in [`docs/`](docs/):
 | **[UI Architecture, Custom Widgets & Theming](docs/UI_AND_THEMING.md)** | Specification of the canonical `720dp` `OverlayViewport` + `TccLookSpec` (`AYN Smooth` & `Retroid Pixel`), custom non-Material canvas widgets (`HorizontalSlidingBar`, `HardwareRingGauge`, `FrameRatePanelCard`, `BatteryIconCanvas`), the `AppThemeOption` theme palettes, and the embedded `com.stormpanda.megingiard` gamepad design system. |
 | **[Third-Party Plugin API](docs/PLUGIN_API.md)** | Zero-SDK API (v1) for third-party Android apps to add custom Quick Setting tiles, live chronometers, and native in-overlay picker dialogs via manifest/XML discovery, broadcasts, and `ContentProvider` IPC. See the reference demo project: [bdsa-plugin-api-demo](https://github.com/stormpanda/bdsa-plugin-api-demo). |
 | **[Build, Release & Developer Guide](docs/BUILD_AND_RELEASE.md)** | Developer instructions for keystore signing (`local.properties`), debug builds (`scripts/debug.sh`), release git-flow automation (`scripts/release.sh`), SHA-256 verification (`scripts/generate_checksum.sh`), and ADB inspection commands. |
-| **[Contributing Guidelines](CONTRIBUTING.md)** | Architectural rules, multi-display & privileged hardware invariants, coding conventions, and licensing compliance instructions for contributors. |
+| **[Contributing Guidelines](CONTRIBUTING.md)** | Contribution policy (`pr-welcome`-gated PRs, issue guidelines, Plugin API alternative), dual-device hardware invariants, coding conventions, and licensing compliance. |
 | **[Agent Guidelines](AGENTS.md)** | Essential context, architectural invariants, hardware quirks, and workflow rules for AI coding agents working on this project. |
 
 ---

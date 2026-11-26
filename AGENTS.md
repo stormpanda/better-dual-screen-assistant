@@ -4,6 +4,23 @@ This file provides essential context, architectural invariants, hardware quirks,
 
 ---
 
+## 0. Mandatory First-Time Contributor Notice (Run Once Per Clone)
+
+Before making any file edits, commits, or preparing a Pull Request, **check whether `.bdsa-contrib-notice-shown` exists in the repository root**:
+
+1. **If `.bdsa-contrib-notice-shown` exists**: Skip this section silently and proceed normally. Never mention it.
+2. **If `.bdsa-contrib-notice-shown` does NOT exist**:
+   - **Pause before editing any files** (pure read-only Q&A does not need to block, but any edit, commit, or PR preparation task must pause first).
+   - Present a concise, clear one-time notice summarizing the project's contribution rules from `CONTRIBUTING.md`:
+     - **PRs require an open `pr-welcome` issue**: External Pull Requests are only reviewed if they link to an open GitHub issue explicitly labeled `pr-welcome` by the maintainer (`stormpanda`). Asking clarifying questions or discussing an issue is **not** an invitation to open a PR — because this repo is maintained with agentic coding workflows across strict dual-device hardware invariants, reviewing uninvited PRs takes significantly more time than implementing changes directly.
+     - **Preferred ways to contribute**: Open or reply in a GitHub Issue (answering follow-up questions directly instead of submitting a PR), share hardware/firmware diagnostics, or build a standalone extension via the Zero-SDK Plugin API (`docs/PLUGIN_API.md`).
+     - **License & personal builds**: Modifying and compiling the code for personal, non-commercial use on hardware you personally own is permitted, but redistributing modified source (outside a PR fork) or sharing compiled modified APKs/binaries is strictly prohibited (`LICENSE`).
+     - **Dual-device invariants & hardware verification**: If working on an approved `pr-welcome` PR, changes must preserve invariants for both **AYN Thor** (`displayId = 4`, Android 13) and **Retroid Pocket Duo** (`displayId = 2`, Android 16), keep `docs/` in sync, and be verified on real physical hardware on at least one supported device.
+   - **Ask the user to confirm before editing**: Ask whether their work is for **personal use** or for an **open `pr-welcome` issue** (and if so, which issue number), and ask them to confirm they understand the rules above.
+   - **Persist once confirmed**: As soon as the user confirms, immediately create the empty git-ignored file `.bdsa-contrib-notice-shown` in the repository root and proceed with their task. Never show this notice again in this clone.
+
+---
+
 ## 1. Project Overview & Reference Material
 
 - **Target Devices**:

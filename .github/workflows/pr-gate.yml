@@ -1,0 +1,289 @@
+name: PR Policy Gate
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-pr-welcome:
+    if: github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify linked pr-welcome issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const REQUIRED_LABEL = 'pr-welcome';
+            const WARNING_LABEL = 'needs-pr-welcome';
+            const MARKER = '<!-- bdsa-pr-gate -->';
+
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const author = pr.user?.login || '';
+
+            // 1. Bypass gate for repository owner, org members, and maintainers with write+ access
+            if (author.toLowerCase() === owner.toLowerCase()) {
+              core.info(`Bypassing PR gate for repository owner @${author}.`);
+              return;
+            }
+
+            const assoc = (pr.author_association || '').toUpperCase();
+            if (assoc === 'OWNER' || assoc === 'MEMBER') {
+              core.info(`Bypassing PR gate for @${author} (author_association: ${assoc}).`);
+              return;
+            }
+
+            try {
+              const perm = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username: author,
+              });
+              const level = perm.data?.permission;
+              if (level === 'admin' || level === 'maintain' || level === 'write') {
+                core.info(`Bypassing PR gate for @${author} (permission: ${level}).`);
+                return;
+              }
+            } catch (err) {
+              core.info(`Permission lookup failed for @${author}: ${err.message}`);
+            }
+
+            // 2. Extract referenced issue numbers from PR body
+            const body = pr.body || '';
+            const sanitizedBody = body
+              .replace(/<!--[\s\S]*?-->/g, ' ')
+              .replace(/```[\s\S]*?```/g, ' ')
+              .replace(/`[^`]*`/g, ' ');
+            const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const escapedOwner = escapeRegExp(owner);
+            const escapedRepo = escapeRegExp(repo);
+
+            const issueSet = new Set();
+            const patterns = [
+              new RegExp(`https?://github\\.com/${escapedOwner}/${escapedRepo}/issues/(\\d+)\\b`, 'gi'),
+              new RegExp(`${escapedOwner}/${escapedRepo}#(\\d+)\\b`, 'gi'),
+              /(?:^|[\s([,;:])#(\d{1,5})\b/g,
+            ];
+
+            for (const regex of patterns) {
+              for (const match of sanitizedBody.matchAll(regex)) {
+                const num = Number(match[1]);
+                if (Number.isInteger(num) && num > 0 && num !== pr.number) {
+                  issueSet.add(num);
+                }
+              }
+            }
+
+            const referencedNumbers = Array.from(issueSet).slice(0, 15);
+
+            // 3. Validate each referenced issue
+            let validIssueNumber = null;
+            const rejectionReasons = [];
+
+            for (const issueNumber of referencedNumbers) {
+              let issue;
+              try {
+                const res = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                });
+                issue = res.data;
+              } catch (err) {
+                if (err.status === 404) {
+                  rejectionReasons.push(`- \`#${issueNumber}\`: issue not found in this repository.`);
+                  continue;
+                }
+                throw err;
+              }
+
+              if (issue.pull_request) {
+                rejectionReasons.push(`- \`#${issueNumber}\`: is a Pull Request, not an issue.`);
+                continue;
+              }
+
+              if (issue.state !== 'open') {
+                rejectionReasons.push(`- \`#${issueNumber}\`: issue is \`${issue.state}\` (must be \`open\`).`);
+                continue;
+              }
+
+              const hasRequiredLabel = (issue.labels || []).some(
+                (label) => (label.name || '').toLowerCase() === REQUIRED_LABEL
+              );
+              if (!hasRequiredLabel) {
+                rejectionReasons.push(`- \`#${issueNumber}\`: missing the \`${REQUIRED_LABEL}\` label.`);
+                continue;
+              }
+
+              // Ensure pr-welcome was applied by the repository owner
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                owner,
+                repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+              const labeledEvents = events.filter(
+                (ev) =>
+                  ev.event === 'labeled' &&
+                  ev.label &&
+                  (ev.label.name || '').toLowerCase() === REQUIRED_LABEL
+              );
+              const latestLabelEvent = labeledEvents[labeledEvents.length - 1];
+              const labeledBy = latestLabelEvent?.actor?.login || '';
+              if (labeledBy.toLowerCase() !== owner.toLowerCase()) {
+                rejectionReasons.push(
+                  `- \`#${issueNumber}\`: \`${REQUIRED_LABEL}\` label was not applied by \`@${owner}\`.`
+                );
+                continue;
+              }
+
+              validIssueNumber = issueNumber;
+              break;
+            }
+
+            // 4. Find any existing bot comment
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            const existingComment = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && (c.body || '').includes(MARKER)
+            );
+
+            // 5. Handle valid vs. uninvited PR
+            if (validIssueNumber !== null) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  name: WARNING_LABEL,
+                });
+              } catch (err) {
+                if (err.status !== 404) throw err;
+              }
+
+              if (existingComment) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body: [
+                    MARKER,
+                    `✅ **PR Policy Check Passed**`,
+                    '',
+                    `Thanks for linking open \`${REQUIRED_LABEL}\` issue #${validIssueNumber}. The \`${WARNING_LABEL}\` label has been removed.`,
+                  ].join('\n'),
+                });
+              }
+              return;
+            }
+
+            // Preserve manual label removal by a maintainer on subsequent PR edits
+            const prHasWarningLabel = (pr.labels || []).some(
+              (l) => (l.name || '').toLowerCase() === WARNING_LABEL
+            );
+            const previouslyPassed = Boolean(
+              existingComment && (existingComment.body || '').includes('✅ **PR Policy Check Passed**')
+            );
+            if (
+              context.payload.action === 'edited' &&
+              existingComment &&
+              !previouslyPassed &&
+              !prHasWarningLabel
+            ) {
+              core.info(
+                `Skipping re-labeling on PR #${pr.number}: '${WARNING_LABEL}' was manually removed.`
+              );
+              return;
+            }
+
+            // Ensure warning label exists, then apply it
+            try {
+              await github.rest.issues.getLabel({
+                owner,
+                repo,
+                name: WARNING_LABEL,
+              });
+            } catch (err) {
+              if (err.status === 404) {
+                try {
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name: WARNING_LABEL,
+                    color: 'fbca04',
+                    description: `PR does not link an open issue labeled ${REQUIRED_LABEL}`,
+                  });
+                } catch (createErr) {
+                  if (createErr.status !== 422) throw createErr;
+                }
+              } else {
+                throw err;
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: pr.number,
+              labels: [WARNING_LABEL],
+            });
+
+            const statusBlock =
+              referencedNumbers.length === 0
+                ? 'No open GitHub issue with the `pr-welcome` label is linked in the PR description.'
+                : ['Checked the referenced issue(s), none qualify yet:', ...rejectionReasons].join('\n');
+
+            const replyBody = [
+              MARKER,
+              `Hi @${author} — thank you for your interest and effort on **Better Dual Screen Assistant**!`,
+              '',
+              `> [!NOTE]`,
+              `> **Automated Policy Notice:** This PR has been tagged \`${WARNING_LABEL}\` because it does not reference an open issue explicitly labeled \`${REQUIRED_LABEL}\` by \`@${owner}\`.`,
+              '',
+              statusBlock,
+              '',
+              `### Why this rule exists`,
+              `This project is actively maintained with agentic coding workflows and strict dual-device hardware invariants (AYN Thor & Retroid Pocket Duo). Reviewing, commenting on, and iterating on external PRs takes significantly more maintainer time than implementing changes directly.`,
+              '',
+              `Please also note that **asking clarifying questions or discussing an issue is not an invitation to open a PR** — only the \`${REQUIRED_LABEL}\` label applied by \`@${owner}\` indicates a PR is requested.`,
+              '',
+              `### Next steps`,
+              `1. **Already have an approved \`${REQUIRED_LABEL}\` issue?** Edit this PR's description to add \`Closes #<issue-number>\`. This check will re-run automatically and remove \`${WARNING_LABEL}\`.`,
+              `2. **Otherwise:** Please open (or reply in) a GitHub Issue so \`@${owner}\` can scope and implement the change directly.`,
+              `3. **Want to add a custom Quick Setting tile or feature right away?** You can ship a standalone extension using the Zero-SDK [Third-Party Plugin API](https://github.com/${owner}/${repo}/blob/main/docs/PLUGIN_API.md).`,
+              '',
+              `_This PR has **not** been automatically closed, but uninvited PRs are not guaranteed review and may be closed without merge._`,
+            ].join('\n');
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body: replyBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body: replyBody,
+              });
+            }
+
+            core.setFailed(
+              `PR #${pr.number} does not link an open issue labeled '${REQUIRED_LABEL}' by @${owner}.`
+            );
