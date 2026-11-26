@@ -17,7 +17,7 @@ This document specifies the visual layout geometry, custom non-Material canvas w
    - [2.4 `HardwareRingGauge` (270° Circular Telemetry Gauge)](#24-hardwareringgauge-270-circular-telemetry-gauge)
    - [2.5 `BatteryIconCanvas` (Status Bar Battery & Charging Bolt)](#25-batteryiconcanvas-status-bar-battery--charging-bolt)
 3. [Theme Architecture (`TccTheme.kt` & `AppPalettes.kt`)](#3-theme-architecture-tccthemekt--apppaletteskt)
-   - [3.1 Complete `AppThemeOption` Catalogue (12 Options)](#31-complete-appthemeoption-catalogue-12-options)
+   - [3.1 Complete `AppThemeOption` Catalogue (13 Options)](#31-complete-appthemeoption-catalogue-13-options)
    - [3.2 `TccThemeColors` Token Mapping](#32-tccthemecolors-token-mapping)
    - [3.3 Vector Drawable Tinting (`tccIconTint`)](#33-vector-drawable-tinting-tccicontint)
 4. [Embedded Megingiard Gamepad UI System (`com.stormpanda.megingiard`)](#4-embedded-megingiard-gamepad-ui-system-comstormpandamegingiard)
@@ -124,7 +124,7 @@ Replicates `com.odin.dualscreen.assistant.view.BatteryView` in [`StatusBarRow.kt
 
 Defined in [`TccTheme.kt`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/betterdualscreenassistant/ui/theme/TccTheme.kt) and [`AppPalettes.kt`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/megingiard/ui/AppPalettes.kt).
 
-### 3.1 Complete `AppThemeOption` Catalogue (12 Options)
+### 3.1 Complete `AppThemeOption` Catalogue (13 Options)
 
 | Enum Constant | Persisted `id` | Display Name | Supports Custom Accent | Category |
 | :--- | :---: | :--- | :---: | :--- |
@@ -140,6 +140,7 @@ Defined in [`TccTheme.kt`](file:///Users/maikthomalla/Development/better-dual-sc
 | `AURORA` | `106` | `Aurora Borealis` | No | Custom Palette |
 | `RETRO_PHOSPHOR` | `107` | `Retro Phosphor` | No | Custom Palette |
 | `ROYAL_ASGARD` | `108` | `Royal Asgard` | No | Custom Palette |
+| `NIFLHEIM` | `109` | `Niflheim Dusk` | No | Custom Palette |
 
 *(Note: Legacy stock ID `2` is automatically migrated to `1` (`STOCK_SYSTEM`) in `AppThemeOption.fromId()`).*
 
@@ -160,7 +161,7 @@ Defined in [`TccTheme.kt`](file:///Users/maikthomalla/Development/better-dual-sc
 
 ### 3.3 Vector Drawable Tinting (`tccIconTint`)
 
-Stock vector drawables (`ic_mode_dual`, `ic_brightness_top`, `ic_volume_bottom`, etc.) are authored with white `#FFFFFFFF` fills for dark mode. Rather than duplicating every XML drawable for light mode and custom palettes, [`tccIconTint(color)`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/betterdualscreenassistant/ui/theme/TccTheme.kt#L604) applies `ColorFilter.tint(color, BlendMode.SrcIn)` so every icon adapts dynamically to Stock Dark, Stock Light, and all 8 Megingiard palettes.
+Stock vector drawables (`ic_mode_dual`, `ic_brightness_top`, `ic_volume_bottom`, etc.) are authored with white `#FFFFFFFF` fills for dark mode. Rather than duplicating every XML drawable for light mode and custom palettes, [`tccIconTint(color)`](file:///Users/maikthomalla/Development/better-dual-screen-assistant/app/src/main/java/com/stormpanda/betterdualscreenassistant/ui/theme/TccTheme.kt#L604) applies `ColorFilter.tint(color, BlendMode.SrcIn)` so every icon adapts dynamically to Stock Dark, Stock Light, and all 9 Megingiard palettes.
 
 ---
 

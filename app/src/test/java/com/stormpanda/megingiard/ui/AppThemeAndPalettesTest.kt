@@ -21,6 +21,7 @@ class AppThemeAndPalettesTest {
         assertFalse(ThemeMode.AURORA.supportsCustomAccent)
         assertFalse(ThemeMode.RETRO_PHOSPHOR.supportsCustomAccent)
         assertFalse(ThemeMode.ROYAL_ASGARD.supportsCustomAccent)
+        assertFalse(ThemeMode.NIFLHEIM.supportsCustomAccent)
     }
 
     @Test
@@ -59,6 +60,13 @@ class AppThemeAndPalettesTest {
         val fixedBase = paletteFor(ThemeMode.MEGINGIARD, userAccent = null)
         val fixedWithUser = paletteFor(ThemeMode.MEGINGIARD, userAccent = brightAccent)
         assertEquals(fixedBase.accent, fixedWithUser.accent)
+
+        // Niflheim Dusk preserves high-contrast dark content colors on mauve accent and rose error
+        val niflheimBase = paletteFor(ThemeMode.NIFLHEIM, userAccent = null)
+        val niflheimWithUser = paletteFor(ThemeMode.NIFLHEIM, userAccent = brightAccent)
+        assertEquals(Color(0xFF181926), niflheimBase.onAccent)
+        assertEquals(Color(0xFF181926), niflheimBase.onError)
+        assertEquals(niflheimBase.accent, niflheimWithUser.accent)
     }
 
     @Test

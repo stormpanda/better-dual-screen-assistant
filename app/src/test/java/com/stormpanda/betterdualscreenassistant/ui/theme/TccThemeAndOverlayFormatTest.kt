@@ -3,6 +3,7 @@ package com.stormpanda.betterdualscreenassistant.ui.theme
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -38,6 +39,7 @@ class TccThemeAndOverlayFormatTest {
         assertEquals(AppThemeOption.AURORA, AppThemeOption.fromId(106))
         assertEquals(AppThemeOption.RETRO_PHOSPHOR, AppThemeOption.fromId(107))
         assertEquals(AppThemeOption.ROYAL_ASGARD, AppThemeOption.fromId(108))
+        assertEquals(AppThemeOption.NIFLHEIM, AppThemeOption.fromId(109))
         assertEquals(AppThemeOption.STOCK_DARK, AppThemeOption.fromId(999))
     }
 
@@ -51,6 +53,7 @@ class TccThemeAndOverlayFormatTest {
         assertEquals(AppThemeOption.AURORA, AppThemeOption.fromMegingiardIpcName("AURORA"))
         assertEquals(AppThemeOption.RETRO_PHOSPHOR, AppThemeOption.fromMegingiardIpcName("RETRO_PHOSPHOR"))
         assertEquals(AppThemeOption.ROYAL_ASGARD, AppThemeOption.fromMegingiardIpcName("ROYAL_ASGARD"))
+        assertEquals(AppThemeOption.NIFLHEIM, AppThemeOption.fromMegingiardIpcName("NIFLHEIM"))
         assertEquals(AppThemeOption.MEGINGIARD, AppThemeOption.fromMegingiardIpcName(null))
         assertEquals(AppThemeOption.MEGINGIARD, AppThemeOption.fromMegingiardIpcName("UNKNOWN"))
     }
@@ -520,6 +523,52 @@ class TccThemeAndOverlayFormatTest {
             assertEquals(brightCyanArgb, cyanMap[key])
         }
         assertEquals(Color.Black.toArgb(), cyanMap["android:color/system_on_shade_active_dark"])
+    }
+
+    @Test
+    fun `Niflheim Dusk palette uses dark contrasting content colors on overlay and OS dynamic tokens`() {
+        val palette = resolveTccPalette(AppThemeOption.NIFLHEIM, systemDark = true)
+        assertEquals(Color(0xFFC6A0F6), palette.accent)
+        assertEquals(Color(0xFF181926), palette.onAccent)
+        assertEquals(Color(0xFF181926), palette.onError)
+        assertEquals(Color.Black, palette.retroidContentOnAccent())
+
+        val (keys, values) = buildOsDynamicColorOverlayEntries(palette)
+        val map = keys.indices.associate { keys[it] to values[it] }
+        val onShadeActive = Color(map.getValue("android:color/system_on_shade_active_dark"))
+        val onPrimaryDark = Color(map.getValue("android:color/system_on_primary_dark"))
+        val onSecondaryDark = Color(map.getValue("android:color/system_on_secondary_dark"))
+        val onTertiaryDark = Color(map.getValue("android:color/system_on_tertiary_dark"))
+        val onErrorDark = Color(map.getValue("android:color/system_on_error_dark"))
+
+        assertNotEquals(Color.White, onShadeActive)
+        assertNotEquals(Color.White, onPrimaryDark)
+        assertNotEquals(Color.White, onSecondaryDark)
+        assertNotEquals(Color.White, onTertiaryDark)
+        assertEquals(Color(0xFF181926), onErrorDark)
+        assertTrue(onShadeActive.luminance() < 0.2f)
+        assertTrue(onPrimaryDark.luminance() < 0.2f)
+        assertTrue(onSecondaryDark.luminance() < 0.2f)
+        assertTrue(onTertiaryDark.luminance() < 0.2f)
+        assertTrue(onErrorDark.luminance() < 0.2f)
+    }
+
+    @Test
+    fun `Retro Phosphor palette aligns dark onAccent on overlay and OS dynamic tokens`() {
+        val palette = resolveTccPalette(AppThemeOption.RETRO_PHOSPHOR, systemDark = true)
+        assertEquals(Color(0xFF8BAC0F), palette.accent)
+        assertEquals(Color(0xFF141712), palette.onAccent)
+        assertEquals(Color.Black, palette.retroidContentOnAccent())
+
+        val (keys, values) = buildOsDynamicColorOverlayEntries(palette)
+        val map = keys.indices.associate { keys[it] to values[it] }
+        val onShadeActive = Color(map.getValue("android:color/system_on_shade_active_dark"))
+        val onPrimaryDark = Color(map.getValue("android:color/system_on_primary_dark"))
+
+        assertNotEquals(Color.White, onShadeActive)
+        assertNotEquals(Color.White, onPrimaryDark)
+        assertTrue(onShadeActive.luminance() < 0.2f)
+        assertTrue(onPrimaryDark.luminance() < 0.2f)
     }
 
     @Test

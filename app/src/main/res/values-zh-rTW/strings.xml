@@ -239,6 +239,8 @@
     <string name="theme_aurora_short">極光</string>
     <string name="theme_retro_phosphor">復古螢光綠</string>
     <string name="theme_royal_asgard">皇家阿斯嘉</string>
+    <string name="theme_niflheim_dusk">尼福爾海姆暮色</string>
+    <string name="theme_niflheim_short">尼福爾海姆</string>
     <string name="theme_source_stock">原廠</string>
     <string name="theme_source_sync_megingiard">與 Megingiard 同步</string>
     <string name="theme_source_custom_palette">自訂配色</string>

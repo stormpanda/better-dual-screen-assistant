@@ -93,9 +93,9 @@ Stored in `context.getSharedPreferences("better_dsa_prefs", Context.MODE_PRIVATE
 | `dual_brightness_active` | `Boolean` | `false` | `true` when Top and Bottom brightness were last adjusted together via the Dual slider. |
 | `dual_volume_percent` | `Int` | `50` | Last set Dual Screen linked volume percentage (`0..100`). |
 | `dual_volume_active` | `Boolean` | `false` | `true` when Top and Bottom volume were last adjusted together via the Dual slider. |
-| `theme_mode` | `Int` | `1` (`STOCK_SYSTEM`) | Active `AppThemeOption` ID (`1`, `3`, `4`, `100`, `101..108`). |
+| `theme_mode` | `Int` | `1` (`STOCK_SYSTEM`) | Active `AppThemeOption` ID (`1`, `3`, `4`, `100`, `101..109`). |
 | `last_stock_theme_mode` | `Int` | `1` | Last selected Stock theme ID (`1`, `3`, `4`) for Theme Source cycling. |
-| `last_megingiard_palette_mode` | `Int` | `101` | Last selected Megingiard palette ID (`101..108`) for Theme Source cycling. |
+| `last_megingiard_palette_mode` | `Int` | `101` | Last selected Megingiard palette ID (`101..109`) for Theme Source cycling. |
 | `accent_color` | `Long` | `0xFF3D5AFE` | Selected 32-bit ARGB accent color for customizable Megingiard themes (`101`, `102`). |
 | `custom_accent_color` | `Long` | `0xFF3D5AFE` | User's saved custom HSV accent color (`0xFF000000..0xFFFFFFFF`). |
 | `inject_os_theme` | `Boolean` | `false` | Whether to inject the active theme's 60-color Monet palette into Android OS via `FabricatedOverlay`. |
