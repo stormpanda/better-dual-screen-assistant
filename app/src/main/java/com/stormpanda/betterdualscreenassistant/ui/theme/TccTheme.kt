@@ -27,6 +27,7 @@ import com.stormpanda.betterdualscreenassistant.system.DeviceProfile
 import java.util.Locale
 
 private const val LUMINANCE_CONTRAST_THRESHOLD = 0.45f
+private const val SEMANTIC_DARK_CONTENT_LUMINANCE_THRESHOLD = 0.35f
 private val DEFAULT_CONTRAST_DARK_TEXT = Color(0xFF121212)
 const val DEFAULT_MEGINGIARD_ACCENT_ARGB: Int = 0xFFCC0000.toInt()
 val RetroidPixelOrangeSwatch: Color = Color(0xFFFF760A)
@@ -372,6 +373,18 @@ enum class AppThemeOption(
         previewBackground = Color.Black,
         previewSurface = Color(0xFF12110E),
         previewAccent = Color(0xFFFFD700)
+    ),
+    NIFLHEIM(
+        id = 109,
+        displayName = "Niflheim Dusk",
+        shortTileLabel = "Niflheim",
+        displayNameRes = R.string.theme_niflheim_dusk,
+        shortTileLabelRes = R.string.theme_niflheim_short,
+        isMegingiardStyle = true,
+        megingiardIpcName = "NIFLHEIM",
+        previewBackground = Color(0xFF181926),
+        previewSurface = Color(0xFF24273A),
+        previewAccent = Color(0xFFC6A0F6)
     );
 
     fun displayName(context: Context): String = context.getString(displayNameRes)
@@ -408,7 +421,8 @@ data class TccColorPalette(
     val onAccent: Color,
     val sliderFill: Color,
     val lightning: Color,
-    val error: Color = Color(0xFFF64646)
+    val error: Color = Color(0xFFF64646),
+    val onError: Color = Color.White
 )
 
 val LightTccPalette = TccColorPalette(
@@ -491,7 +505,9 @@ private fun buildMegingiardPalette(
     onSurface: Color,
     onSurfaceSecondary: Color,
     accent: Color,
-    error: Color
+    error: Color,
+    onAccent: Color? = null,
+    onError: Color? = null
 ): TccColorPalette {
     val opaquePanel = panelSurface.copy(alpha = 1f)
     val opaqueSecondary = if (onSurfaceSecondary.alpha >= 0.999f) {
@@ -499,8 +515,12 @@ private fun buildMegingiardPalette(
     } else {
         onSurfaceSecondary.compositeOver(opaquePanel).copy(alpha = 1f)
     }
-    val resolvedOnAccent = accent.contrastingContentColor(
+    val resolvedOnAccent = onAccent ?: accent.contrastingContentColor(
         dark = appBackground,
+        light = Color.White
+    )
+    val resolvedOnError = onError ?: error.contrastingContentColor(
+        dark = Color(0xFF3B0000),
         light = Color.White
     )
     return TccColorPalette(
@@ -519,7 +539,8 @@ private fun buildMegingiardPalette(
         onAccent = resolvedOnAccent,
         sliderFill = accent,
         lightning = accent,
-        error = error
+        error = error,
+        onError = resolvedOnError
     )
 }
 
@@ -601,7 +622,8 @@ private val RetroPhosphorPalette = buildMegingiardPalette(
     onSurface = Color(0xFFC0D890),
     onSurfaceSecondary = Color(0xFF708850),
     accent = Color(0xFF8BAC0F),
-    error = Color(0xFFE57373)
+    error = Color(0xFFE57373),
+    onAccent = Color(0xFF141712)
 )
 
 private val RoyalAsgardPalette = buildMegingiardPalette(
@@ -613,6 +635,19 @@ private val RoyalAsgardPalette = buildMegingiardPalette(
     onSurfaceSecondary = Color(0xFFC5BCA8),
     accent = Color(0xFFFFD700),
     error = Color(0xFFD32F2F)
+)
+
+private val NiflheimDuskPalette = buildMegingiardPalette(
+    appBackground = Color(0xFF181926),
+    panelSurface = Color(0xFF24273A),
+    elevatedSurface = Color(0xFF363A4F),
+    pressedSurface = Color(0xFF494D64),
+    onSurface = Color(0xFFCAD3F5),
+    onSurfaceSecondary = Color(0xFFA5ADCB),
+    accent = Color(0xFFC6A0F6),
+    error = Color(0xFFED8796),
+    onAccent = Color(0xFF181926),
+    onError = Color(0xFF181926)
 )
 
 val LocalTccColors = compositionLocalOf { PureBlackTccPalette }
@@ -650,6 +685,7 @@ fun resolveTccPalette(
         AppThemeOption.AURORA -> AuroraBorealisPalette
         AppThemeOption.RETRO_PHOSPHOR -> RetroPhosphorPalette
         AppThemeOption.ROYAL_ASGARD -> RoyalAsgardPalette
+        AppThemeOption.NIFLHEIM -> NiflheimDuskPalette
     }
 }
 
@@ -825,31 +861,33 @@ fun buildOsDynamicColorOverlayEntries(palette: TccColorPalette): Pair<Array<Stri
     putColor("system_accent3_1000", Color.Black)
 
     // 2. Android 14–16 Semantic Dynamic Color Tokens (com.android.systemui:dynamic)
-    val onPrimaryDark = primaryAccent.contrastingContentColor(
-        dark = lerp(bg, primaryAccent, 0.16f),
-        light = Color.White
-    )
-    val onSecondaryDark = secBase.contrastingContentColor(
-        dark = lerp(bg, secBase, 0.16f),
-        light = Color.White
-    )
-    val onTertiaryDark = tertBase.contrastingContentColor(
-        dark = lerp(bg, tertBase, 0.16f),
-        light = Color.White
-    )
-    val onShadeActive = activeAccentTile.contrastingContentColor(
-        dark = lerp(bg, Color.Black, 0.5f),
-        light = Color.White
-    )
-    val onShadeActiveVariant = if (activeAccentTile.luminance() > LUMINANCE_CONTRAST_THRESHOLD) {
+    val useDarkOnAccent = palette.onAccent.luminance() < 0.5f
+    val onPrimaryDark = if (useDarkOnAccent) {
+        lerp(bg, primaryAccent, 0.16f)
+    } else {
+        Color.White
+    }
+    val onSecondaryDark = if (secBase.luminance() > SEMANTIC_DARK_CONTENT_LUMINANCE_THRESHOLD) {
+        lerp(bg, secBase, 0.16f)
+    } else {
+        Color.White
+    }
+    val onTertiaryDark = if (tertBase.luminance() > SEMANTIC_DARK_CONTENT_LUMINANCE_THRESHOLD) {
+        lerp(bg, tertBase, 0.16f)
+    } else {
+        Color.White
+    }
+    val onShadeActive = if (useDarkOnAccent) {
+        lerp(bg, Color.Black, 0.5f)
+    } else {
+        Color.White
+    }
+    val onShadeActiveVariant = if (useDarkOnAccent) {
         lerp(bg, activeAccentTile, 0.25f)
     } else {
         lerp(Color.White, activeAccentTile, 0.20f)
     }
-    val onErrorDark = errorColor.contrastingContentColor(
-        dark = Color(0xFF3B0000),
-        light = Color.White
-    )
+    val onErrorDark = palette.onError
     val errorContainerDark = lerp(accentDarkAnchor, errorColor, 0.38f)
     val onErrorContainerDark = lerp(errorColor, Color.White, 0.72f)
 

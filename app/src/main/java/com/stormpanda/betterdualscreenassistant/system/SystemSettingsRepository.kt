@@ -360,7 +360,7 @@ class SystemSettingsRepository(private val context: Context) {
     private val _forceLandscape = MutableStateFlow(getInt(KEY_FORCE_LANDSCAPE, 1) == 1)
     val forceLandscape: StateFlow<Boolean> = _forceLandscape.asStateFlow()
 
-    // Theme Mode: Stock (1, 3, 4), Sync with Megingiard (100), or Megingiard Theme (101..108)
+    // Theme Mode: Stock (1, 3, 4), Sync with Megingiard (100), or Megingiard Theme (101..109)
     private val _themeMode = MutableStateFlow(readSavedThemeMode())
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
 
