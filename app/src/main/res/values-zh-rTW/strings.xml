@@ -467,4 +467,41 @@
     <string name="help_settings_add_to_obtainium_desc">開啟 Obtainium 以自動追蹤並安裝 Better Dual Screen Assistant 的 GitHub 更新</string>
     <string name="help_settings_add_to_obtainium_manager_desc">開啟 Obtainium 以自動追蹤並安裝 Better Dual Screen Manager 的 GitHub 更新</string>
     <string name="gamepad_action_checking">檢查中</string>
+
+    <!-- Third-Party Plugins -->
+    <string name="settings_cat_plugins">外掛</string>
+    <string name="settings_plugins_info_title">第三方外掛 — 使用風險自負</string>
+    <string name="settings_plugins_info_desc">第三方外掛為與 BDSA 無關的外部 Android 應用程式，僅於各自沙盒中執行，絕不會取得 BDSA 的 Root 權限。請於「快速圖塊 → 啟用 / 停用圖塊」中啟用個別外掛圖塊。</string>
+    <string name="settings_plugins_refresh_title">重新掃描已安裝的外掛</string>
+    <string name="settings_plugins_refresh_desc">檢查已安裝的應用程式以探索新增或更新的 BDSA 快速圖塊外掛</string>
+    <string name="settings_plugins_action_rescan">重新掃描</string>
+    <plurals name="settings_plugins_rescan_toast">
+        <item quantity="other">已找到 %1$d 個已安裝的外掛</item>
+    </plurals>
+    <string name="settings_plugins_empty_title">尚未安裝第三方外掛</string>
+    <string name="settings_plugins_empty_desc">相容的外掛應用程式於安裝後會自動註冊。請前往「快速圖塊 → 啟用 / 停用圖塊」啟用其圖塊。</string>
+    <string name="settings_plugins_section_installed">已安裝的外掛 (%1$d)</string>
+    <string name="settings_plugins_no_description">此外掛未提供說明。</string>
+    <string name="settings_plugins_meta_by_author">作者：%1$s</string>
+    <string name="settings_plugins_meta_version">v%1$s</string>
+    <plurals name="settings_plugins_meta_tiles_count">
+        <item quantity="other">%1$d 個圖塊：%2$s</item>
+    </plurals>
+    <string name="settings_plugins_meta_no_supported_tiles">%1$s 上沒有支援的圖塊</string>
+    <string name="settings_plugins_incompatible_title">不相容的外掛 (API v%1$d)</string>
+    <string name="settings_plugins_incompatible_desc">此外掛採用 BDSA 外掛 API v%1$d，但此版本需要 API v%2$d。請更新外掛或 BDSA。</string>
+    <string name="settings_plugins_configure_title">設定 %1$s</string>
+    <string name="settings_plugins_configure_desc">開啟此外掛的設定畫面</string>
+    <string name="settings_plugins_action_configure">設定</string>
+    <string name="settings_plugins_configure_failed">無法開啟外掛設定</string>
+    <string name="settings_plugins_app_info_title">應用程式資訊與解除安裝 (%1$s)</string>
+    <string name="settings_plugins_app_info_desc">管理 %1$s 的 Android 權限或解除安裝</string>
+    <string name="settings_plugins_action_app_info">應用程式資訊</string>
+    <string name="settings_qs_third_party_header">第三方外掛 — 使用風險自負 (%1$d/%2$d)</string>
+    <string name="settings_qs_third_party_warning_title">第三方圖塊 — 使用風險自負</string>
+    <string name="settings_qs_third_party_warning_desc">以下圖塊由裝置上已安裝的第三方應用程式提供，預設為停用且未經 BDSA 驗證。</string>
+    <string name="settings_qs_third_party_empty_title">尚未註冊第三方外掛圖塊</string>
+    <string name="settings_qs_third_party_empty_desc">安裝相容的第三方外掛 APK 即可在此新增自訂圖塊。</string>
+    <string name="settings_qs_third_party_tile_desc_format">%1$s • %2$s</string>
+    <string name="settings_qs_third_party_plugin_disabled_desc">%1$s — 外掛已於「設定 → 外掛」中停用</string>
 </resources>

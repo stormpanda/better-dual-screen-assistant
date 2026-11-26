@@ -12,7 +12,7 @@ This document provides a complete functional reference for **Better Dual Screen 
    - [3.1 Top Status Bar](#31-top-status-bar)
    - [3.2 Mode Tab (`Tab 0`)](#32-mode-tab-tab-0)
    - [3.3 Settings Tab (`Tab 1`)](#33-settings-tab-tab-1)
-   - [3.4 Quick Setting Tiles Reference (25 Tiles)](#34-quick-setting-tiles-reference-25-tiles)
+   - [3.4 Quick Setting Tiles Reference](#34-quick-setting-tiles-reference)
    - [3.5 Modal Configuration Dialogs](#35-modal-configuration-dialogs)
    - [3.6 Live Hardware Telemetry Panel](#36-live-hardware-telemetry-panel)
    - [3.7 Bottom Navigation Bar](#37-bottom-navigation-bar)
@@ -22,7 +22,8 @@ This document provides a complete functional reference for **Better Dual Screen 
    - [4.3 Category 1: General](#43-category-1-general)
    - [4.4 Category 2: Quick Toggles](#44-category-2-quick-toggles)
    - [4.5 Category 3: Appearance](#45-category-3-appearance)
-   - [4.6 Category 4: Diagnostics](#46-category-4-diagnostics)
+   - [4.6 Category 4: Plugins](#46-category-4-plugins)
+   - [4.7 Category 5: Diagnostics](#47-category-5-diagnostics)
 5. [Lifecycle, Persistence & Stock Recovery Guarantees](#5-lifecycle-persistence--stock-recovery-guarantees)
 
 ---
@@ -37,7 +38,7 @@ The AYN Thor features two physical landscape displays:
 | **Bottom Screen** | `4` | `port=132` | `1240 × 1080` (`369 dpi`, ~`840dp × 732dp`) | Hosts the **Assistant Overlay** (`AssistantOverlayScreen`) and secondary tasks |
 
 **Better Dual Screen Assistant** operates across both screens:
-- **Bottom-Screen Assistant Overlay**: A system-wide overlay (`TYPE_APPLICATION_OVERLAY`) anchored to `displayId = 4` that provides instant access to display blanking modes, screen task swapping, per-display brightness & volume sliders, refresh rate switching, 25 customizable Quick Setting tiles, and real-time CPU/GPU/Thermal/Fan/Power/RAM telemetry.
+- **Bottom-Screen Assistant Overlay**: A system-wide overlay (`TYPE_APPLICATION_OVERLAY`) anchored to `displayId = 4` that provides instant access to display blanking modes, screen task swapping, per-display brightness & volume sliders, refresh rate switching, customizable Quick Setting tiles, and real-time CPU/GPU/Thermal/Fan/Power/RAM telemetry.
 - **Top-Screen Companion App (`MainActivity`)**: A gamepad-first configuration interface launched from the Android app drawer or via the overlay's **Edit** button. When opened on the top screen (`displayId = 0`), it automatically reveals the Assistant Overlay on the bottom screen (`displayId = 4`) so that layout, tile ordering, and theme changes can be previewed in real time.
 
 ---
@@ -163,11 +164,11 @@ The **Settings** tab (`SystemSettingsTab` in `AssistantOverlayScreen.kt`) is div
 
 ---
 
-### 3.4 Quick Setting Tiles Reference (25 Tiles)
+### 3.4 Quick Setting Tiles Reference
 
-All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into three categories. By default, the 10 **Stock AYN Toggles** are enabled in their exact stock order, while **Android System Toggles** and **Tools** can be selectively enabled in the Companion App.
+All built-in Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into three categories. By default, **Stock AYN Toggles** are enabled in their exact stock order, while **Android System Toggles** and **Tools** can be selectively enabled in the Companion App. Additional custom tiles can also be supplied by third-party plugin APKs (see [Third-Party Plugin API](PLUGIN_API.md)).
 
-#### Category A: Stock AYN Toggles (10 Tiles — Enabled by Default)
+#### Category A: Stock AYN Toggles (Enabled by Default)
 
 | Default Slot | Tile ID (`key`) | Label & Dynamic Title | Interaction Type | Functional Description |
 | :---: | :--- | :--- | :---: | :--- |
@@ -180,9 +181,9 @@ All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | **#7** | `vibration` | **Vibration** | Instant Toggle | Toggles system haptic feedback (`Settings.System["vibrate_on"]`: `0` / `1`). |
 | **#8** | `ambient_light` | **Ambient Light** | Instant Toggle | Toggles joystick RGB lighting by reading `sys.light.curr.is.show` / `joystick_light_enabled` and broadcasting `com.ro.external.request.light.adj.action` (`isShow = true/false`). |
 | **#9** | `force_landscape` | **Force Landscape** | Instant Toggle | Forces portrait apps into landscape orientation (`Settings.System["force_landscape"]`: `0` / `1`). |
-| **#10** | `theme_mode` | **Theme Mode** (Shows active theme name) | Modal Dialog | Opens the **Theme Mode** dialog supporting Stock System/Light/Dark, Megingiard Live Sync, 8 Megingiard Palettes, Accent Swatches, and OS Theme Injection. |
+| **#10** | `theme_mode` | **Theme Mode** (Shows active theme name) | Modal Dialog | Opens the **Theme Mode** dialog supporting Stock System/Light/Dark, Megingiard Live Sync, built-in custom palettes (including `Niflheim Dusk`), Accent Swatches, and OS Theme Injection. |
 
-#### Category B: Android System Toggles (5 Tiles — Disabled by Default)
+#### Category B: Android System Toggles (Disabled by Default)
 
 | Tile ID (`key`) | Label & Dynamic Title | Interaction Type | Functional Description |
 | :--- | :--- | :---: | :--- |
@@ -192,12 +193,12 @@ All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | `airplane_mode` | **Airplane Mode** | Instant Toggle | Toggles Airplane Mode (`Settings.Global["airplane_mode_on"]`: `0` / `1`), broadcasts `Intent.ACTION_AIRPLANE_MODE_CHANGED`, and runs `cmd connectivity airplane-mode enable/disable`. |
 | `screen_cast` | **Screen Cast** (`Screen Cast` / `Connecting…` / `<Device Name>` / `Casting`) | Launch / Instant Disconnect | When idle, dismisses the overlay and opens Android's wireless Cast picker (`Settings.ACTION_CAST_SETTINGS`) on the Top Screen (`displayId = 0`, or `bottomDisplayId` when in Mode `2` *Only bottom screen*). When connecting or actively casting via Chromecast (`com.google.android.gms` `MediaProjection`) or Miracast (`WifiDisplay`), highlights the tile with the target receiver's name and disconnects immediately on a single tap. |
 
-#### Category C: Tools (10 Tiles — Disabled by Default)
+#### Category C: Tools (Disabled by Default)
 
 | Tile ID (`key`) | Label & Dynamic Title | Interaction Type | Functional Description |
 | :--- | :--- | :---: | :--- |
 | `touch_lock` | **Bottom Touch Lock** (`Bottom Touch Locked` / `Bottom Touch Lock`) | Instant Toggle | Disables touchscreen input on the bottom display (`sys.temp.disabled.touch = "0,1"`) while keeping the bottom display visible (ideal for watching video or preventing accidental palm touches). While the Assistant Overlay itself is open, bottom touch is temporarily unlocked so you can interact with the overlay, then re-locked automatically when the overlay closes. |
-| `screenshot` | **Screenshot** | Modal Dialog | Opens a 3-option modal (**Top Screen**, **Bottom Screen**, **Both Screens**). Dismisses the overlay, waits `320ms` for the exit animation to finish, resolves physical SurfaceFlinger display IDs (`port=131` / `port=132`), captures lossless PNGs to `/sdcard/Pictures/Screenshots/Screenshot_<timestamp>_<Top|Bottom>.png`, indexes them via `MediaScannerConnection`, and displays a confirmation toast. |
+| `screenshot` | **Screenshot** | Modal Dialog / Instant Capture | Uses the configured **Screenshot Display** setting: captures immediately on tap when set to *Top Screen*, *Bottom Screen*, or *Both Screens*, or opens a 3-option modal (**Top Screen**, **Bottom Screen**, **Both Screens**) with a **Set as default** toggle when set to *Ask Every Time* (long-pressing the tile always opens the selector). Dismisses the overlay, waits `320ms` for the exit animation to finish, resolves physical SurfaceFlinger display IDs (`port=131` / `port=132`), captures lossless PNGs to `/sdcard/Pictures/Screenshots/Screenshot_<timestamp>_<Top|Bottom>.png`, indexes them via `MediaScannerConnection`, and displays a confirmation toast. |
 | `screen_record` | **Screen Record** (`Screen Record` / `MM:SS`) | Modal Dialog / Instant Stop | Opens the **Screen Record** modal (**Top Screen**, **Bottom Screen**, or GPU-composited **Both Screens** at `30`/`60 FPS`, with optional **Internal Game Audio** and **Microphone** mixing) saved to `/sdcard/Movies/ScreenRecordings`; while recording, displays the live elapsed timer and stops recording on tap. |
 | `trigger_mode` | **L2/R2 Trigger Mode** (`Trigger: Analog` / `Trigger: Digital` / `Trigger: Both`) | Modal Dialog | Configures L2/R2 shoulder trigger input mode (`Settings.System["trigger_input_mode"]`: `0` = Analog only, `1` = Digital only, `2` = Both Analog & Digital). |
 | `charge_limit_80` | **80% Charge Limit** | Instant Toggle | Caps battery charging at 80% (`Settings.System["percent_80_charge_limit"]`: `0` / `1`) to preserve long-term battery health. |
@@ -206,6 +207,7 @@ All 25 Quick Setting tiles defined in `QuickSettingTileId.kt` are grouped into t
 | `keep_screen_on` | **Keep Screen On** | Instant Toggle | Prevents the screens from timing out (`Settings.System["keep_screen_on"]`: `0` / `1`). |
 | `prevent_accidental_home` | **Double-Tap HOME** | Instant Toggle | Requires a double-press on the physical HOME button to prevent accidental exits during gameplay (`Settings.System["prevent_press_home_accidentally"]`: `0` / `1`). |
 | `clear_all_tasks` | **Clear All Tasks** | One-Shot Action | Dismisses the overlay and invokes `IActivityTaskManager.removeAllVisibleRecentTasks()` via `PrivilegedHelperMain` (matching Android Recents' **Clear all** button) to cleanly close all recent app tasks without force-stopping background services or live wallpapers, then shows a confirmation toast. |
+| `cluster_tune` | **ClusterTune** | One-Shot Action | Automatically shown when ClusterTune (`com.aure.clustertune`) is installed; dismisses the overlay and triggers ClusterTune's top-screen profile picker overlay. |
 
 ---
 
@@ -227,13 +229,14 @@ Tapping any modal Quick Setting tile opens a centered modal card over the bottom
 4. **Controller Style Dialog**:
    - Options: **Disconnect (`2`)**, **Xbox (`0`)**, **Odin (`1`)**.
 5. **Theme Mode Dialog (`ThemeSelectionDialog`)**:
-   - Displays a scrollable list of all built-in theme options (`Follow System (Stock)`, `Light (Stock)`, `Dark (Stock)`, `Dark`, `Dark OLED`, `Norse Forest`, `Mjölnir Steel`, `Valhalla Sunset`, `Aurora Borealis`, `Retro Phosphor`, `Royal Asgard`), plus `Sync with Megingiard` when Megingiard is installed on the device.
+   - Displays a scrollable list of all built-in theme options (`Follow System (Stock)`, `Light (Stock)`, `Dark (Stock)`, `Dark`, `Dark OLED`, `Norse Forest`, `Mjölnir Steel`, `Valhalla Sunset`, `Aurora Borealis`, `Retro Phosphor`, `Royal Asgard`, `Niflheim Dusk`), plus `Sync with Megingiard` when Megingiard is installed on the device.
    - When a customizable theme (`Dark` or `Dark OLED`) is active, displays a horizontal row of **Accent Color Swatches**.
    - Includes an inline **Inject Theme Colors into OS** toggle switch at the bottom of the dialog.
 6. **Screenshot Dialog**:
-   - Options: **Top Screen (`0`)**, **Bottom Screen (`1`)**, **Both Screens (`2`)**.
+   - Options: **Top Screen (`0`)**, **Bottom Screen (`1`)**, **Both Screens (`2`)**, plus an optional **Set as default** toggle to save the chosen display for future one-tap captures.
+   - Always accessible by long-pressing the **Screenshot** tile even when a default display is configured.
 7. **L2/R2 Trigger Mode Dialog**:
-   - Options: **Analog (`1`)**, **Digital (`0`)**, **Both (`2`)**.
+   - Options: **Analog (`0`)**, **Digital (`1`)**, **Both (`2`)**.
 
 ---
 
@@ -248,7 +251,7 @@ Located along the bottom `30%` of the **Settings** tab (`Tab 1`), the telemetry 
 | **CPU Ring Gauge** | `15%` | `/sys/devices/system/cpu/cpu7/cpufreq/cpuinfo_cur_freq` & `cpuinfo_max_freq` | `270°` circular arc gauge (`HardwareRingGauge`, animated over `300ms` with `DecelerateInterpolator`). Displays prime core frequency in `GHz` (or `MHz` if `< 1 GHz`). Stock ring color: `#EE188C`. |
 | **GPU Ring Gauge** | `15%` | `/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq` & `max_freq` | `270°` circular arc gauge showing Adreno 740 clock in `MHz` (or `GHz`). Stock ring color: `#70E7FF`. |
 | **PWR Ring Gauge** | `15%` | `/sys/class/power_supply/battery/current_now` × `voltage_now` | Bidirectional circular arc gauge (`-20W..+25W`) showing net battery/system power draw in `X.XW`. Stock ring color: `#E26E01`. |
-| **RAM Ring Gauge** | `15%` | `ActivityManager.getMemoryInfo()` (`totalMem - availMem`) | `270°` circular arc gauge showing used memory in `X.XGB`. Stock ring color: `#76CA40`. |
+| **RAM Ring Gauge** | `15%` | `/proc/meminfo` (`MemTotal - MemAvailable`) | `270°` circular arc gauge showing used memory in `X.XGB`. Stock ring color: `#76CA40`. |
 
 ---
 
@@ -300,10 +303,13 @@ Configures core assistant behavior and optional UI controls:
 | :--- | :--- | :---: | :--- |
 | **Replace Stock Assistant** | `replace_stock_assistant` | `ON` | When enabled, suppresses the built-in `com.odin.dualscreen.assistant` so Better Dual Screen Assistant handles all physical AYN button presses and overlays. Turning this `OFF` immediately hides our overlay and wakes/restarts the stock assistant. |
 | **Accurate Game FPS Counter** | `accurate_game_fps` | `ON` | Measures real foreground game/app frame rate on the active display instead of the stock global `SurfaceFlinger` page-flip counter. |
+| **Language** | Per-app `LocaleManager` | `System Default` | Selects the app language independently of the Android system locale (`System Default`, `English`, `繁體中文 (台灣)`, `Русский`). |
 | **Temperature Unit** | `temp_fahrenheit` | `Celsius (°C)` | Switches the overlay CPU `TEMP` readout between **Celsius (`℃`)** and **Fahrenheit (`℉`)** (also toggleable directly by tapping the `TEMP` card in the overlay). |
+| **Screenshot Display** | `screenshot_target_mode` | `Ask Every Time` (`-1`) | Sets whether tapping the **Screenshot** quick toggle captures *Top Screen* (`0`), *Bottom Screen* (`1`), or *Both Screens* (`2`) immediately, or asks every time (`-1`). |
 | **Show Edit Button in Overlay** | `show_edit_button` | `ON` | Shows or hides the **Edit** button in the overlay's bottom navigation bar. |
 | **Show Tasks Button in Overlay** | `show_tasks_button` | `ON` | Shows or hides the **Tasks** button in the overlay's bottom navigation bar. |
 | **Remember Last Open Tab** | `remember_last_tab` | `ON` | When `ON`, reopening the overlay restores whichever tab (**Mode** or **Settings**) was last active (`last_active_tab`). When `OFF`, the overlay always opens on the **Mode** tab. |
+| **Remember Last Quick Toggle Page** | `remember_last_quick_toggle_page` | `ON` | When `ON`, preserves the last viewed Quick Settings page across tab switches and overlay reopens. |
 | **Show Swap Screens Button** | `show_swap_screens_button` | `ON` | Shows or hides the 4th **Swap Screens** action button in the **Mode** tab's Screen Mode panel. |
 | **Show Stick LED Brightness Slider** | `show_led_brightness_slider` | `ON` | Shows or hides the 4th **Stick LED** brightness slider inside the **Mode** tab's Brightness panel. |
 | **Confirm Before Turning Off Bottom Screen** | `!no_more_close_tip` | `ON` | Controls whether the **Close Screen Tip** confirmation modal appears before switching to **Only top screen** (`mode = 1`). |
@@ -319,13 +325,14 @@ Allows complete customization of which Quick Setting tiles appear in the overlay
    - **Touch Reordering**: Tap any tile to select it, then tap a second tile to swap their positions.
    - **Gamepad Reordering**: Focus the layout card and press **`A`** to enter the grid -> use **D-Pad** (or **`L1`/`R1`** to cross page boundaries) to highlight a tile -> press **`A`** to **Grab** the tile -> move with **D-Pad** / **`L1`/`R1`** to shift the tile through the grid in real time -> press **`A`** or **`B`** to **Drop** the tile -> press **`B`** again to return to the settings deck.
 2. **Enable / Disable Toggles (`SubPage.ENABLE_DISABLE_TOGGLES`)**:
-   - Opens a dedicated sub-page displaying all **25 Quick Setting tiles** organized under three section headers:
-     - **Stock AYN Toggles** (`10` tiles, enabled by default)
-     - **Android System Toggles** (`5` tiles, disabled by default)
-     - **Tools** (`10` tiles, disabled by default)
+   - Opens a dedicated sub-page displaying all built-in Quick Setting tiles and registered third-party plugin tiles organized under section headers:
+     - **Stock AYN Toggles** (enabled by default)
+     - **Android System Toggles** (disabled by default)
+     - **Tools** (disabled by default)
+     - **Third-Party Plugins** (disabled by default; provided by compatible third-party APKs)
    - Enforces the safety invariant that **at least 1 toggle must remain enabled** at all times (if only 1 toggle is enabled, attempting to turn it off displays `"At least 1 toggle must remain enabled"`).
 3. **Reset Quick Toggles (`GamepadTwoStepConfirmCard`)**:
-   - Uses a two-step destructive confirmation prompt (*Tap once to arm -> Tap "Confirm" to execute*) that resets tile order and restores the default 10 Stock AYN tiles.
+   - Uses a two-step destructive confirmation prompt (*Tap once to arm -> Tap "Confirm" to execute*) that resets tile order and restores the default Stock AYN tiles.
 
 ---
 
@@ -337,7 +344,7 @@ Controls theming for both the Companion Settings App and the Bottom-Screen Overl
    - Cycles across two modes by default (or three when Megingiard is installed on the device):
      - **`Stock`**: Authentic stock visual styling (`Follow System (Stock)`, `Dark (Stock)`, `Light (Stock)`).
      - **`Sync with Megingiard`** *(Only shown when Megingiard is installed)*: Automatically mirrors the active theme mode and custom accent color from the standalone **Megingiard** app (`com.stormpanda.megingiard` or `.debug`) via its `ContentProvider` (`content://com.stormpanda.megingiard.provider/theme`).
-     - **`Custom Palette`**: Lets you independently choose any of the **8 built-in custom palettes**:
+     - **`Custom Palette`**: Lets you independently choose any of the built-in custom palettes:
        - `Dark` (Customizable accent)
        - `Dark OLED` (True `#000000` black canvas, customizable accent)
        - `Norse Forest`
@@ -346,6 +353,7 @@ Controls theming for both the Companion Settings App and the Bottom-Screen Overl
        - `Aurora Borealis` (Northern Lights Mint/Teal)
        - `Retro Phosphor` (CRT Terminal Green)
        - `Royal Asgard` (Deep Amethyst & Gold)
+       - `Niflheim Dusk` (Catppuccin Macchiato-inspired muted lavender & slate)
 2. **Accent Color & Custom Color Sub-Page (`SubPage.CUSTOM_ACCENT`)**:
    - Visible when the active custom palette supports custom accents (`Dark` or `Dark OLED`).
    - Provides a horizontal selector of **10 Preset Accent Swatches** (`Default Blue`, `Crimson`, `Emerald`, `Amber`, `Violet`, `Cyan`, `Rose`, `Orange`, `Teal`, `Lime`) plus a **Custom** swatch button.
@@ -357,7 +365,15 @@ Controls theming for both the Companion Settings App and the Bottom-Screen Overl
 
 ---
 
-### 4.6 Category 4: Diagnostics
+### 4.6 Category 4: Plugins
+
+Manages standalone third-party quick-toggle plugin APKs discovered via the [Third-Party Plugin API](PLUGIN_API.md):
+- Displays each installed plugin's metadata, API compatibility status, and exposed toggles.
+- Provides a **Rescan** action to refresh newly installed or updated plugins, plus shortcuts to open a plugin's configuration activity or Android App Info / uninstall screen.
+
+---
+
+### 4.7 Category 5: Diagnostics
 
 Provides real-time visibility into the privileged execution layer, hardware topology, and build metadata:
 

@@ -1242,10 +1242,11 @@ private fun LiveFrameRatePanelCard(
     onToggleRefreshRate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val initialFps = remember(telemetryMonitor) { telemetryMonitor.state.value.currentFps }
     val fpsFlow = remember(telemetryMonitor) {
         telemetryMonitor.state.map { it.currentFps }.distinctUntilChanged()
     }
-    val currentFps by fpsFlow.collectAsState(initial = telemetryMonitor.state.value.currentFps)
+    val currentFps by fpsFlow.collectAsState(initial = initialFps)
     FrameRatePanelCard(
         refreshRate = refreshRate,
         currentFps = currentFps,

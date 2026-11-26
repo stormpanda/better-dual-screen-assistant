@@ -82,11 +82,14 @@ Stored in `context.getSharedPreferences("better_dsa_prefs", Context.MODE_PRIVATE
 | `replace_stock_assistant` | `Boolean` | `true` | Whether `com.odin.dualscreen.assistant` is ephemerally suppressed and replaced by this app. |
 | `accurate_game_fps` | `Boolean` | `true` | Enables per-task foreground game FPS measurement instead of global `SurfaceFlinger` page flips. |
 | `temp_fahrenheit` | `Boolean` | `false` | Displays CPU temperature in Fahrenheit (`℉`) when `true`, or Celsius (`℃`) when `false` (default). |
-| `show_edit_button` | `Boolean` | `true` | Shows the 4th **Edit** button in the overlay's bottom navigation bar. |
+| `show_edit_button` | `Boolean` | `true` | Shows the **Edit** button in the overlay's bottom navigation bar. |
+| `show_tasks_button` | `Boolean` | `true` | Shows the **Tasks** button in the overlay's bottom navigation bar. |
 | `remember_last_tab` | `Boolean` | `true` | Restores `last_active_tab` when reopening the overlay. |
+| `remember_last_quick_toggle_page` | `Boolean` | `true` | Remembers the active Quick Toggles page across tab switches and overlay reopens. |
 | `last_active_tab` | `Int` | `0` | Last selected overlay tab (`0` = Mode, `1` = Settings). |
-| `show_swap_screens_button` | `Boolean` | `true` | Shows the 4th **Swap Screens** button in the Mode tab's upper card. |
-| `show_led_brightness_slider` | `Boolean` | `true` | Shows the 4th **Stick LED** brightness slider in the Mode tab's brightness card. |
+| `show_swap_screens_button` | `Boolean` | `true` | Shows the **Swap Screens** button in the Mode tab's upper card. |
+| `show_led_brightness_slider` | `Boolean` | `true` | Shows the **Stick LED** brightness slider in the Mode tab's brightness card. |
+| `screenshot_target_mode` | `Int` | `-1` | One-tap Screenshot tile default target (`-1` = Ask Every Time, `0` = Top Screen, `1` = Bottom Screen, `2` = Both Screens). |
 | `no_more_close_tip` | `Boolean` | `false` | When `true`, skips the confirmation dialog before blanking the bottom screen (`mode = 1`). |
 | `last_focus_lock` | `Int` | `0` | Saved `screen_focus_lock` value before entering single-screen mode (`1` or `2`), restored when returning to Dual Mode (`0`). |
 | `dual_brightness_percent` | `Int` | `50` | Last set Dual Screen linked brightness percentage (`0..100`). |
@@ -100,8 +103,9 @@ Stored in `context.getSharedPreferences("better_dsa_prefs", Context.MODE_PRIVATE
 | `custom_accent_color` | `Long` | `0xFF3D5AFE` | User's saved custom HSV accent color (`0xFF000000..0xFFFFFFFF`). |
 | `inject_os_theme` | `Boolean` | `false` | Whether to inject the active theme's 60-color Monet palette into Android OS via `FabricatedOverlay`. |
 | `bottom_touch_locked` | `Boolean` | `false` | State of the **Bottom Touch Lock** Quick Setting tile. |
-| `qs_tile_order` | `String` | Comma-separated keys | Ordered list of all 23 `QuickSettingTileId` keys. Automatically appends any newly added enum entries on upgrade. |
-| `qs_enabled_tiles` | `String` | 10 Stock AYN keys | Comma-separated list of currently enabled `QuickSettingTileId` keys. |
+| `quick_tile_order` | `String` | Comma-separated keys | Ordered list of `QuickSettingTileId` keys (and enabled plugin keys). Automatically appends any newly added enum entries on upgrade via `known_quick_tiles`. |
+| `disabled_quick_tiles` | `String` | Comma-separated keys | Set of currently disabled `QuickSettingTileId` keys (Stock vendor tiles default to enabled; Android System and Tools default to disabled). |
+| `known_quick_tiles` | `String` | Comma-separated keys | Tracks previously seen `QuickSettingTileId` keys so newly added built-in tiles can be appended cleanly on upgrade. |
 
 ---
 
@@ -178,7 +182,7 @@ Polled by [`TelemetryMonitor.kt`](file:///Users/maikthomalla/Development/better-
 | **SoC Temperature** | `/sys/devices/virtual/thermal/thermal_zone48/temp` | m°C (`millidegrees`) | `round(raw / 1000.0) = ℃` |
 | **Battery Current** | `/sys/class/power_supply/battery/current_now` | µA (`microamperes`) | `current_now / 1,000,000.0 = Amperes` |
 | **Battery Voltage** | `/sys/class/power_supply/battery/voltage_now` | µV (`microvolts`) | `-(Amperes * Volts) = Watts` mapped onto `-20W..+25W` ring |
-| **System RAM** | `ActivityManager.getMemoryInfo()` | Bytes | `(totalMem - availMem) / 1024³ = Used GB` |
+| **System RAM** | `/proc/meminfo` (`MemTotal`, `MemAvailable`) | KiB | `(MemTotal - MemAvailable) / 1024² = Used GB` |
 | **Live Frame Rate (FPS)** | `ServiceManager.getService("SurfaceFlinger")` transaction `1013` (`android.ui.ISurfaceComposer`) | Cumulative page-flip count (`int32`) | `(flipsDelta * 1e9) / nanoTimeDelta`, clamped to current display refresh rate (`60` or `120`) |
 
 ---
