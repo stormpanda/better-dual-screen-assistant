@@ -2,16 +2,18 @@
 
 > **Application License Note:** Better Dual Screen Assistant itself is proprietary, source-available software governed by the [Better Dual Screen Assistant Source-Available License v1.1](LICENSE) — it is **not** licensed under MIT or any OSI open-source license.
 >
-> The open-source copyright notices and license terms below apply **solely** to the unmodified third-party font files and runtime libraries bundled with or linked by the application.
+> The open-source copyright notices and license terms below apply **solely** to the third-party font files and runtime libraries bundled with or linked by the application (including the documented font subsets/modifications per entry).
 
 ---
 
 ## 1. Fusion Pixel (`app/src/main/res/font/tcc_pixel_label.ttf`)
 
-- **Upstream Font**: Fusion Pixel 12px Monospaced (`zh_hans`, `2025.07.02`)
+- **Upstream Font**: Fusion Pixel 12px Monospaced (`latin`, `2026.11.10`)
 - **Source**: https://github.com/TakWolf/fusion-pixel-font
 - **Copyright**: `Copyright (c) 2022, TakWolf (https://takwolf.com), with Reserved Font Name "Fusion Pixel"`
-- **License**: SIL Open Font License, Version 1.1 (applies solely to `tcc_pixel_label.ttf`; reproduced below)
+- **License**: SIL Open Font License, Version 1.1 (applies solely to the bundled Fusion Pixel font file; reproduced below)
+- **Bundled Variant**:
+  - `tcc_pixel_label.ttf` - modified subset of the `latin` variant (`2026.11.10`): Cyrillic glyphs covering Russian, Ukrainian, Belarusian, and Bulgarian (91 Cyrillic glyphs) and extended Latin added, unused arrow glyphs removed, and font family / PostScript name renamed to `BDSA Pixel 12 Label` (`BDSAPixel12Label-Regular`) per OFL reserved-font-name clause 3.
 
 ---
 

@@ -98,14 +98,22 @@ val TccPixelLabelFontFamily: FontFamily = FontFamily(
     Font(R.font.tcc_pixel_label, FontWeight.Bold)
 )
 
+/**
+ * Languages whose script is not covered by the bundled pixel label font.
+ * `sr`/`mk`/`kk`/`mn` are kept because their required diacritics/letters
+ * (Serbian `Ђ`/`Ћ`/`Љ`/`Њ` and Latin `č`/`ć`/`ž`/`đ`, Macedonian `Љ`/`Њ`,
+ * Kazakh `Ө`/`Ү`/`Ң`, Mongolian `Ө`/`Ү`) are absent from the bundled subset.
+ */
 private val NON_LATIN_PIXEL_FALLBACK_LANGUAGES: Set<String> = setOf(
     "zh", "ja", "ko",
-    "ru", "uk", "be", "bg", "sr", "mk", "kk", "mn",
+    "sr", "mk", "kk", "mn",
     "el", "ar", "fa", "ur", "he", "iw",
     "th", "lo", "my", "km",
     "hi", "bn", "ta", "te", "ml", "kn", "mr", "gu", "pa", "si", "ne",
     "ka", "hy", "am", "ti"
 )
+
+private val COVERED_CYRILLIC_PIXEL_LANGUAGES: Set<String> = setOf("ru", "uk", "be", "bg")
 
 /**
  * Latin-script languages whose core diacritics are absent from the bundled 504-glyph
@@ -118,11 +126,15 @@ private val UNSUPPORTED_LATIN_PIXEL_LANGUAGES: Set<String> = setOf(
 )
 
 /**
- * Returns `true` when [locale] uses a Latin script covered by the bundled
- * `tcc_pixel_label.ttf` subset (ASCII + Western European Latin-1 + Hungarian).
- * Non-Latin locales (CJK, Cyrillic, Arabic, Greek, Indic, Thai, etc.) and Latin locales whose
- * core diacritics are missing from the font subset fall back cleanly to the Android system font
- * to avoid missing-glyph boxes and mixed-font baseline jitter.
+ * Returns `true` when [locale] is covered by the bundled pixel label font
+ * (`tcc_pixel_label.ttf`):
+ * - Latin-script locales whose core diacritics are present in the label subset (ASCII,
+ *   Western European Latin-1, Hungarian, and the extended Latin block in the modified subset);
+ * - Cyrillic locales covered by the label subset's Cyrillic glyphs (`ru`, `uk`, `be`, `bg`).
+ *
+ * Everything else (CJK, `ja`/`ko`, `mk`/`sr`/`kk`/`mn` Cyrillic, Arabic, Greek, Indic, Thai,
+ * etc.) falls back cleanly to the Android system font to avoid missing-glyph boxes and
+ * mixed-font baseline jitter.
  */
 internal fun supportsRetroidPixelLabelFont(locale: Locale): Boolean {
     val language = locale.language.lowercase(Locale.ROOT)
@@ -131,7 +143,11 @@ internal fun supportsRetroidPixelLabelFont(locale: Locale): Boolean {
     }
     val script = locale.script
     if (script.isNotEmpty()) {
-        return script.equals("Latn", ignoreCase = true)
+        return when {
+            script.equals("Latn", ignoreCase = true) -> true
+            script.equals("Cyrl", ignoreCase = true) -> language in COVERED_CYRILLIC_PIXEL_LANGUAGES
+            else -> false
+        }
     }
     return language !in NON_LATIN_PIXEL_FALLBACK_LANGUAGES
 }

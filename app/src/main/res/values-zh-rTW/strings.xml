@@ -374,7 +374,7 @@
     <string name="licenses_app_pill">原始碼可用 v1.1</string>
     <string name="licenses_section_fonts">第三方開源字型</string>
     <string name="licenses_fusion_pixel_title">Fusion Pixel 12px Monospaced</string>
-    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • 內附像素介面標籤字型 (res/font/tcc_pixel_label.ttf)</string>
+    <string name="licenses_fusion_pixel_desc">© 2022 TakWolf • 內附像素介面標籤字型（含新增西里爾字母，res/font/tcc_pixel_label.ttf）</string>
     <string name="licenses_dosiyagi_title">DOSIyagiBoldface</string>
     <string name="licenses_dosiyagi_desc">© 2022 Damheo Lee • 內附像素數值顯示字型 (res/font/tcc_pixel_display.ttf)</string>
     <string name="licenses_dosiyagi_action">MIT（僅限字型）</string>
@@ -386,7 +386,7 @@
     <string name="licenses_detail_app_title">Better Dual Screen Assistant 原始碼可用授權 v1.1</string>
     <string name="licenses_detail_app_scope">適用於 Better Dual Screen Assistant 原始碼與 APK 建置版本（僅限個人非商業免費使用）。</string>
     <string name="licenses_detail_fusion_pixel_title">Fusion Pixel 12px Monospaced — SIL 開放字型授權 1.1</string>
-    <string name="licenses_detail_fusion_pixel_scope">字型授權範圍（僅限 Fusion Pixel）：僅適用於 TakWolf 所製作之內附字型 res/font/tcc_pixel_label.ttf。</string>
+    <string name="licenses_detail_fusion_pixel_scope">字型授權範圍（僅限 Fusion Pixel）：僅適用於 TakWolf 所製作之內附 Fusion Pixel 字型 res/font/tcc_pixel_label.ttf（已修改：新增西里爾字母，並依 OFL 保留字型名稱條款重新命名家族名稱）。</string>
     <string name="licenses_detail_dosiyagi_title">DOSIyagiBoldface — MIT 授權（僅限字型檔案）</string>
     <string name="licenses_detail_dosiyagi_scope">字型授權範圍（僅限 DOSIyagiBoldface）：僅適用於 Damheo Lee 所製作之 res/font/tcc_pixel_display.ttf，不適用於 Better Dual Screen Assistant。</string>
     <string name="licenses_detail_androidx_title">AndroidX 與 Jetpack Compose — Apache 授權 2.0</string>
